@@ -15,7 +15,7 @@ type ErrorWithStatusAndCause = Error & {
 export const procoreConfig = {
   clientId: (process.env.PROCORE_CLIENT_ID || '').trim(),
   clientSecret: (process.env.PROCORE_CLIENT_SECRET || '').trim(),
-  companyId: (process.env.PROCORE_COMPANY_ID || '598134325658789').trim(),
+  companyId: (process.env.PROCORE_COMPANY_ID || '').trim(),
   apiUrl: (process.env.PROCORE_API_URL || 'https://api.procore.com').trim(),
   authUrl: (process.env.PROCORE_AUTH_URL || 'https://login.procore.com/oauth/authorize').trim(),
   tokenUrl: (process.env.PROCORE_TOKEN_URL || 'https://api.procore.com/oauth/token').trim(),

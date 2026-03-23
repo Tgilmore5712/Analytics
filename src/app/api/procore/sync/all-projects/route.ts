@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { makeRequest, procoreConfig } from "@/lib/procore";
 import { PrismaClient } from "@prisma/client";
+import { extractCustomerFromCustomFields, isMeaningfulCustomer } from "@/lib/procoreProjectFeed";
 
 const prisma = new PrismaClient();
-const CUSTOMER_CUSTOM_FIELD_ID = "598134331753944";
 
 async function ensureProcoreStagingTable() {
   await prisma.$executeRawUnsafe(`
@@ -71,42 +71,6 @@ async function upsertProcoreStaging(params: {
   );
 }
 
-function isMeaningfulCustomer(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  const trimmed = value.trim();
-  return trimmed.length > 0 && !["unknown", "n/a", "na", "none"].includes(trimmed.toLowerCase());
-}
-
-function extractCustomerFromCustomFields(customFields: any): string | null {
-  if (!customFields || typeof customFields !== "object") return null;
-  const entries = Array.isArray(customFields) ? customFields : Object.values(customFields);
-
-  for (const field of entries as any[]) {
-    if (!field || typeof field !== "object") continue;
-    if (String(field.id || "") === CUSTOMER_CUSTOM_FIELD_ID && isMeaningfulCustomer(field.label)) {
-      return field.label.trim();
-    }
-  }
-
-  for (const field of entries as any[]) {
-    if (!field || typeof field !== "object") continue;
-
-    if (isMeaningfulCustomer(field.value) && [field.label, field.name].some((v) => String(v || "").toLowerCase() === "customer")) {
-      return field.value.trim();
-    }
-
-    if (isMeaningfulCustomer(field.label_value)) {
-      return field.label_value.trim();
-    }
-
-    if (isMeaningfulCustomer(field.label) && String(field.label).toLowerCase() !== "customer") {
-      return field.label.trim();
-    }
-  }
-
-  return null;
-}
-
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -114,7 +78,7 @@ export async function POST(request: Request) {
 
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("procore_access_token")?.value;
-    const companyId = String(bodyCompanyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId).trim();
+    const companyId = String(bodyCompanyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || '').trim();
 
     if (!accessToken) {
       return NextResponse.json({ error: "Missing access token. Please login via OAuth." }, { status: 401 });
@@ -244,7 +208,7 @@ export async function POST(request: Request) {
               projectNumber: existing.projectNumber || number,
               customer: isMeaningfulCustomer(customer)
                 ? customer
-                : (existing.customer || customer || "UNKNOWN"),
+                : (existing.customer || customer || null),
               status: existing.status || status,
               customFields: {
                 ...(typeof existing.customFields === 'object' ? (existing.customFields as any) : {}),
@@ -262,7 +226,7 @@ export async function POST(request: Request) {
             data: {
               projectName: name,
               projectNumber: number,
-              customer: isMeaningfulCustomer(customer) ? customer : "UNKNOWN",
+              customer: isMeaningfulCustomer(customer) ? customer : null,
               status: status,
               // procoreProjectId: procoreId,
               customFields: { 
@@ -332,7 +296,7 @@ export async function POST(request: Request) {
           await prisma.project.update({
             where: { id: existing.id },
             data: {
-              customer: isMeaningfulCustomer(customer) ? customer : (existing.customer || "UNKNOWN"),
+              customer: isMeaningfulCustomer(customer) ? customer : (existing.customer || null),
               customFields: {
                 ...(typeof existing.customFields === 'object' ? (existing.customFields as any) : {}),
                 bidBoardId: bidId,
@@ -348,7 +312,7 @@ export async function POST(request: Request) {
           await prisma.project.create({
             data: {
               projectName: name,
-              customer: isMeaningfulCustomer(customer) ? customer : "UNKNOWN",
+              customer: isMeaningfulCustomer(customer) ? customer : null,
               status: bb.status || "Bidding",
               customFields: {
                 bidBoardId: bidId,

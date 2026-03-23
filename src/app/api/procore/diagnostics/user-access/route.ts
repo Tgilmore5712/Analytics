@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { makeRequest } from "@/lib/procore";
+import { makeRequest, procoreConfig } from "@/lib/procore";
 
 type JsonObject = Record<string, unknown>;
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const cookieStore = await cookies();
     const token = cookieStore.get('procore_access_token')?.value || bodyToken;
-    const companyId = cookieStore.get('procore_company_id')?.value;
+    const companyId = cookieStore.get('procore_company_id')?.value || procoreConfig.companyId || '';
 
     if (!token || !companyId) {
       return NextResponse.json({ error: 'Not authenticated or missing company ID' }, { status: 401 });

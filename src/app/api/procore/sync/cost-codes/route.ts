@@ -118,7 +118,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("procore_access_token")?.value || body.accessToken;
-    const companyId = String(body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || "").trim();
+    const companyId = String(body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || '').trim();
     const projectId = String(body.projectId || DEFAULT_PROJECT_ID).trim();
     const subJobId = String(body.subJobId || "").trim();
     const originId = String(body.originId || "").trim();

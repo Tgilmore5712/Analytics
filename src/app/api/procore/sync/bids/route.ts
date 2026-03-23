@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
     const cookieStore = await cookies();
     const accessToken = cookieStore.get('procore_access_token')?.value;
-    const companyId = String(companyIdFromBody || cookieStore.get('procore_company_id')?.value || procoreConfig.companyId).trim();
+    const companyId = String(companyIdFromBody || cookieStore.get('procore_company_id')?.value || procoreConfig.companyId || '').trim();
 
     if (!accessToken) {
       return NextResponse.json({ success: false, error: 'Missing access token. Please login via OAuth.' }, { status: 401 });

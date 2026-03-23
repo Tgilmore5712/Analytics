@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 
-export const CUSTOMER_CUSTOM_FIELD_ID = '598134331753944';
+export const CUSTOMER_CUSTOM_FIELD_ID = '598134325737314';
 
 type JsonObject = Record<string, unknown>;
 
@@ -289,6 +289,14 @@ export function extractCustomerFromCustomFields(customFields: unknown): string |
   for (const field of entries) {
     const id = readString(field.id);
     const label = readString(field.label);
+    const value = asObject(field.value);
+    const valueLabel = readString(value?.label);
+    const keyId = Object.entries(customFields as JsonObject).find(([, entry]) => entry === field)?.[0]?.match(/custom_field_(\d+)/)?.[1] || null;
+
+    if ((String(id || '') === CUSTOMER_CUSTOM_FIELD_ID || keyId === CUSTOMER_CUSTOM_FIELD_ID) && isMeaningfulCustomer(valueLabel)) {
+      return valueLabel.trim();
+    }
+
     if (String(id || '') === CUSTOMER_CUSTOM_FIELD_ID && isMeaningfulCustomer(label)) {
       return label.trim();
     }
@@ -299,6 +307,12 @@ export function extractCustomerFromCustomFields(customFields: unknown): string |
     const label = readString(field.label);
     const name = readString(field.name);
     const labelValue = readString(field.label_value);
+    const valueObject = asObject(field.value);
+    const nestedValueLabel = readString(valueObject?.label);
+
+    if (isMeaningfulCustomer(nestedValueLabel)) {
+      return nestedValueLabel.trim();
+    }
 
     if (isMeaningfulCustomer(value) && [label, name].some((v) => String(v || '').toLowerCase() === 'customer')) {
       return value.trim();

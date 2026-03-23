@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const companyId = String(companyIdFromBody || procoreConfig.companyId || "").trim();
+    const companyId = String(companyIdFromBody || procoreConfig.companyId || '').trim();
     if (!companyId) {
       return NextResponse.json(
         { error: "Missing companyId. Set PROCORE_COMPANY_ID or send companyId in request body." },

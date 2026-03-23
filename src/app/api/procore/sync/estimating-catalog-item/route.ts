@@ -170,7 +170,7 @@ export async function POST(request: Request) {
     const cookieStore = await cookies();
 
     const accessToken = body.accessToken || cookieStore.get("procore_access_token")?.value;
-    const companyId = String(body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || "").trim();
+    const companyId = String(body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || '').trim();
     const itemId = String(body.itemId || "").trim();
     const baseUrl = String(body.baseUrl || process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL)
       .trim()

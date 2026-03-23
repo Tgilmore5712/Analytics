@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
     const accessToken = body.accessToken || cookieStore.get("procore_access_token")?.value;
     const companyId = String(
-      body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ""
+      body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ''
     ).trim();
     const startPage = Math.max(Number(body.page) || 1, 1);
     const perPage = Math.min(Math.max(Number(body.perPage) || 100, 1), 200);

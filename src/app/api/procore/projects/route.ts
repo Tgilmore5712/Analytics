@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const companyId = String(companyIdFromUrl || procoreConfig.companyId || "").trim();
+    const companyId = String(companyIdFromUrl || procoreConfig.companyId || '').trim();
     const allProjects: any[] = [];
     const safePerPage = 100;
     let currentPage = 1;

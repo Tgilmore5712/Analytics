@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const companyId = procoreConfig.companyId;
+    const companyId = procoreConfig.companyId || '';
     console.log(`Fetching Procore vendors for company ${companyId}`);
 
     // Try multiple endpoints if one fails - some companies use /vendors without the /companies prefix

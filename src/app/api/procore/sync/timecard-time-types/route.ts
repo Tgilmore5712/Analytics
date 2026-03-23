@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       body.companyId ||
         cookieStore.get("procore_company_id")?.value ||
         procoreConfig.companyId ||
-        ""
+        ''
     ).trim();
 
     if (!accessToken) {

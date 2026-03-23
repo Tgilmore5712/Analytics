@@ -37,7 +37,6 @@ model Project {
   activeSchedules       ActiveSchedule[]
   scopeTrackings        ScopeTracking[]
   productivityLogs      ProductivityLog[]
-  productivitySummaries ProductivitySummary[]
   timecardEntries       TimecardEntry[]
   timecardTimeTypes     TimecardTimeType[]
   commitmentContracts   CommitmentContract[]
@@ -45,7 +44,6 @@ model Project {
   commitmentChangeOrderLineItems CommitmentChangeOrderLineItem[]
   purchaseOrderContracts PurchaseOrderContract[]
   purchaseOrderLineItemContractDetails PurchaseOrderLineItemContractDetail[]
-  pmcBreakdownCache     PMCBreakdownCache?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -268,6 +266,8 @@ model TimecardEntry {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  unpackedFields    TimecardEntryUnpackedField[]
 
   @@index([jobKey])
   @@index([projectId])
@@ -578,23 +578,6 @@ model PmcGroupMapping {
   @@index([costItemNorm])
   @@index([costTypeNorm])
   @@index([pmcGroup])
-}
-
-model ProductivitySummary {
-  id        String   @id @default(cuid())
-  jobKey    String   @unique
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  totalHours   Float
-  averageDaily Float?
-  dates        Json? // Array of dates worked
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([jobKey])
-  @@index([projectId])
 }
 
 // ==================== DASHBOARD SUMMARY ====================
@@ -957,27 +940,6 @@ model CostitemPMCMapping {
   @@index([source])
 }
 
-model PMCBreakdownCache {
-  id        String   @id @default(cuid())
-  projectId String   @unique
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  // Granular breakdown: { "Slab On Grade Labor": 250.5, "Site Concrete Labor": 185.3, ... }
-  pmcBreakdown Json @default("{}")
-
-  // Aggregated breakdown: { "FOUNDATION": 435.8, "SITE": 120.0, ... }
-  pmcGroupBreakdown Json @default("{}")
-
-  // Metadata
-  totalHours     Float    @default(0)
-  lastCalculated DateTime @default(now())
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([projectId])
-}
-
 model ProcoreCostCodeStaging {
   id         BigInt   @id @default(autoincrement()) @db.BigInt
   companyId  String   @map("company_id")
@@ -1016,3 +978,262 @@ model ProcoreEstimatingCatalogItemStaging {
   @@index([itemId])
   @@map("procore_estimating_catalog_item_staging")
 }
+
+model ProcoreProjectStaging {
+  id                 BigInt   @id @default(autoincrement()) @db.BigInt
+  companyId          String   @map("company_id")
+  projectId          String?  @map("project_id")
+  externalId         String?  @map("external_id")
+  procoreProjectId   String?  @map("procore_project_id")
+  customer           String?
+  source             String?
+  name               String?
+  displayName        String?  @map("display_name")
+  projectNumber      String?  @map("project_number")
+  projectOwnerType   String?  @map("project_owner_type")
+  projectOwnerTypeId String?  @map("project_owner_type_id")
+  status             String?
+  createdAt          DateTime? @map("procore_created_at")
+  updatedAt          DateTime? @map("procore_updated_at")
+  payload            Json
+  syncedAt           DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+
+  @@index([companyId])
+  @@index([projectId])
+  @@index([projectNumber])
+  @@map("procore_project_staging")
+}
+
+model ProcoreProjectStagingUnpackedField {
+  id                 BigInt    @id @default(autoincrement()) @db.BigInt
+  companyId          String    @map("company_id")
+  projectId          String    @map("project_id")
+  procoreProjectId   String    @map("procore_project_id")
+  fieldPath          String    @map("field_path")
+  valueType          String    @map("value_type")
+  valueText          String?   @map("value_text")
+  valueNumber        Float?    @map("value_number")
+  valueBoolean       Boolean?  @map("value_boolean")
+  valueJson          Json      @map("value_json")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, projectId, procoreProjectId, fieldPath])
+  @@index([companyId])
+  @@index([projectId])
+  @@index([procoreProjectId])
+  @@index([fieldPath])
+  @@index([valueText])
+  @@map("procore_project_staging_unpacked_fields")
+}
+
+// ==================== PROCORE PROJECT FEED ====================
+model ProcoreProjectFeed {
+  id                 BigInt    @id @default(autoincrement()) @db.BigInt
+  companyId          String    @map("company_id")
+  syncSource         String    @map("sync_source")
+  externalId         String    @map("external_id")
+  procoreId          String?   @map("procore_id")
+  projectNumber      String?   @map("project_number")
+  projectName        String    @map("project_name")
+  status             String?
+  customer           String?
+  customerSource     String?   @map("customer_source")
+  officeName         String?   @map("office_name")
+  city               String?
+  stateCode          String?   @map("state_code")
+  countryCode        String?   @map("country_code")
+  stageName          String?   @map("stage_name")
+  dueDate            DateTime? @map("due_date") @db.Timestamptz(6)
+  createdOn          DateTime? @map("created_on") @db.Timestamptz(6)
+  sourceId           String?   @map("source_id")
+  sourceName         String?   @map("source_name")
+  sourceCreatedBy    String?   @map("source_created_by")
+  sourceCreatedAt    DateTime? @map("source_created_at") @db.Timestamptz(6)
+  lastModifiedAt     DateTime? @map("last_modified_at") @db.Timestamptz(6)
+  estimatedValue     Float?    @map("estimated_value")
+  linkedProjectId    String?   @map("linked_project_id")
+  matchConfidence    String?   @map("match_confidence")
+  matchedAt          DateTime? @map("matched_at") @db.Timestamptz(6)
+  softDeleted        Boolean   @default(false) @map("soft_deleted")
+  syncedAt           DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payload            Json
+
+  @@unique([companyId, syncSource, externalId])
+  @@index([companyId])
+  @@index([projectName])
+  @@index([customer])
+  @@index([syncedAt])
+  @@index([linkedProjectId])
+  @@index([softDeleted])
+  @@map("procore_project_feed")
+}
+
+// ==================== GANTT V2 SCHEMA ====================
+model GanttV2Project {
+  id            String                @id @db.Text
+  projectName   String                @map("project_name")
+  customer      String?               @db.Text
+  projectNumber String?               @db.Text
+  status        String?               @db.Text
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+  
+  scopes        GanttV2Scope[]
+
+  @@map("gantt_v2_projects")
+}
+
+model GanttV2Scope {
+  id            String                    @id @db.Text
+  projectId     String                    @map("project_id")
+  title         String                    @db.Text
+  startDate     DateTime?                 @map("start_date") @db.Date
+  endDate       DateTime?                 @map("end_date") @db.Date
+  totalHours    Float                     @default(0) @map("total_hours")
+  crewSize      Float?                    @map("crew_size")
+  notes         String?                   @db.Text
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+  
+  project       GanttV2Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scheduleEntries GanttV2ScheduleEntry[]
+
+  @@index([projectId])
+  @@map("gantt_v2_scopes")
+}
+
+model GanttV2ScheduleEntry {
+  id              String        @id @db.Text
+  scopeId         String        @map("scope_id")
+  workDate        DateTime      @map("work_date") @db.Date
+  scheduledHours  Float         @default(0) @map("scheduled_hours")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  
+  scope           GanttV2Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@index([scopeId])
+  @@map("gantt_v2_schedule_entries")
+}
+
+// ==================== BUDGET LINE ITEMS ====================
+model BudgetLineItem {
+  id                        BigInt    @id @default(autoincrement()) @db.BigInt
+  companyId                 String    @map("company_id")
+  projectId                 String    @map("project_id")
+  budgetLineItemId          String    @map("budget_line_item_id")
+  name                      String?
+  costCode                  String?   @map("cost_code")
+  costCodeDescription       String?   @map("cost_code_description")
+  wbsCodeId                 String?   @map("wbs_code_id")
+  lineItemType              String?   @map("line_item_type")
+  uom                       String?
+  quantity                  Float?
+  unitCost                  Float?    @map("unit_cost")
+  originalBudgetAmount      Float?    @map("original_budget_amount")
+  amount                    Float?
+  calculationStrategy       String?   @map("calculation_strategy")
+  currencyIsoCode           String?   @map("currency_iso_code")
+  sourceCreatedAt           DateTime? @map("source_created_at") @db.Timestamptz(6)
+  sourceUpdatedAt           DateTime? @map("source_updated_at") @db.Timestamptz(6)
+  payload                   Json
+  syncedAt                  DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, projectId, budgetLineItemId])
+  @@index([companyId])
+  @@index([projectId])
+  @@map("budgetlineitems")
+}
+
+model BudgetLineItemUnpackedField {
+  id                BigInt        @id @default(autoincrement()) @db.BigInt
+  companyId         String        @map("company_id")
+  projectId         String        @map("project_id")
+  budgetLineItemId  String        @map("budget_line_item_id")
+  fieldPath         String        @map("field_path")
+  valueType         String        @map("value_type")
+  valueText         String?       @map("value_text")
+  valueNumber       Float?        @map("value_number")
+  valueBoolean      Boolean?      @map("value_boolean")
+  valueJson         Json          @map("value_json")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, projectId, budgetLineItemId, fieldPath])
+  @@index([companyId])
+  @@index([projectId])
+  @@index([budgetLineItemId])
+  @@map("budgetlineitem_unpacked_fields")
+}
+
+// ==================== CONCRETE ORDERS ====================
+model ConcreteOrder {
+  id              String    @id @db.Text
+  jobKey          String    @map("job_key")
+  projectName     String    @map("project_name")
+  concreteCompany String    @map("concrete_company")
+  date            String    @db.Text
+  time            String    @db.Text
+  totalYards      Float     @map("total_yards")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([jobKey])
+  @@map("concrete_orders")
+}
+
+// ==================== PROCORE PROJECT VENDORS ====================
+model ProcoreProjectVendor {
+  id                BigInt    @id @default(autoincrement()) @db.BigInt
+  companyId         String    @map("company_id")
+  projectId         String    @map("project_id")
+  procoreVendorId   String    @map("procore_vendor_id")
+  name              String?
+  abbreviatedName   String?   @map("abbreviated_name")
+  isActive          Boolean?  @map("is_active")
+  businessPhone     String?   @map("business_phone")
+  addressCity       String?   @map("address_city")
+  addressStateCode  String?   @map("address_state_code")
+  addressCountryCode String?  @map("address_country_code")
+  emailAddress      String?   @map("email_address")
+  vendorType        String?   @map("vendor_type")
+  isEmployee        Boolean?  @map("is_employee")
+  softDeleted       Boolean   @default(false) @map("soft_deleted")
+  syncedAt          DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payload           Json
+
+  @@unique([companyId, projectId, procoreVendorId])
+  @@index([companyId, projectId])
+  @@index([procoreVendorId])
+  @@index([name])
+  @@index([softDeleted])
+  @@index([syncedAt])
+  @@map("procore_project_vendors")
+}
+
+// ==================== TIMECARD ENTRY UNPACKED FIELDS ====================
+model TimecardEntryUnpackedField {
+  id            BigInt       @id @default(autoincrement()) @db.BigInt
+  entryId       String       @map("entry_id")
+  fieldPath     String       @map("field_path")
+  valueType     String       @map("value_type")
+  valueText     String?      @map("value_text")
+  valueNumber   Float?       @map("value_number")
+  valueBoolean  Boolean?     @map("value_boolean")
+  valueJson     Json         @map("value_json")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  entry         TimecardEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, fieldPath])
+  @@index([fieldPath])
+  @@map("timecard_entry_unpacked_fields")
+}
+

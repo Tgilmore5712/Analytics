@@ -233,7 +233,7 @@ export async function POST(request: Request) {
       String(body.accessToken || "").trim() ||
       undefined;
     const companyId = String(
-      body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ""
+      body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ''
     ).trim();
 
     if (!accessToken) {

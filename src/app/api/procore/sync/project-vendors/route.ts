@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { makeRequest, procoreConfig } from '@/lib/procore';
 import { ensureProcoreProjectFeedTable } from '@/lib/procoreProjectFeed';
-import { ensureBudgetLineItemsTable, upsertBudgetLineItem } from '@/lib/procoreBudgetLineItems';
+import {
+  ensureProcoreProjectVendorsTable,
+  softDeleteProjectVendorsNotInSet,
+  toProjectVendorRow,
+  upsertProcoreProjectVendor,
+} from '@/lib/procoreProjectVendors';
 
 type JsonObject = Record<string, unknown>;
 
@@ -10,32 +15,14 @@ function asObject(value: unknown): JsonObject | null {
   return value && typeof value === 'object' ? (value as JsonObject) : null;
 }
 
-function readText(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || null;
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value);
-  }
-  return null;
-}
-
-function readNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function firstText(...values: unknown[]): string | null {
-  for (const value of values) {
-    const text = readText(value);
-    if (text) return text;
-  }
-  return null;
+function isAccessSkippedError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('error 403') ||
+    lower.includes('forbidden') ||
+    lower.includes('error 404') ||
+    lower.includes('not found')
+  );
 }
 
 function unwrapArray(response: unknown): JsonObject[] {
@@ -54,15 +41,6 @@ function unwrapArray(response: unknown): JsonObject[] {
   return [];
 }
 
-function isAccessSkippedError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes('error 403') ||
-    lower.includes('forbidden') ||
-    lower.includes('error 404') ||
-    lower.includes('not found')
-  );
-}
 
 async function getProjectIdsFromFeed(companyId: string, limitProjects: number) {
   await ensureProcoreProjectFeedTable();
@@ -87,36 +65,36 @@ async function getProjectIdsFromFeed(companyId: string, limitProjects: number) {
     .filter((v) => v.length > 0);
 }
 
-async function fetchProjectBudgetLineItemsPage(params: {
+async function fetchProjectVendorsPage(params: {
   accessToken: string;
   companyId: string;
   projectId: string;
   page: number;
   perPage: number;
+  isActiveOnly: boolean;
 }) {
-  const { accessToken, companyId, projectId, page, perPage } = params;
+  const { accessToken, companyId, projectId, page, perPage, isActiveOnly } = params;
   const encodedProjectId = encodeURIComponent(projectId);
   const query = new URLSearchParams({
-    project_id: projectId,
     page: String(page),
     per_page: String(perPage),
+    view: 'extended',
   });
+  if (isActiveOnly) query.set('filters[is_active]', 'true');
 
   const endpoints = [
-    `/rest/v1.1/budget_line_items?${query.toString()}`,
-    `/rest/v1.0/budget_line_items?${query.toString()}`,
-    `/rest/v1.1/projects/${encodedProjectId}/budget_line_items?page=${page}&per_page=${perPage}`,
-    `/rest/v1.0/projects/${encodedProjectId}/budget_line_items?page=${page}&per_page=${perPage}`,
+    { endpoint: `/rest/v1.1/projects/${encodedProjectId}/vendors?${query.toString()}`, version: 'v1.1' },
+    { endpoint: `/rest/v1.0/projects/${encodedProjectId}/vendors?${query.toString()}`, version: 'v1.0' },
   ];
 
   const failures: string[] = [];
-  for (const endpoint of endpoints) {
+  for (const candidate of endpoints) {
     try {
-      const data = await makeRequest(endpoint, accessToken, undefined, companyId);
-      return { data, endpoint, failures };
+      const data = await makeRequest(candidate.endpoint, accessToken, undefined, companyId);
+      return { data, version: candidate.version, failures };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${endpoint} => ${message}`);
+      failures.push(`${candidate.endpoint} => ${message}`);
     }
   }
 
@@ -130,6 +108,7 @@ export async function POST(request: Request) {
     const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '1000'), 10) || 1000));
     const perPage = Math.min(200, Math.max(1, Number.parseInt(String(body?.perPage || '100'), 10) || 100));
     const fetchAll = body?.fetchAll !== false;
+    const isActiveOnly = body?.isActiveOnly !== false;
 
     const cookieStore = await cookies();
     const accessToken = cookieStore.get('procore_access_token')?.value;
@@ -144,7 +123,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await ensureBudgetLineItemsTable();
+    await ensureProcoreProjectVendorsTable();
 
     const projectIds = await getProjectIdsFromFeed(companyId, limitProjects);
     if (projectIds.length === 0) {
@@ -158,93 +137,72 @@ export async function POST(request: Request) {
     }
 
     let projectsScanned = 0;
+    let projectsSynced = 0;
     let projectsSkippedAccess = 0;
     let fetched = 0;
     let upserted = 0;
+    let feedCustomersUpdated = 0;
+    const apiVersionsUsed = new Set<string>();
+    const sampleVendors: Array<{ projectId: string; vendorId: string; name: string | null }> = [];
     const warnings: string[] = [];
     const errors: string[] = [];
 
     for (const projectId of projectIds) {
       projectsScanned += 1;
       let page = 1;
+      const seenVendorIds = new Set<string>();
+      let projectHadAccessError = false;
 
       while (true) {
-        let result: { data: unknown; endpoint: string; failures: string[] } | null = null;
+        let result: { data: unknown; version: string; failures: string[] } | null = null;
         try {
-          result = await fetchProjectBudgetLineItemsPage({
+          result = await fetchProjectVendorsPage({
             accessToken,
             companyId,
             projectId,
             page,
             perPage,
+            isActiveOnly,
           });
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           if (isAccessSkippedError(message)) {
+            projectHadAccessError = true;
             projectsSkippedAccess += 1;
             if (warnings.length < 25) {
-              warnings.push(`project:${projectId} budget_line_items skipped (access): ${message}`);
+              warnings.push(`project:${projectId} vendors skipped (access): ${message}`);
             }
           } else {
-            errors.push(`project:${projectId} budget_line_items => ${message}`);
+            errors.push(`project:${projectId} vendors => ${message}`);
           }
         }
 
         if (!result) break;
 
+        apiVersionsUsed.add(result.version);
         const items = unwrapArray(result.data);
         if (items.length === 0) break;
         fetched += items.length;
 
         for (const item of items) {
           try {
-            const budgetLineItemId = firstText(item.id, item.budget_line_item_id);
-            if (!budgetLineItemId) continue;
+            const row = toProjectVendorRow(companyId, projectId, item);
+            if (!row) continue;
 
-            const costCodeObject = asObject(item.cost_code);
-            const lineItemTypeObject = asObject(item.line_item_type);
-            const wbsCodeObject = asObject(item.wbs_code);
-            const currencyObject = asObject(item.currency_configuration);
-
-            await upsertBudgetLineItem({
-              companyId,
-              projectId,
-              budgetLineItemId,
-              name: firstText(item.name, item.title),
-              costCode: firstText(
-                item.cost_code_string,
-                wbsCodeObject?.flat_code,
-                costCodeObject?.code,
-                costCodeObject?.name,
-                item.cost_code
-              ),
-              costCodeDescription: firstText(
-                wbsCodeObject?.description,
-                costCodeObject?.description
-              ),
-              wbsCodeId: firstText(wbsCodeObject?.id, item.wbs_code_id),
-              lineItemType: firstText(
-                lineItemTypeObject?.name,
-                lineItemTypeObject?.id,
-                item.line_item_type
-              ),
-              uom: firstText(item.uom),
-              quantity: readNumber(item.quantity),
-              unitCost: readNumber(item.unit_cost),
-              originalBudgetAmount: readNumber(item.original_budget_amount),
-              amount: readNumber(item.amount) ?? readNumber(item.budget_amount) ?? readNumber(item.original_budget_amount),
-              calculationStrategy: firstText(item.calculation_strategy),
-              currencyIsoCode: firstText(currencyObject?.currency_iso_code, item.currency_iso_code),
-              sourceCreatedAt: firstText(item.created_at),
-              sourceUpdatedAt: firstText(item.updated_at),
-              payload: item,
-            });
-
+            await upsertProcoreProjectVendor(row);
+            seenVendorIds.add(row.procoreVendorId);
             upserted += 1;
+
+            if (sampleVendors.length < 50) {
+              sampleVendors.push({
+                projectId,
+                vendorId: row.procoreVendorId,
+                name: row.name ?? null,
+              });
+            }
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
-            const id = firstText(item.id, item.budget_line_item_id) || 'unknown';
-            errors.push(`project:${projectId} budget_line_item:${id} => ${message}`);
+            errors.push(`project:${projectId} vendor upsert => ${message}`);
           }
         }
 
@@ -252,18 +210,28 @@ export async function POST(request: Request) {
         page += 1;
         if (page > 100) break;
       }
+
+      if (!projectHadAccessError) {
+        await softDeleteProjectVendorsNotInSet(companyId, projectId, [...seenVendorIds]);
+
+        projectsSynced += 1;
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Company budget line items sync complete',
+      message: 'Company project vendors sync complete',
       data: {
         companyId,
         projectsLimit: limitProjects,
         projectsScanned,
+        projectsSynced,
         projectsSkippedAccess,
         fetched,
         upserted,
+        feedCustomersUpdated,
+        apiVersionsUsed: [...apiVersionsUsed],
+        sampleVendors,
         warnings,
         errors,
       },
@@ -271,26 +239,8 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { success: false, error: `Failed to sync company budget line items: ${message}` },
+      { success: false, error: `Failed to sync company project vendors: ${message}` },
       { status: 500 }
     );
   }
-}
-
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const body = JSON.stringify({
-    companyId: url.searchParams.get('companyId') || undefined,
-    limitProjects: url.searchParams.get('limitProjects') || undefined,
-    perPage: url.searchParams.get('perPage') || undefined,
-    fetchAll: String(url.searchParams.get('fetchAll') || '').toLowerCase() !== 'false',
-  });
-
-  return POST(
-    new Request(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    })
-  );
 }

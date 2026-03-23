@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import Navigation from "@/components/Navigation";
 
@@ -126,6 +127,31 @@ type ProjectsFeedSyncResponse = {
   data?: unknown;
 };
 
+type ProjectVendorsSyncResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  message?: string;
+  data?: {
+    companyId?: string;
+    projectsLimit?: number;
+    projectsScanned?: number;
+    projectsSynced?: number;
+    projectsSkippedAccess?: number;
+    fetched?: number;
+    upserted?: number;
+    feedCustomersUpdated?: number;
+    apiVersionsUsed?: string[];
+    sampleVendors?: Array<{
+      projectId: string;
+      vendorId: string;
+      name: string | null;
+    }>;
+    warnings?: string[];
+    errors?: string[];
+  };
+};
+
 type BudgetLineItemLookupResponse = {
   success?: boolean;
   error?: string;
@@ -152,6 +178,108 @@ type BudgetLineItemsSyncResponse = {
     warnings?: string[];
     errors?: string[];
   };
+};
+
+type CustomFieldUserOptionsResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  allProjects?: boolean;
+  projectId?: string;
+  toolName?: string;
+  companyId?: string;
+  search?: string;
+  page?: number;
+  perPage?: number;
+  count?: number;
+  limitProjects?: number;
+  projectsScanned?: number;
+  projectsSucceeded?: number;
+  projectsFailed?: number;
+  totalOptionsFetched?: number;
+  uniqueOptions?: number;
+  projectSummaries?: Array<{ projectId: string; count: number }>;
+  errors?: Array<{ projectId: string; error: string }>;
+  data?: Array<Record<string, unknown>>;
+  raw?: unknown;
+};
+
+type ConfigurableFieldSetsResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  companyId?: string;
+  projectId?: string;
+  page?: number;
+  perPage?: number;
+  includeLovEntries?: boolean;
+  includeDefaultConfigurableFieldSets?: boolean;
+  types?: string[];
+  count?: number;
+  data?: Array<Record<string, unknown>>;
+  raw?: unknown;
+};
+
+type ConfigurableFieldSetByIdResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  companyId?: string;
+  fieldSetId?: string;
+  data?: Record<string, unknown>;
+  unpacked?: Record<string, unknown>;
+  raw?: unknown;
+};
+
+type ConfigurableFieldSetsListResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  companyId?: string;
+  page?: number;
+  perPage?: number;
+  searchValue?: string | null;
+  count?: number;
+  data?: Array<Record<string, unknown>>;
+  unpacked?: Array<Record<string, unknown>>;
+  searchResults?: Array<{
+    index: number;
+    id: string | number | null;
+    name: string | null;
+    matchCount: number;
+    matches: Array<{ path: string; value: string }>;
+  }>;
+  totalMatchCount?: number;
+  raw?: unknown;
+};
+
+type CompanyUsersResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  companyId?: string;
+  page?: number;
+  perPage?: number;
+  search?: string | null;
+  count?: number;
+  data?: Array<{
+    id: string | number | null;
+    login: string | null;
+    name: string | null;
+    company_name: string | null;
+  }>;
+  raw?: unknown;
+};
+
+type ProjectShowResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  companyId?: string;
+  projectId?: string;
+  view?: string;
+  data?: Record<string, unknown>;
+  raw?: unknown;
 };
 
 export default function ProcoreProductivityFeedPage() {
@@ -183,6 +311,55 @@ export default function ProcoreProductivityFeedPage() {
   const [projectsFeedLoading, setProjectsFeedLoading] = useState(false);
   const [projectsFeedError, setProjectsFeedError] = useState<string | null>(null);
   const [projectsFeedResponse, setProjectsFeedResponse] = useState<ProjectsFeedSyncResponse | null>(null);
+  const [projectVendorsLimitProjects, setProjectVendorsLimitProjects] = useState(1000);
+  const [projectVendorsLoading, setProjectVendorsLoading] = useState(false);
+  const [projectVendorsError, setProjectVendorsError] = useState<string | null>(null);
+  const [projectVendorsResponse, setProjectVendorsResponse] = useState<ProjectVendorsSyncResponse | null>(null);
+  const [userOptionsProjectId, setUserOptionsProjectId] = useState("");
+  const [userOptionsToolName, setUserOptionsToolName] = useState("projects");
+  const [userOptionsSearch, setUserOptionsSearch] = useState("");
+  const [userOptionsPage, setUserOptionsPage] = useState(1);
+  const [userOptionsPerPage, setUserOptionsPerPage] = useState(100);
+  const [userOptionsAllProjects, setUserOptionsAllProjects] = useState(false);
+  const [userOptionsLimitProjects, setUserOptionsLimitProjects] = useState(250);
+  const [userOptionsLoading, setUserOptionsLoading] = useState(false);
+  const [userOptionsError, setUserOptionsError] = useState<string | null>(null);
+  const [userOptionsResponse, setUserOptionsResponse] = useState<CustomFieldUserOptionsResponse | null>(null);
+  const [cfgProjectId, setCfgProjectId] = useState("");
+  const [cfgTypes, setCfgTypes] = useState("ConfigurableFieldSet::PurchaseOrderContract, ConfigurableFieldSet::Observations::Item");
+  const [cfgIncludeLovEntries, setCfgIncludeLovEntries] = useState(true);
+  const [cfgIncludeDefaults, setCfgIncludeDefaults] = useState(true);
+  const [cfgPage, setCfgPage] = useState(1);
+  const [cfgPerPage, setCfgPerPage] = useState(100);
+  const [cfgGenericToolId, setCfgGenericToolId] = useState("");
+  const [cfgActionPlanTypeId, setCfgActionPlanTypeId] = useState("");
+  const [cfgInspectionTypeId, setCfgInspectionTypeId] = useState("");
+  const [cfgObservationsCategoryId, setCfgObservationsCategoryId] = useState("");
+  const [cfgCategory, setCfgCategory] = useState("");
+  const [cfgLoading, setCfgLoading] = useState(false);
+  const [cfgError, setCfgError] = useState<string | null>(null);
+  const [cfgResponse, setCfgResponse] = useState<ConfigurableFieldSetsResponse | null>(null);
+  const [cfgByIdFieldSetId, setCfgByIdFieldSetId] = useState("");
+  const [cfgByIdLoading, setCfgByIdLoading] = useState(false);
+  const [cfgByIdError, setCfgByIdError] = useState<string | null>(null);
+  const [cfgByIdResponse, setCfgByIdResponse] = useState<ConfigurableFieldSetByIdResponse | null>(null);
+  const [cfgListLoading, setCfgListLoading] = useState(false);
+  const [cfgListError, setCfgListError] = useState<string | null>(null);
+  const [cfgListResponse, setCfgListResponse] = useState<ConfigurableFieldSetsListResponse | null>(null);
+  const [cfgListPage, setCfgListPage] = useState(1);
+  const [cfgListPerPage, setCfgListPerPage] = useState(100);
+  const [cfgListSearchValue, setCfgListSearchValue] = useState("");
+  const [companyUsersLoading, setCompanyUsersLoading] = useState(false);
+  const [companyUsersError, setCompanyUsersError] = useState<string | null>(null);
+  const [companyUsersResponse, setCompanyUsersResponse] = useState<CompanyUsersResponse | null>(null);
+  const [companyUsersPage, setCompanyUsersPage] = useState(1);
+  const [companyUsersPerPage, setCompanyUsersPerPage] = useState(100);
+  const [companyUsersSearch, setCompanyUsersSearch] = useState("");
+  const [projectShowId, setProjectShowId] = useState("");
+  const [projectShowView, setProjectShowView] = useState<"full" | "minimal">("full");
+  const [projectShowLoading, setProjectShowLoading] = useState(false);
+  const [projectShowError, setProjectShowError] = useState<string | null>(null);
+  const [projectShowResponse, setProjectShowResponse] = useState<ProjectShowResponse | null>(null);
   const [singleBidId, setSingleBidId] = useState("");
   const [singleBidFormId, setSingleBidFormId] = useState("");
   const [budgetLineItemId, setBudgetLineItemId] = useState("");
@@ -481,6 +658,276 @@ export default function ProcoreProductivityFeedPage() {
     }
   }
 
+  async function syncProjectVendors() {
+    setProjectVendorsLoading(true);
+    setProjectVendorsError(null);
+    try {
+      const res = await fetch("/api/procore/sync/project-vendors", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          limitProjects: projectVendorsLimitProjects,
+          perPage,
+          fetchAll: true,
+          isActiveOnly: true,
+        }),
+      });
+
+      const json = (await res.json()) as ProjectVendorsSyncResponse;
+      if (!res.ok || !json.success) {
+        setProjectVendorsError(json.error || "Failed to sync project vendors");
+        if (res.status === 401) setProcoreConnected(false);
+        setProjectVendorsResponse(null);
+        return;
+      }
+
+      setProjectVendorsResponse(json);
+    } catch (err) {
+      setProjectVendorsError(err instanceof Error ? err.message : "Unknown error");
+      setProjectVendorsResponse(null);
+    } finally {
+      setProjectVendorsLoading(false);
+    }
+  }
+
+  async function fetchCustomFieldUserOptions() {
+    const projectId = userOptionsProjectId.trim();
+    const toolName = userOptionsToolName.trim();
+
+    if ((!projectId && !userOptionsAllProjects) || !toolName) {
+      setUserOptionsError("Enter Tool Name and either Project ID or enable All Projects.");
+      return;
+    }
+
+    setUserOptionsLoading(true);
+    setUserOptionsError(null);
+    try {
+      const res = await fetch("/api/procore/custom-fields/user-options", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          projectId: projectId || undefined,
+          toolName,
+          search: userOptionsSearch.trim() || undefined,
+          page: userOptionsPage,
+          perPage: userOptionsPerPage,
+          allProjects: userOptionsAllProjects,
+          limitProjects: userOptionsLimitProjects,
+        }),
+      });
+
+      const json = (await res.json()) as CustomFieldUserOptionsResponse;
+      if (!res.ok || !json.success) {
+        setUserOptionsError(json.error || "Failed to fetch custom field user options");
+        if (res.status === 401) setProcoreConnected(false);
+        setUserOptionsResponse(null);
+        return;
+      }
+
+      setUserOptionsResponse(json);
+    } catch (err) {
+      setUserOptionsError(err instanceof Error ? err.message : "Unknown error");
+      setUserOptionsResponse(null);
+    } finally {
+      setUserOptionsLoading(false);
+    }
+  }
+
+  async function fetchConfigurableFieldSets() {
+    const projectId = cfgProjectId.trim();
+    if (!projectId) {
+      setCfgError("Enter Project ID.");
+      return;
+    }
+
+    setCfgLoading(true);
+    setCfgError(null);
+    try {
+      const res = await fetch("/api/procore/configurable-field-sets", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          projectId,
+          page: cfgPage,
+          perPage: cfgPerPage,
+          includeLovEntries: cfgIncludeLovEntries,
+          includeDefaultConfigurableFieldSets: cfgIncludeDefaults,
+          types: cfgTypes
+            .split(",")
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0),
+          genericToolId: cfgGenericToolId.trim() || undefined,
+          actionPlanTypeId: cfgActionPlanTypeId.trim() || undefined,
+          inspectionTypeId: cfgInspectionTypeId.trim() || undefined,
+          observationsCategoryId: cfgObservationsCategoryId.trim() || undefined,
+          category: cfgCategory.trim() || undefined,
+        }),
+      });
+
+      const json = (await res.json()) as ConfigurableFieldSetsResponse;
+      if (!res.ok || !json.success) {
+        setCfgError(json.error || "Failed to fetch configurable field sets");
+        if (res.status === 401) setProcoreConnected(false);
+        setCfgResponse(null);
+        return;
+      }
+
+      setCfgResponse(json);
+    } catch (err) {
+      setCfgError(err instanceof Error ? err.message : "Unknown error");
+      setCfgResponse(null);
+    } finally {
+      setCfgLoading(false);
+    }
+  }
+
+  async function fetchConfigurableFieldSetById() {
+    const fieldSetId = cfgByIdFieldSetId.trim();
+    if (!fieldSetId) {
+      setCfgByIdError("Enter Configurable Field Set ID.");
+      return;
+    }
+
+    setCfgByIdLoading(true);
+    setCfgByIdError(null);
+    try {
+      const res = await fetch("/api/procore/configurable-field-sets/by-id", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          fieldSetId,
+        }),
+      });
+
+      const json = (await res.json()) as ConfigurableFieldSetByIdResponse;
+      if (!res.ok || !json.success) {
+        setCfgByIdError(json.error || "Failed to fetch configurable field set by id");
+        if (res.status === 401) setProcoreConnected(false);
+        setCfgByIdResponse(null);
+        return;
+      }
+
+      setCfgByIdResponse(json);
+    } catch (err) {
+      setCfgByIdError(err instanceof Error ? err.message : "Unknown error");
+      setCfgByIdResponse(null);
+    } finally {
+      setCfgByIdLoading(false);
+    }
+  }
+
+  async function fetchAvailableConfigurableFieldSets() {
+    setCfgListLoading(true);
+    setCfgListError(null);
+    try {
+      const res = await fetch("/api/procore/configurable-field-sets/list", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          page: cfgListPage,
+          perPage: cfgListPerPage,
+          searchValue: cfgListSearchValue.trim() || undefined,
+        }),
+      });
+
+      const json = (await res.json()) as ConfigurableFieldSetsListResponse;
+      if (!res.ok || !json.success) {
+        setCfgListError(json.error || "Failed to fetch available configurable field sets");
+        if (res.status === 401) setProcoreConnected(false);
+        setCfgListResponse(null);
+        return;
+      }
+
+      setCfgListResponse(json);
+    } catch (err) {
+      setCfgListError(err instanceof Error ? err.message : "Unknown error");
+      setCfgListResponse(null);
+    } finally {
+      setCfgListLoading(false);
+    }
+  }
+
+  async function fetchCompanyUsers() {
+    setCompanyUsersLoading(true);
+    setCompanyUsersError(null);
+    try {
+      const res = await fetch("/api/procore/company-users", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          page: companyUsersPage,
+          perPage: companyUsersPerPage,
+          search: companyUsersSearch.trim() || undefined,
+        }),
+      });
+
+      const json = (await res.json()) as CompanyUsersResponse;
+      if (!res.ok || !json.success) {
+        setCompanyUsersError(json.error || "Failed to fetch company users");
+        if (res.status === 401) setProcoreConnected(false);
+        setCompanyUsersResponse(null);
+        return;
+      }
+
+      setCompanyUsersResponse(json);
+    } catch (err) {
+      setCompanyUsersError(err instanceof Error ? err.message : "Unknown error");
+      setCompanyUsersResponse(null);
+    } finally {
+      setCompanyUsersLoading(false);
+    }
+  }
+
+  async function fetchProjectShowPayload() {
+    const projectId = projectShowId.trim();
+    if (!projectId) {
+      setProjectShowError("Enter Project ID.");
+      return;
+    }
+
+    setProjectShowLoading(true);
+    setProjectShowError(null);
+    try {
+      const res = await fetch("/api/procore/projects/show", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          projectId,
+          view: projectShowView,
+        }),
+      });
+
+      const json = (await res.json()) as ProjectShowResponse;
+      if (!res.ok || !json.success) {
+        setProjectShowError(json.error || "Failed to fetch project payload");
+        if (res.status === 401) setProcoreConnected(false);
+        setProjectShowResponse(null);
+        return;
+      }
+
+      setProjectShowResponse(json);
+    } catch (err) {
+      setProjectShowError(err instanceof Error ? err.message : "Unknown error");
+      setProjectShowResponse(null);
+    } finally {
+      setProjectShowLoading(false);
+    }
+  }
+
   async function fetchBudgetLineItemById() {
     const id = budgetLineItemId.trim();
     const projectId = budgetLineItemProjectId.trim();
@@ -573,6 +1020,25 @@ export default function ProcoreProductivityFeedPage() {
           </div>
           <Navigation currentPage="procore" />
         </div>
+
+        <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-[0.2em] text-amber-900">
+                Projects Feed Shortcut
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-amber-950">
+                Use the dedicated projects-feed tools page for live project sync, match verification, and feed backfill actions.
+              </p>
+            </div>
+            <Link
+              href="/procore/projects-feed-tools"
+              className="inline-flex items-center justify-center rounded-xl bg-amber-700 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-amber-800"
+            >
+              Open Projects Feed Tools
+            </Link>
+          </div>
+        </section>
 
         <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 mb-6">
           <div className="mb-4 rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-between gap-3">
@@ -906,6 +1372,790 @@ export default function ProcoreProductivityFeedPage() {
               </div>
             </div>
           )}
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Custom Field User Options (Project Tool)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Project ID
+                <input
+                  value={userOptionsProjectId}
+                  onChange={(e) => setUserOptionsProjectId(e.target.value)}
+                  placeholder={userOptionsAllProjects ? "Ignored in All Projects mode" : "Required"}
+                  disabled={userOptionsAllProjects}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Tool Name
+                <input
+                  value={userOptionsToolName}
+                  onChange={(e) => setUserOptionsToolName(e.target.value)}
+                  placeholder="rfis, submittals, commitments, ..."
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+                <div className="mt-1 text-[10px] font-semibold normal-case tracking-normal text-gray-500">
+                  Note: this endpoint does not accept "projects" as tool name. Use the specific Procore tool key.
+                </div>
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Search (optional)
+                <input
+                  value={userOptionsSearch}
+                  onChange={(e) => setUserOptionsSearch(e.target.value)}
+                  placeholder="Preferred"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={userOptionsPage}
+                  onChange={(e) => setUserOptionsPage(Math.min(1000, Math.max(1, Number(e.target.value || "1"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Per Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={userOptionsPerPage}
+                  onChange={(e) => setUserOptionsPerPage(Math.min(1000, Math.max(1, Number(e.target.value || "100"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Max Projects (All Projects mode)
+                <input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={userOptionsLimitProjects}
+                  onChange={(e) => setUserOptionsLimitProjects(Math.min(250, Math.max(1, Number(e.target.value || "250"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <label className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={userOptionsAllProjects}
+                  onChange={(e) => setUserOptionsAllProjects(e.target.checked)}
+                />
+                Pull All Projects
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={fetchCustomFieldUserOptions}
+                disabled={userOptionsLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-pink-700 text-white font-black text-xs uppercase tracking-widest hover:bg-pink-800 disabled:opacity-50"
+              >
+                {userOptionsLoading ? "Fetching..." : userOptionsAllProjects ? "Fetch User Options (All Projects)" : "Fetch User Options"}
+              </button>
+            </div>
+
+            {userOptionsError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {userOptionsError}
+              </div>
+            )}
+
+            {userOptionsResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{userOptionsResponse.companyId || "-"}</span></div>
+                  <div>Mode: <span className="font-bold">{userOptionsResponse.allProjects ? "All Projects" : "Single Project"}</span></div>
+                  <div>Project ID: <span className="font-bold">{userOptionsResponse.allProjects ? "ALL" : userOptionsResponse.projectId || "-"}</span></div>
+                  <div>Tool: <span className="font-bold">{userOptionsResponse.toolName || "-"}</span></div>
+                  <div>Search: <span className="font-bold">{userOptionsResponse.search || "-"}</span></div>
+                  <div>Page: <span className="font-bold">{userOptionsResponse.page ?? 1}</span></div>
+                  <div>Count: <span className="font-bold">{userOptionsResponse.count ?? 0}</span></div>
+                </div>
+
+                {userOptionsResponse.allProjects ? (
+                  <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-3">
+                    <div>Projects Scanned: <span className="font-bold">{userOptionsResponse.projectsScanned ?? 0}</span></div>
+                    <div>Projects Succeeded: <span className="font-bold">{userOptionsResponse.projectsSucceeded ?? 0}</span></div>
+                    <div>Projects Failed: <span className="font-bold">{userOptionsResponse.projectsFailed ?? 0}</span></div>
+                    <div>Total Options Fetched: <span className="font-bold">{userOptionsResponse.totalOptionsFetched ?? 0}</span></div>
+                    <div>Unique Options: <span className="font-bold">{userOptionsResponse.uniqueOptions ?? 0}</span></div>
+                    <div>Project Limit: <span className="font-bold">{userOptionsResponse.limitProjects ?? 0}</span></div>
+                  </div>
+                ) : null}
+
+                {userOptionsResponse.errors?.length ? (
+                  <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                    {userOptionsResponse.errors.length} project errors. First: {userOptionsResponse.errors[0].projectId} - {userOptionsResponse.errors[0].error}
+                  </div>
+                ) : null}
+
+                {userOptionsResponse.data?.length ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3">
+                    <table className="min-w-[840px] w-full border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          {['id', 'name', 'active', 'value'].map((label) => (
+                            <th key={label} className="px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-gray-600">
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userOptionsResponse.data.slice(0, 25).map((row, index) => (
+                          <tr key={`${String(row.id ?? index)}-${index}`} className="border-b border-gray-100">
+                            <td className="px-3 py-2 text-sm text-gray-800 font-semibold">{String(row.id ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.name ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{typeof row.active === "boolean" ? (row.active ? "Yes" : "No") : "-"}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.value ?? "-")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <pre className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 whitespace-pre-wrap break-all">
+                  {JSON.stringify(userOptionsResponse.raw ?? userOptionsResponse.data ?? {}, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Configurable Field Sets (Project)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Project ID
+                <input
+                  value={cfgProjectId}
+                  onChange={(e) => setCfgProjectId(e.target.value)}
+                  placeholder="Required"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600 md:col-span-2 xl:col-span-2">
+                Types (comma-separated)
+                <input
+                  value={cfgTypes}
+                  onChange={(e) => setCfgTypes(e.target.value)}
+                  placeholder="ConfigurableFieldSet::PurchaseOrderContract"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={cfgPage}
+                  onChange={(e) => setCfgPage(Math.min(1000, Math.max(1, Number(e.target.value || "1"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Per Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={cfgPerPage}
+                  onChange={(e) => setCfgPerPage(Math.min(1000, Math.max(1, Number(e.target.value || "100"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                generic_tool_id (optional)
+                <input
+                  value={cfgGenericToolId}
+                  onChange={(e) => setCfgGenericToolId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                action_plan_type_id (optional)
+                <input
+                  value={cfgActionPlanTypeId}
+                  onChange={(e) => setCfgActionPlanTypeId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                inspection_type_id (optional)
+                <input
+                  value={cfgInspectionTypeId}
+                  onChange={(e) => setCfgInspectionTypeId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                observations_category_id (optional)
+                <input
+                  value={cfgObservationsCategoryId}
+                  onChange={(e) => setCfgObservationsCategoryId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                category (optional)
+                <input
+                  value={cfgCategory}
+                  onChange={(e) => setCfgCategory(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <label className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={cfgIncludeLovEntries}
+                  onChange={(e) => setCfgIncludeLovEntries(e.target.checked)}
+                />
+                include_lov_entries
+              </label>
+              <label className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={cfgIncludeDefaults}
+                  onChange={(e) => setCfgIncludeDefaults(e.target.checked)}
+                />
+                include_default_configurable_field_sets
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={fetchConfigurableFieldSets}
+                disabled={cfgLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-indigo-700 text-white font-black text-xs uppercase tracking-widest hover:bg-indigo-800 disabled:opacity-50"
+              >
+                {cfgLoading ? "Fetching..." : "Fetch Configurable Field Sets"}
+              </button>
+            </div>
+
+            {cfgError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {cfgError}
+              </div>
+            )}
+
+            {cfgResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{cfgResponse.companyId || "-"}</span></div>
+                  <div>Project ID: <span className="font-bold">{cfgResponse.projectId || "-"}</span></div>
+                  <div>Count: <span className="font-bold">{cfgResponse.count ?? 0}</span></div>
+                  <div>Page: <span className="font-bold">{cfgResponse.page ?? 1}</span></div>
+                  <div>Per Page: <span className="font-bold">{cfgResponse.perPage ?? 100}</span></div>
+                  <div>Include LOV: <span className="font-bold">{cfgResponse.includeLovEntries ? "Yes" : "No"}</span></div>
+                </div>
+
+                {cfgResponse.data?.length ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3">
+                    <table className="min-w-[840px] w-full border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          {['id', 'name', 'category', 'type', 'source'].map((label) => (
+                            <th key={label} className="px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-gray-600">
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cfgResponse.data.slice(0, 25).map((row, index) => (
+                          <tr key={`${String(row.id ?? index)}-${index}`} className="border-b border-gray-100">
+                            <td className="px-3 py-2 text-sm text-gray-800 font-semibold">{String(row.id ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.name ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.category ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.type ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.source ?? "-")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <pre className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 whitespace-pre-wrap break-all">
+                  {JSON.stringify(cfgResponse.raw ?? cfgResponse.data ?? {}, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Available Configurable Field Sets (Company)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={cfgListPage}
+                  onChange={(e) => setCfgListPage(Math.min(1000, Math.max(1, Number(e.target.value || "1"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Per Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={cfgListPerPage}
+                  onChange={(e) => setCfgListPerPage(Math.min(1000, Math.max(1, Number(e.target.value || "100"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600 md:col-span-2">
+                Search Value In Payload (optional)
+                <input
+                  value={cfgListSearchValue}
+                  onChange={(e) => setCfgListSearchValue(e.target.value)}
+                  placeholder="Hoover Building Specialists, Inc"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={fetchAvailableConfigurableFieldSets}
+                disabled={cfgListLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-green-700 text-white font-black text-xs uppercase tracking-widest hover:bg-green-800 disabled:opacity-50"
+              >
+                {cfgListLoading ? "Fetching..." : "Fetch Available Configurable Field Sets"}
+              </button>
+            </div>
+
+            {cfgListError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {cfgListError}
+              </div>
+            )}
+
+            {cfgListResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{cfgListResponse.companyId || "-"}</span></div>
+                  <div>Count: <span className="font-bold">{cfgListResponse.count ?? 0}</span></div>
+                  <div>Page: <span className="font-bold">{cfgListResponse.page ?? 1}</span></div>
+                  <div>Per Page: <span className="font-bold">{cfgListResponse.perPage ?? 100}</span></div>
+                  <div>Search Value: <span className="font-bold">{cfgListResponse.searchValue || "-"}</span></div>
+                  <div>Matches: <span className="font-bold">{cfgListResponse.totalMatchCount ?? 0}</span></div>
+                </div>
+
+                {cfgListResponse.searchResults?.length ? (
+                  <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                    <div className="font-black uppercase tracking-wider mb-2">Search Matches</div>
+                    <div className="space-y-2 max-h-56 overflow-auto">
+                      {(cfgListResponse.searchResults ?? []).map((row, idx) => (
+                        <div key={`${String(row.id ?? idx)}-${idx}`} className="rounded-lg border border-blue-200 bg-white p-2">
+                          <div className="font-bold">{String(row.name ?? "-")} (id: {String(row.id ?? "-")})</div>
+                          <div className="text-[11px]">Match Count: {row.matchCount}</div>
+                          {row.matches.map((m, i) => (
+                            <div key={`${m.path}-${i}`} className="text-[11px] font-mono break-all">
+                              {m.path}: {m.value}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {cfgListResponse.data?.length ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3">
+                    <table className="min-w-[840px] w-full border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          {['id', 'name', 'category', 'type', 'fields'].map((label) => (
+                            <th key={label} className="px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-gray-600">
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(cfgListResponse.unpacked ?? cfgListResponse.data ?? []).map((row, index) => (
+                          <tr key={`${String(row.id ?? index)}-${index}`} className="border-b border-gray-100">
+                            <td className="px-3 py-2 text-sm text-gray-800 font-semibold">{String(row.id ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.name ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.category ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.type ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.configurableFieldCount ?? "-")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                  Unpacked Payloads
+                </div>
+
+                <pre className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 whitespace-pre-wrap break-all">
+                  {JSON.stringify(cfgListResponse.unpacked ?? cfgListResponse.raw ?? cfgListResponse.data ?? {}, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Configurable Field Set By ID (Company)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Configurable Field Set ID
+                <input
+                  value={cfgByIdFieldSetId}
+                  onChange={(e) => setCfgByIdFieldSetId(e.target.value)}
+                  placeholder="Required"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={fetchConfigurableFieldSetById}
+                disabled={cfgByIdLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-violet-700 text-white font-black text-xs uppercase tracking-widest hover:bg-violet-800 disabled:opacity-50"
+              >
+                {cfgByIdLoading ? "Fetching..." : "Fetch Configurable Field Set By ID"}
+              </button>
+            </div>
+
+            {cfgByIdError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {cfgByIdError}
+              </div>
+            )}
+
+            {cfgByIdResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{cfgByIdResponse.companyId || "-"}</span></div>
+                  <div>Field Set ID: <span className="font-bold">{cfgByIdResponse.fieldSetId || "-"}</span></div>
+                  <div>Name: <span className="font-bold">{String(cfgByIdResponse.unpacked?.name ?? cfgByIdResponse.data?.name ?? "-")}</span></div>
+                  <div>Type: <span className="font-bold">{String(cfgByIdResponse.unpacked?.type ?? cfgByIdResponse.data?.type ?? "-")}</span></div>
+                  <div>Fields: <span className="font-bold">{String(cfgByIdResponse.unpacked?.configurableFieldCount ?? "-")}</span></div>
+                  <div>Projects: <span className="font-bold">{String(cfgByIdResponse.unpacked?.projectsCount ?? "-")}</span></div>
+                  <div>Deletable: <span className="font-bold">{String(cfgByIdResponse.unpacked?.deletable ?? "-")}</span></div>
+                  <div>Updated At: <span className="font-bold">{String(cfgByIdResponse.unpacked?.updatedAt ?? "-")}</span></div>
+                  <div>Updated By Login: <span className="font-bold">{String((cfgByIdResponse.unpacked?.updatedBy as { login?: unknown } | undefined)?.login ?? "-")}</span></div>
+                  <div>Inspection Type ID: <span className="font-bold">{String(cfgByIdResponse.unpacked?.inspectionTypeId ?? "-")}</span></div>
+                  <div>Generic Tool ID: <span className="font-bold">{String(cfgByIdResponse.unpacked?.genericToolId ?? "-")}</span></div>
+                  <div>Action Plan Type ID: <span className="font-bold">{String(cfgByIdResponse.unpacked?.actionPlanTypeId ?? "-")}</span></div>
+                  <div>Observations Category ID: <span className="font-bold">{String(cfgByIdResponse.unpacked?.observationsCategoryId ?? "-")}</span></div>
+                </div>
+
+                <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                  Unpacked Payload
+                </div>
+
+                <pre className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 whitespace-pre-wrap break-all">
+                  {JSON.stringify(cfgByIdResponse.unpacked ?? cfgByIdResponse.raw ?? cfgByIdResponse.data ?? {}, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Company Users (Contractor Lookup)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Search (optional)
+                <input
+                  value={companyUsersSearch}
+                  onChange={(e) => setCompanyUsersSearch(e.target.value)}
+                  placeholder="carl.contractor@example.com"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={companyUsersPage}
+                  onChange={(e) => setCompanyUsersPage(Math.min(1000, Math.max(1, Number(e.target.value || "1"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Per Page
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={companyUsersPerPage}
+                  onChange={(e) => setCompanyUsersPerPage(Math.min(1000, Math.max(1, Number(e.target.value || "100"))))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={fetchCompanyUsers}
+                disabled={companyUsersLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-teal-700 text-white font-black text-xs uppercase tracking-widest hover:bg-teal-800 disabled:opacity-50"
+              >
+                {companyUsersLoading ? "Fetching..." : "Fetch Company Users"}
+              </button>
+            </div>
+
+            {companyUsersError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {companyUsersError}
+              </div>
+            )}
+
+            {companyUsersResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{companyUsersResponse.companyId || "-"}</span></div>
+                  <div>Count: <span className="font-bold">{companyUsersResponse.count ?? 0}</span></div>
+                  <div>Page: <span className="font-bold">{companyUsersResponse.page ?? 1}</span></div>
+                  <div>Per Page: <span className="font-bold">{companyUsersResponse.perPage ?? 100}</span></div>
+                  <div>Search: <span className="font-bold">{companyUsersResponse.search || "-"}</span></div>
+                </div>
+
+                {companyUsersResponse.data?.length ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 mb-3">
+                    <table className="min-w-[840px] w-full border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          {['id', 'login', 'name', 'company_name'].map((label) => (
+                            <th key={label} className="px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-gray-600">
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {companyUsersResponse.data.map((row, index) => (
+                          <tr key={`${String(row.id ?? index)}-${index}`} className="border-b border-gray-100">
+                            <td className="px-3 py-2 text-sm text-gray-800 font-semibold">{String(row.id ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.login ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.name ?? "-")}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{String(row.company_name ?? "-")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <pre className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 whitespace-pre-wrap break-all">
+                  {JSON.stringify(companyUsersResponse.data ?? companyUsersResponse.raw ?? {}, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Project Payload By ID (v1.0)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Project ID
+                <input
+                  value={projectShowId}
+                  onChange={(e) => setProjectShowId(e.target.value)}
+                  placeholder="Required"
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                View
+                <select
+                  value={projectShowView}
+                  onChange={(e) => setProjectShowView(e.target.value === "minimal" ? "minimal" : "full")}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                >
+                  <option value="full">full</option>
+                  <option value="minimal">minimal</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={fetchProjectShowPayload}
+                disabled={projectShowLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-cyan-700 text-white font-black text-xs uppercase tracking-widest hover:bg-cyan-800 disabled:opacity-50"
+              >
+                {projectShowLoading ? "Fetching..." : "Fetch Project Payload"}
+              </button>
+            </div>
+
+            {projectShowError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {projectShowError}
+              </div>
+            )}
+
+            {projectShowResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{projectShowResponse.companyId || "-"}</span></div>
+                  <div>Project ID: <span className="font-bold">{projectShowResponse.projectId || "-"}</span></div>
+                  <div>View: <span className="font-bold">{projectShowResponse.view || "-"}</span></div>
+                  <div>Name: <span className="font-bold">{String(projectShowResponse.data?.name ?? "-")}</span></div>
+                  <div>Display Name: <span className="font-bold">{String(projectShowResponse.data?.display_name ?? "-")}</span></div>
+                  <div>Project Number: <span className="font-bold">{String(projectShowResponse.data?.project_number ?? "-")}</span></div>
+                </div>
+
+                <pre className="max-h-72 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 whitespace-pre-wrap break-all">
+                  {JSON.stringify(projectShowResponse.data ?? projectShowResponse.raw ?? {}, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-700 mb-3">
+              Project Vendors (All Projects)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                Max Projects
+                <input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={projectVendorsLimitProjects}
+                  onChange={(e) =>
+                    setProjectVendorsLimitProjects(Math.min(10000, Math.max(1, Number(e.target.value || "1000"))))
+                  }
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={syncProjectVendors}
+                disabled={projectVendorsLoading || checkingAuth || !procoreConnected}
+                className="px-4 py-2 rounded-xl bg-orange-700 text-white font-black text-xs uppercase tracking-widest hover:bg-orange-800 disabled:opacity-50"
+              >
+                {projectVendorsLoading ? "Syncing..." : "Sync All Project Vendors"}
+              </button>
+            </div>
+
+            {projectVendorsError && (
+              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {projectVendorsError}
+              </div>
+            )}
+
+            {projectVendorsResponse && (
+              <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 mb-3">
+                  <div>Company: <span className="font-bold">{projectVendorsResponse.data?.companyId || '-'}</span></div>
+                  <div>Projects Scanned: <span className="font-bold">{projectVendorsResponse.data?.projectsScanned ?? 0}</span></div>
+                  <div>Projects Synced: <span className="font-bold">{projectVendorsResponse.data?.projectsSynced ?? 0}</span></div>
+                  <div>Fetched: <span className="font-bold">{projectVendorsResponse.data?.fetched ?? 0}</span></div>
+                  <div>Upserted: <span className="font-bold">{projectVendorsResponse.data?.upserted ?? 0}</span></div>
+                </div>
+
+                <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                  <div>Skipped (Access): <span className="font-bold">{projectVendorsResponse.data?.projectsSkippedAccess ?? 0}</span></div>
+                  <div>Project Limit: <span className="font-bold">{projectVendorsResponse.data?.projectsLimit ?? 0}</span></div>
+                  <div>Feed Customers Updated: <span className="font-bold">{projectVendorsResponse.data?.feedCustomersUpdated ?? 0}</span></div>
+                  <div>API Versions: <span className="font-bold">{projectVendorsResponse.data?.apiVersionsUsed?.join(', ') || '-'}</span></div>
+                </div>
+
+                {projectVendorsResponse.data?.warnings?.length ? (
+                  <div className="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 p-3 text-xs font-semibold text-yellow-900">
+                    {projectVendorsResponse.data.warnings.length} warnings. First: {projectVendorsResponse.data.warnings[0]}
+                  </div>
+                ) : null}
+
+                {projectVendorsResponse.data?.errors?.length ? (
+                  <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                    {projectVendorsResponse.data.errors.length} errors. First: {projectVendorsResponse.data.errors[0]}
+                  </div>
+                ) : null}
+
+                {projectVendorsResponse.data?.sampleVendors?.length ? (
+                  <div className="overflow-x-auto rounded-xl border border-gray-200">
+                    <table className="min-w-[840px] w-full border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          {['Project ID', 'Vendor ID', 'Vendor Name'].map((label) => (
+                            <th key={label} className="px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-gray-600">
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projectVendorsResponse.data.sampleVendors.map((vendor, index) => (
+                          <tr key={`${vendor.projectId}-${vendor.vendorId}-${index}`} className="border-b border-gray-100">
+                            <td className="px-3 py-2 text-sm text-gray-800">{vendor.projectId}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800 font-semibold">{vendor.vendorId}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800">{vendor.name || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
         </section>
 
         {error && (

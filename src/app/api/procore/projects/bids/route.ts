@@ -133,7 +133,7 @@ export async function GET(request: Request) {
       .trim()
       .replace(/\/$/, "");
     const companyId = String(
-      searchParams.get("companyId") || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ""
+      searchParams.get("companyId") || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ''
     ).trim();
 
     if (!accessToken) {
@@ -202,7 +202,7 @@ export async function POST(request: Request) {
       .trim()
       .replace(/\/$/, "");
     const companyId = String(
-      body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ""
+      body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ''
     ).trim();
 
     if (!accessToken) {

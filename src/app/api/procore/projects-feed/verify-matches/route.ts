@@ -4,6 +4,13 @@ import { ensureProcoreProjectFeedTable } from '@/lib/procoreProjectFeed';
 
 export const dynamic = 'force-dynamic';
 
+function normalizeId(value: unknown): string {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') return value;
+  return '';
+}
+
 export async function POST(request: Request) {
   try {
     await ensureProcoreProjectFeedTable();
@@ -30,7 +37,7 @@ export async function POST(request: Request) {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const candidates = await prisma.$queryRawUnsafe<Array<{
-      id: number;
+      id: unknown;
       external_id: string;
       procore_id: string | null;
       project_number: string | null;
@@ -50,11 +57,35 @@ export async function POST(request: Request) {
 
     let matched = 0;
     let unmatched = 0;
+    let unmatchedMissingProcoreId = 0;
+    let unmatchedNoProjectByProcoreId = 0;
     const errors: string[] = [];
+    const unmatchedSamples: Array<{
+      feedId: string;
+      projectName: string;
+      externalId: string;
+      procoreId: string | null;
+      reason: string;
+    }> = [];
 
     for (const row of candidates) {
       try {
-        const procoreIdToMatch = row.procore_id || row.external_id;
+        const procoreIdToMatch = (row.procore_id || row.external_id || '').trim();
+
+        if (!procoreIdToMatch) {
+          unmatched += 1;
+          unmatchedMissingProcoreId += 1;
+          if (unmatchedSamples.length < 50) {
+            unmatchedSamples.push({
+              feedId: normalizeId(row.id),
+              projectName: row.project_name,
+              externalId: row.external_id,
+              procoreId: row.procore_id,
+              reason: 'missing_procore_identity',
+            });
+          }
+          continue;
+        }
 
         const byProcore = await prisma.project.findFirst({
           where: {
@@ -66,33 +97,8 @@ export async function POST(request: Request) {
           select: { id: true },
         });
 
-        let matchedProjectId = byProcore?.id || null;
-        let confidence: 'high' | 'medium' | null = byProcore?.id ? 'high' : null;
-
-        if (!matchedProjectId) {
-          const whereByNameNumber: {
-            projectName: string;
-            projectNumber?: string;
-            customer?: string;
-          } = {
-            projectName: row.project_name,
-            ...(row.project_number ? { projectNumber: row.project_number } : {}),
-          };
-
-          if (row.customer) {
-            whereByNameNumber.customer = row.customer;
-          }
-
-          const byNameNumber = await prisma.project.findFirst({
-            where: whereByNameNumber,
-            select: { id: true },
-          });
-
-          if (byNameNumber?.id) {
-            matchedProjectId = byNameNumber.id;
-            confidence = 'medium';
-          }
-        }
+        const matchedProjectId = byProcore?.id || null;
+        const confidence: 'high' | 'medium' | null = byProcore?.id ? 'high' : null;
 
         if (matchedProjectId) {
           await prisma.$executeRawUnsafe(
@@ -111,6 +117,16 @@ export async function POST(request: Request) {
           matched += 1;
         } else {
           unmatched += 1;
+          unmatchedNoProjectByProcoreId += 1;
+          if (unmatchedSamples.length < 50) {
+            unmatchedSamples.push({
+              feedId: normalizeId(row.id),
+              projectName: row.project_name,
+              externalId: row.external_id,
+              procoreId: row.procore_id,
+              reason: 'no_project_with_matching_procore_id',
+            });
+          }
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -124,6 +140,9 @@ export async function POST(request: Request) {
         checked: candidates.length,
         matched,
         unmatched,
+        unmatchedMissingProcoreId,
+        unmatchedNoProjectByProcoreId,
+        unmatchedSamples,
         errors,
       },
     });
