@@ -537,12 +537,19 @@ function HomeContent() {
 
     if (!myName) return null;
 
-    return (
-      employees.find((emp) => {
-        const fullName = normalizePersonName(`${emp.firstName || ""} ${emp.lastName || ""}`);
-        return fullName === myName;
-      }) || null
-    );
+    // Full name match (e.g. Auth0 returns "Abner Miller")
+    const byFullName = employees.find((emp) => {
+      const fullName = normalizePersonName(`${emp.firstName || ""} ${emp.lastName || ""}`);
+      return fullName === myName;
+    });
+    if (byFullName) return byFullName;
+
+    // Single-word name fallback: dev-login sets name = email prefix (e.g. "abner")
+    if (!myName.includes(" ")) {
+      return employees.find((emp) => normalizePersonName(emp.firstName || "") === myName) || null;
+    }
+
+    return null;
   }, [employees, user?.email, user?.name]);
 
   const persona = useMemo<Persona>(() => {
