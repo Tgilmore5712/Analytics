@@ -492,21 +492,26 @@ export function ProjectScopesModal({
       return;
     }
 
+    const normalizedSchedulingMode = scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
+    const selectedDayEntry =
+      normalizedSchedulingMode === 'specific-days' && selectedScheduleDate
+        ? (Array.isArray(scope.selectedDays)
+            ? scope.selectedDays.find((entry: any) => String(entry?.date || '').trim() === selectedScheduleDate)
+            : null)
+        : null;
+
     setScopeDetail({
       title: scope.title || "",
-      startDate: selectedScheduleDate || scope.startDate || "",
-      endDate: selectedScheduleDate || scope.endDate || "",
-      manpower:
-        typeof selectedScheduledHours === 'number' && Number.isFinite(selectedScheduledHours)
-          ? selectedScheduledHours / 10
-          : scope.manpower,
+      startDate: scope.startDate || "",
+      endDate: scope.endDate || "",
+      manpower: scope.manpower,
       hours:
-        typeof selectedScheduledHours === 'number' && Number.isFinite(selectedScheduledHours)
-          ? selectedScheduledHours
+        normalizedSchedulingMode === 'specific-days' && dayEditMode && selectedDayEntry
+          ? Number(selectedDayEntry.hours || 0)
           : getEffectiveScopeHours(scope),
       description: scope.description || "",
       tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
-      schedulingMode: scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous',
+      schedulingMode: normalizedSchedulingMode,
       selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
     });
   }, [activeScopeId, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
@@ -635,13 +640,15 @@ export function ProjectScopesModal({
         throw new Error('Day edit context is missing. Close and reopen the card from the schedule grid.');
       }
 
-      if (selectedScheduleDate && (selectedScopeTitle || scopeDetail.title)) {
+      if (dayEditMode && selectedScheduleDate && effectiveSchedulingMode === 'specific-days' && (selectedScopeTitle || scopeDetail.title)) {
         const scopeName = (scopeDetail.title || selectedScopeTitle || '').trim();
         const selectedDayEntry = selectedDays.find((entry) => entry.date === selectedScheduleDate);
         const dayHoursRaw =
           scopeDetail.schedulingMode === 'specific-days'
             ? (selectedDayEntry ? selectedDayEntry.hours : 0)
-            : scopeDetail.hours;
+            : (typeof selectedScheduledHours === 'number' && Number.isFinite(selectedScheduledHours)
+                ? selectedScheduledHours
+                : scopeDetail.hours);
         const dayHours = typeof dayHoursRaw === 'number' ? dayHoursRaw : parseFloat(String(dayHoursRaw || '0'));
 
         const response = await fetch('/api/short-term-schedule/move', {
@@ -654,6 +661,7 @@ export function ProjectScopesModal({
             targetDateKey: selectedScheduleDate,
             targetForemanId: selectedForemanId === '__unassigned__' ? null : selectedForemanId,
             hours: Number.isFinite(dayHours) ? dayHours : 0,
+            allowScopeOverrun: true,
           }),
         });
 
@@ -662,8 +670,12 @@ export function ProjectScopesModal({
           throw new Error(result?.error || 'Failed to update daily assignment');
         }
 
-        // In day-edit mode we still need to persist scope metadata from the modal
-        // (description/tasks), but we must avoid rewriting scope total hours.
+        if (result?.warning) {
+          alert(`Warning: ${result.warning}`);
+        }
+
+        // In day-edit mode we still persist full scope metadata from the modal,
+        // including total budgeted hours/manpower for contiguous scopes.
         const metadataPayload: Record<string, any> = {
           jobKey: resolvedJobKey,
           title: scopeName || 'Scope',
@@ -673,6 +685,8 @@ export function ProjectScopesModal({
           tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
           schedulingMode: effectiveSchedulingMode,
           selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
+          manpower: scopeDetail.manpower,
+          hours: computeScopeHours(scopeDetail),
         };
         await upsertProjectScopeMetadata(metadataPayload);
 

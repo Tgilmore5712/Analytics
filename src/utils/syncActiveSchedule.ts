@@ -391,7 +391,7 @@ export async function syncProjectScopeToActiveSchedule(
       return result;
     }
 
-    // Calculate hours per day
+    // Calculate hours per day (fallback to manpower-based estimate when available)
     const totalHours = scope.hours || 0;
     const manpower = scope.manpower || 0;
     const hoursPerDay = manpower > 0 ? manpower * 10 : totalHours / workingDays;

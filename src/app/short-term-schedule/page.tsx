@@ -8,6 +8,7 @@ import { Scope, Project, ProjectInfo, Holiday } from "@/types";
 import { ProjectScopesModal } from "@/app/project-schedule/components/ProjectScopesModal";
 import { getEnrichedScopes, getProjectKey } from "@/utils/projectUtils";
 import { getActiveScheduleDocId, recalculateScopeTracking } from "@/utils/activeScheduleUtils";
+import { fetchJsonWithRetry } from "@/utils/fetchJsonWithRetry";
 
 interface DayData {
   dayNumber: number; // 1-7 for Mon-Sun
@@ -139,6 +140,7 @@ function ShortTermScheduleContent() {
   const [crewAssignments, setCrewAssignments] = useState<Record<string, Record<string, string[]>>>({}); // dateKey -> foremanId -> employee IDs
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [removeSuccessMessage, setRemoveSuccessMessage] = useState<string | null>(null);
   const [selectedGanttProject, setSelectedGanttProject] = useState<ProjectInfo | null>(null);
   const [selectedGanttScopeTitle, setSelectedGanttScopeTitle] = useState<string | null>(null);
   const [selectedGanttDateKey, setSelectedGanttDateKey] = useState<string | null>(null);
@@ -197,6 +199,12 @@ function ShortTermScheduleContent() {
     loadSchedules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!removeSuccessMessage) return;
+    const timer = setTimeout(() => setRemoveSuccessMessage(null), 2400);
+    return () => clearTimeout(timer);
+  }, [removeSuccessMessage]);
 
   // Cleanup auto-scroll interval on unmount
   useEffect(() => {
@@ -515,6 +523,20 @@ function ShortTermScheduleContent() {
     
     setSaving(true);
     try {
+      const getApiErrorMessage = async (response: Response, fallback: string) => {
+        const clone = response.clone();
+        const payload = await clone.json().catch(() => null) as
+          | { error?: string; conflict?: { code?: string; details?: unknown } }
+          | null;
+
+        if (payload?.error) {
+          const conflictCode = payload.conflict?.code ? ` (${payload.conflict.code})` : "";
+          return `${payload.error}${conflictCode}`;
+        }
+
+        return `${fallback}: ${response.status} ${response.statusText}`;
+      };
+
       const scopeExists = (scopesByJobKey[jobKey] || []).some(
         (scope) => (scope.title || '').trim().toLowerCase() === customTitle.toLowerCase()
       );
@@ -535,7 +557,8 @@ function ShortTermScheduleContent() {
         });
 
         if (!persistScopeResponse.ok) {
-          throw new Error(`Failed to persist custom scope: ${persistScopeResponse.statusText}`);
+          const message = await getApiErrorMessage(persistScopeResponse, 'Failed to persist custom scope');
+          throw new Error(message);
         }
       }
 
@@ -550,11 +573,18 @@ function ShortTermScheduleContent() {
           targetDateKey: dateKey,
           targetForemanId: foremanId === "__unassigned__" ? null : foremanId,
           hours: 10, // Default 10 hours for custom scopes
+          allowScopeOverrun: true,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to create custom scope: ${response.statusText}`);
+        const message = await getApiErrorMessage(response, 'Failed to create custom scope');
+        throw new Error(message);
+      }
+
+      const moveResult = await response.json().catch(() => null) as { warning?: string } | null;
+      if (moveResult?.warning) {
+        alert(`Warning: ${moveResult.warning}`);
       }
 
       await loadSchedules();
@@ -585,6 +615,20 @@ function ShortTermScheduleContent() {
 
     setSaving(true);
     try {
+      const getApiErrorMessage = async (response: Response, fallback: string) => {
+        const clone = response.clone();
+        const payload = await clone.json().catch(() => null) as
+          | { error?: string; conflict?: { code?: string; details?: unknown } }
+          | null;
+
+        if (payload?.error) {
+          const conflictCode = payload.conflict?.code ? ` (${payload.conflict.code})` : "";
+          return `${payload.error}${conflictCode}`;
+        }
+
+        return `${fallback}: ${response.status} ${response.statusText}`;
+      };
+
       const scopeExists = (scopesByJobKey[jobKey] || []).some(
         (scope) => (scope.title || '').trim().toLowerCase() === normalizedCustomName.toLowerCase()
       );
@@ -605,7 +649,8 @@ function ShortTermScheduleContent() {
         });
 
         if (!persistScopeResponse.ok) {
-          throw new Error(`Failed to persist custom scope: ${persistScopeResponse.statusText}`);
+          const message = await getApiErrorMessage(persistScopeResponse, 'Failed to persist custom scope');
+          throw new Error(message);
         }
       }
 
@@ -620,11 +665,18 @@ function ShortTermScheduleContent() {
           targetDateKey: dateKey,
           targetForemanId: foremanId === "__unassigned__" ? null : foremanId,
           hours: 10,
+          allowScopeOverrun: true,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to create custom scope: ${response.statusText}`);
+        const message = await getApiErrorMessage(response, 'Failed to create custom scope');
+        throw new Error(message);
+      }
+
+      const moveResult = await response.json().catch(() => null) as { warning?: string } | null;
+      if (moveResult?.warning) {
+        alert(`Warning: ${moveResult.warning}`);
       }
 
       await loadSchedules();
@@ -686,6 +738,7 @@ function ShortTermScheduleContent() {
         targetDateKey,
         targetForemanId: newForemanId,
         hours: newHours,
+        allowScopeOverrun: true,
       }),
     });
 
@@ -696,10 +749,13 @@ function ShortTermScheduleContent() {
     }
     
     const result = await response.json();
+    if (result?.warning) {
+      console.warn('[SHORT-TERM] Move warning:', result.warning);
+    }
     console.log('[SHORT-TERM] Move successful:', result);
   }
 
-  async function deleteCustomScopeAssignment(project: DayProject, dateKey: string) {
+  async function removeScopeFromDay(project: DayProject, dateKey: string) {
     const scopeOfWork = (project.scopeOfWork || '').trim();
     if (!scopeOfWork) return;
 
@@ -715,7 +771,12 @@ function ShortTermScheduleContent() {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to delete custom scope: ${errorText}`);
+      throw new Error(`Failed to remove scope from day: ${errorText}`);
+    }
+
+    const result = await response.json().catch(() => ({}));
+    if (!result?.success) {
+      throw new Error(result?.error || 'Failed to remove scope from day');
     }
   }
 
@@ -793,15 +854,28 @@ function ShortTermScheduleContent() {
       const earlyEndStr = formatDateKey(new Date(fiveWeeksEnd.getTime() - 1));
 
       // Fetch all data in parallel (was: 2-step serial waterfall)
-      const [res, holidayRes, schedRes] = await Promise.all([
-        fetch('/api/short-term-schedule', { cache: 'no-store' }),
-        fetch('/api/holidays?page=1&pageSize=500', { cache: 'no-store' }),
-        fetch(`/api/short-term-schedule?action=active-schedule&startDate=${earlyStartStr}&endDate=${earlyEndStr}`, { cache: 'no-store' }),
+      const [schedulePayload, holidayJson, schedData] = await Promise.all([
+        fetchJsonWithRetry<{ data?: { employees?: any[]; timeOffs?: any[]; scopes?: any[]; projects?: any[] } }>(
+          '/api/short-term-schedule',
+          {
+            fallback: { data: { employees: [], timeOffs: [], scopes: [], projects: [] } },
+            label: 'short-term bootstrap',
+          }
+        ),
+        fetchJsonWithRetry<{ data?: Holiday[] }>('/api/holidays?page=1&pageSize=500', {
+          fallback: { data: [] },
+          label: 'short-term holidays',
+        }),
+        fetchJsonWithRetry<{ data?: any[] }>(
+          `/api/short-term-schedule?action=active-schedule&startDate=${earlyStartStr}&endDate=${earlyEndStr}`,
+          {
+            fallback: { data: [] },
+            label: 'short-term active schedule',
+          }
+        ),
       ]);
-      if (!res.ok) throw new Error('Failed to fetch data');
-      const { data } = await res.json();
+      const data = schedulePayload?.data || { employees: [], timeOffs: [], scopes: [], projects: [] };
 
-      const holidayJson = holidayRes.ok ? await holidayRes.json() : { data: [] };
       const paidHolidayMap: Record<string, Holiday> = {};
       (holidayJson.data || []).forEach((h: Holiday) => {
         if (h?.date && h?.isPaid) {
@@ -904,7 +978,6 @@ function ShortTermScheduleContent() {
       const startDateStr = formatDateKey(currentWeekStart);
       const endDateStr = formatDateKey(new Date(fiveWeeksFromStart.getTime() - 1));
 
-      const schedData = schedRes.ok ? await schedRes.json() : { data: [] };
       const activeSchedules = schedData.data || [];
       const ganttInitiatedSchedules = activeSchedules.filter((entry: any) => {
         const source = (entry.source || '').toLowerCase();
@@ -1198,30 +1271,6 @@ function ShortTermScheduleContent() {
           </div>
           <div className="flex items-center gap-3 self-end md:self-center">
             <button
-              onClick={async () => {
-                if (!confirm('Delete all "Scope" and "Scheduled Work" scopes? This cannot be undone.')) return;
-                setSaving(true);
-                try {
-                  const response = await fetch('/api/admin/cleanup-generic-scopes', { method: 'POST' });
-                  const data = await response.json();
-                  if (response.ok) {
-                    alert(`OK Cleanup complete!\n\n${data.message}`);
-                    await loadSchedules();
-                  } else {
-                    alert(`❌ Error: ${data.error}`);
-                  }
-                } catch (error) {
-                  alert(`❌ Failed: ${error}`);
-                } finally {
-                  setSaving(false);
-                }
-              }}
-              className="px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all shadow-sm bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-900 shadow-red-100/50"
-              title="Delete generic scopes"
-            >
-              Cleanup
-            </button>
-            <button
               onClick={() => setIsAddingProject(!isAddingProject)}
               className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${
                 isAddingProject 
@@ -1233,6 +1282,12 @@ function ShortTermScheduleContent() {
             </button>
           </div>
         </div>
+
+        {removeSuccessMessage && (
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+            {removeSuccessMessage}
+          </div>
+        )}
 
         {isAddingProject && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setIsAddingProject(false); setTargetingCell(null); }}>
@@ -1612,25 +1667,19 @@ function ShortTermScheduleContent() {
                                             <button
                                               onClick={async (e) => {
                                                 e.stopPropagation();
-                                                const isUnassignedRow = foreman.id === "__unassigned__";
-                                                const isCustomScope = (project.source || '').toLowerCase() === 'wip-page';
-
-                                                if (isUnassignedRow && isCustomScope) {
-                                                  if (confirm(`Delete custom scope \"${project.scopeOfWork || 'Scheduled Work'}\" from ${project.projectName}?`)) {
-                                                    setSaving(true);
-                                                    try { await deleteCustomScopeAssignment(project, dateKey); await loadSchedules(); }
-                                                    finally { setSaving(false); }
-                                                  }
-                                                  return;
-                                                }
-
-                                                if (confirm(`Move ${project.projectName} to unassigned?`)) {
+                                                if (confirm(`Remove \"${project.scopeOfWork || 'Scheduled Work'}\" from ${project.projectName} on ${dateKey}?`)) {
                                                   setSaving(true);
-                                                  try { await updateProjectAssignment(project, dateKey, dateKey, foreman.id, "", project.hours); await loadSchedules(); }
+                                                  try {
+                                                    await removeScopeFromDay(project, dateKey);
+                                                    await loadSchedules();
+                                                    setRemoveSuccessMessage(`Removed from ${dateKey}`);
+                                                  }
                                                   finally { setSaving(false); }
                                                 }
                                               }}
                                               className="absolute -top-2 -right-2 opacity-0 group-hover/proj:opacity-100 p-1.5 bg-red-900 text-white rounded-full shadow-lg hover:scale-110 transition-all z-20"
+                                              title="Remove from Day"
+                                              aria-label="Remove from Day"
                                             >
                                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
                                                 <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>

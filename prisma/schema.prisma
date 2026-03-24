@@ -13,10 +13,14 @@ datasource db {
 // ==================== PROJECTS ====================
 model Project {
   id              String    @id @default(cuid())
+  procoreId       String?
+  bidBoardId      String?
   projectNumber   String?
   projectName     String
   customer        String?
+  customerSource  String?
   status          String? // "Bid Submitted", "Estimating", "In Progress", etc.
+  statusSource    String?
   sales           Float?
   cost            Float?
   hours           Float?
@@ -52,6 +56,8 @@ model Project {
   @@index([projectName])
   @@index([customer])
   @@index([status])
+  @@index([procoreId])
+  @@index([bidBoardId])
   @@index([projectArchived])
   @@index([projectArchived, status])
 }

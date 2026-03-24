@@ -178,6 +178,7 @@ export async function POST(request: Request) {
         const existing = await prisma.project.findFirst({
           where: {
             OR: [
+              { procoreId: procoreId },
               { customFields: { path: ['procoreId'], equals: procoreId } },
               { projectNumber: number, projectName: name }
             ]
@@ -204,12 +205,17 @@ export async function POST(request: Request) {
             data: {
               // procoreProjectId: procoreId,
               // procoreLastSync: new Date(),
+              procoreId,
               // Only fill if current values are empty or a default "Unknown" placeholder
               projectNumber: existing.projectNumber || number,
               customer: isMeaningfulCustomer(customer)
                 ? customer
                 : (existing.customer || customer || null),
               status: existing.status || status,
+              customerSource: isMeaningfulCustomer(customer)
+                ? 'procore_v1'
+                : (existing.customerSource || null),
+              statusSource: existing.status ? (existing.statusSource || null) : 'procore_v1',
               customFields: {
                 ...(typeof existing.customFields === 'object' ? (existing.customFields as any) : {}),
                 procoreId: procoreId, // Storing in JSON instead of new column for now
@@ -225,9 +231,12 @@ export async function POST(request: Request) {
           await prisma.project.create({
             data: {
               projectName: name,
+              procoreId,
               projectNumber: number,
               customer: isMeaningfulCustomer(customer) ? customer : null,
+              customerSource: isMeaningfulCustomer(customer) ? 'procore_v1' : null,
               status: status,
+              statusSource: 'procore_v1',
               // procoreProjectId: procoreId,
               customFields: { 
                 procoreId: procoreId,
@@ -286,7 +295,9 @@ export async function POST(request: Request) {
         const existing = await prisma.project.findFirst({
           where: {
             OR: [
+              { bidBoardId: bidId },
               { customFields: { path: ['bidBoardId'], equals: bidId } },
+              ...(procoreProjectId ? [{ procoreId: procoreProjectId }] : []),
               ...(procoreProjectId ? [{ customFields: { path: ['procoreId'], equals: procoreProjectId } }] : [])
             ]
           }
@@ -296,7 +307,13 @@ export async function POST(request: Request) {
           await prisma.project.update({
             where: { id: existing.id },
             data: {
+              bidBoardId: bidId,
+              procoreId: procoreProjectId || existing.procoreId,
               customer: isMeaningfulCustomer(customer) ? customer : (existing.customer || null),
+              customerSource: isMeaningfulCustomer(customer)
+                ? 'procore_bid_board'
+                : (existing.customerSource || null),
+              statusSource: existing.statusSource || 'procore_bid_board',
               customFields: {
                 ...(typeof existing.customFields === 'object' ? (existing.customFields as any) : {}),
                 bidBoardId: bidId,
@@ -312,8 +329,12 @@ export async function POST(request: Request) {
           await prisma.project.create({
             data: {
               projectName: name,
+              bidBoardId: bidId,
+              procoreId: procoreProjectId,
               customer: isMeaningfulCustomer(customer) ? customer : null,
+              customerSource: isMeaningfulCustomer(customer) ? 'procore_bid_board' : null,
               status: bb.status || "Bidding",
+              statusSource: 'procore_bid_board',
               customFields: {
                 bidBoardId: bidId,
                 procoreId: procoreProjectId,

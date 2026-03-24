@@ -87,6 +87,13 @@ type CrewTemplate = {
   crewMemberIds?: string[];
 };
 
+type ProjectSummary = {
+  customer?: string | null;
+  projectNumber?: string | null;
+  projectName?: string | null;
+  projectManager?: string | null;
+};
+
 type StoredScheduleDay = {
   dayNumber: number;
   hours: number;
@@ -223,10 +230,23 @@ function normalizeEmail(value?: string | null): string {
   return (value || "").trim().toLowerCase();
 }
 
+function normalizePersonName(value?: string | null): string {
+  return (value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function isForemanLikeTitle(title?: string | null): boolean {
   if (!title) return false;
   const normalized = title.toLowerCase().replace(/\s+/g, " ").trim();
-  return normalized === "foreman" || normalized === "lead foreman";
+  return (
+    normalized === "foreman" ||
+    normalized === "forman" ||
+    normalized === "lead foreman" ||
+    normalized === "lead forman" ||
+    normalized.includes("foreman")
+  );
 }
 
 function isGeneralManagerTitle(title?: string | null): boolean {
@@ -238,7 +258,12 @@ function isGeneralManagerTitle(title?: string | null): boolean {
 function isPmLikeTitle(title?: string | null): boolean {
   if (!title) return false;
   const normalized = title.toLowerCase().replace(/\s+/g, " ").trim();
-  return normalized === "pm" || normalized === "project manager" || normalized.includes("project manager");
+  return (
+    normalized === "pm" ||
+    normalized === "project manager" ||
+    normalized === "superintendent" ||
+    normalized.includes("project manager")
+  );
 }
 
 function formatDayLabel(dateKey: string): string {
@@ -318,6 +343,7 @@ function HomeContent() {
   const [concreteOrders, setConcreteOrders] = useState<ConcreteOrder[]>([]);
   const [pmAssignments, setPmAssignments] = useState<PMAssignment[]>([]);
   const [crewTemplates, setCrewTemplates] = useState<CrewTemplate[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCallOffModal, setShowCallOffModal] = useState(false);
   const [showTimeOffModal, setShowTimeOffModal] = useState(false);
@@ -419,7 +445,7 @@ function HomeContent() {
       try {
         setAnnouncements([]);
 
-        const [employeesRes, scheduleRes, timeOffRes, concreteRes, pmRes, crewTemplatesRes] = await Promise.all([
+        const [employeesRes, scheduleRes, timeOffRes, concreteRes, pmRes, crewTemplatesRes, projectsRes] = await Promise.all([
           fetch("/api/employees?isActive=true&page=1&pageSize=500", { cache: "no-store" }),
           fetch(`/api/short-term-schedule?action=active-schedule&startDate=${startDate}&endDate=${endDate}`, {
             cache: "no-store",
@@ -428,15 +454,17 @@ function HomeContent() {
           fetch(`/api/concrete-orders?startDate=${startDate}&endDate=${endDate}`, { cache: "no-store" }),
           fetch("/api/long-term-schedule/pm-assignments", { cache: "no-store" }),
           fetch("/api/crew-templates", { cache: "no-store" }),
+          fetch("/api/projects?page=1&pageSize=500", { cache: "no-store" }),
         ]);
 
-        const [employeesJson, scheduleJson, timeOffJson, concreteJson, pmJson, crewTemplatesJson] = await Promise.all([
+        const [employeesJson, scheduleJson, timeOffJson, concreteJson, pmJson, crewTemplatesJson, projectsJson] = await Promise.all([
           employeesRes.json().catch(() => ({ success: false, data: [] })),
           scheduleRes.json().catch(() => ({ success: false, data: [] })),
           timeOffRes.json().catch(() => ({ success: false, data: [] })),
           concreteRes.json().catch(() => ({ success: false, data: [] })),
           pmRes.json().catch(() => ({ success: false, data: [] })),
           crewTemplatesRes.json().catch(() => ({ success: false, data: [] })),
+          projectsRes.json().catch(() => ({ success: false, data: [] })),
         ]);
 
         setEmployees(Array.isArray(employeesJson?.data) ? employeesJson.data : []);
@@ -445,6 +473,7 @@ function HomeContent() {
         setConcreteOrders(Array.isArray(concreteJson?.data) ? concreteJson.data : []);
         setPmAssignments(Array.isArray(pmJson?.data) ? pmJson.data : []);
         setCrewTemplates(Array.isArray(crewTemplatesJson?.data) ? crewTemplatesJson.data : []);
+        setProjects(Array.isArray(projectsJson?.data) ? projectsJson.data : []);
       } catch (error) {
         console.error("Error fetching home page data:", error);
         setEmployees([]);
@@ -453,6 +482,7 @@ function HomeContent() {
         setConcreteOrders([]);
         setPmAssignments([]);
         setCrewTemplates([]);
+        setProjects([]);
       } finally {
         setLoading(false);
       }
@@ -495,15 +525,25 @@ function HomeContent() {
 
   const me = useMemo(() => {
     const myEmail = normalizeEmail(user?.email);
-    if (!myEmail) return null;
+    const myName = normalizePersonName(user?.name);
+
+    if (myEmail) {
+      const byEmail = employees.find((emp) => {
+        const options = [normalizeEmail(emp.email), normalizeEmail(emp.workEmail), normalizeEmail(emp.personalEmail)];
+        return options.includes(myEmail);
+      });
+      if (byEmail) return byEmail;
+    }
+
+    if (!myName) return null;
 
     return (
       employees.find((emp) => {
-        const options = [normalizeEmail(emp.email), normalizeEmail(emp.workEmail), normalizeEmail(emp.personalEmail)];
-        return options.includes(myEmail);
+        const fullName = normalizePersonName(`${emp.firstName || ""} ${emp.lastName || ""}`);
+        return fullName === myName;
       }) || null
     );
-  }, [employees, user?.email]);
+  }, [employees, user?.email, user?.name]);
 
   const persona = useMemo<Persona>(() => {
     const userEmail = normalizeEmail(user?.email);
@@ -538,13 +578,50 @@ function HomeContent() {
     return deduped;
   }, [dateKeys, timeOff]);
 
+  const projectManagerNameByJobKey = useMemo(() => {
+    const map = new Map<string, string>();
+
+    for (const project of projects) {
+      const customer = (project.customer || "").trim();
+      const projectNumber = (project.projectNumber || "").trim();
+      const projectName = (project.projectName || "").trim();
+      const managerName = (project.projectManager || "").trim();
+      if (!customer && !projectNumber && !projectName) continue;
+      if (!managerName) continue;
+
+      const jobKey = `${customer}~${projectNumber}~${projectName}`;
+      map.set(jobKey, managerName);
+    }
+
+    return map;
+  }, [projects]);
+
+  const employeeIdByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const emp of employees) {
+      const fullName = normalizePersonName(`${emp.firstName || ""} ${emp.lastName || ""}`);
+      if (fullName) map.set(fullName, emp.id);
+    }
+    return map;
+  }, [employees]);
+
   const pmByJobKey = useMemo(() => {
     const map = new Map<string, string>();
+
     for (const row of pmAssignments) {
       if (row.jobKey && row.pmId) map.set(row.jobKey, row.pmId);
     }
+
+    for (const [jobKey, managerName] of projectManagerNameByJobKey.entries()) {
+      if (map.has(jobKey)) continue;
+      const managerId = employeeIdByName.get(normalizePersonName(managerName));
+      if (managerId) {
+        map.set(jobKey, managerId);
+      }
+    }
+
     return map;
-  }, [pmAssignments]);
+  }, [employeeIdByName, pmAssignments, projectManagerNameByJobKey]);
 
   const myScheduleRows = useMemo(() => {
     if (!me?.id) return [] as ActiveScheduleEntry[];

@@ -90,6 +90,8 @@ export async function POST(request: Request) {
         const byProcore = await prisma.project.findFirst({
           where: {
             OR: [
+              { procoreId: procoreIdToMatch },
+              { bidBoardId: row.external_id },
               { customFields: { path: ['procoreId'], equals: procoreIdToMatch } },
               { customFields: { path: ['bidBoardId'], equals: row.external_id } },
             ],

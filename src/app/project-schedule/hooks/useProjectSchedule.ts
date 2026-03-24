@@ -11,6 +11,7 @@ import {
   formatDateInput 
 } from "@/utils/dateUtils";
 import { ActiveScheduleEntry } from "@/utils/activeScheduleUtils";
+import { fetchJsonWithRetry } from "@/utils/fetchJsonWithRetry";
 
 export function useProjectSchedule() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
@@ -34,17 +35,24 @@ export function useProjectSchedule() {
       console.log("[useProjectSchedule] Starting data fetch...");
       
       // Parallelize all API fetches
-      const [projectsRes, scopesRes, activeScheduleRes, scheduleAllocationsRes] = await Promise.all([
-        fetch('/api/projects'),
-        fetch('/api/project-scopes'),
-        fetch('/api/short-term-schedule?action=activeSchedules'),
-        fetch('/api/schedule-allocations')
+      const [projectsData, scopesData, activeScheduleData, scheduleAllocationsData] = await Promise.all([
+        fetchJsonWithRetry<{ success?: boolean; data?: any[] }>('/api/projects', {
+          fallback: { success: false, data: [] },
+          label: 'project-schedule projects',
+        }),
+        fetchJsonWithRetry<{ success?: boolean; data?: any[] }>('/api/project-scopes', {
+          fallback: { success: false, data: [] },
+          label: 'project-schedule scopes',
+        }),
+        fetchJsonWithRetry<{ success?: boolean; data?: any[] }>('/api/short-term-schedule?action=activeSchedules', {
+          fallback: { success: false, data: [] },
+          label: 'project-schedule active schedule',
+        }),
+        fetchJsonWithRetry<{ success?: boolean; data?: any[] }>('/api/schedule-allocations', {
+          fallback: { success: false, data: [] },
+          label: 'project-schedule allocations',
+        })
       ]);
-
-      const projectsData = await projectsRes.json();
-      const scopesData = await scopesRes.json();
-      const activeScheduleData = await activeScheduleRes.json();
-      const scheduleAllocationsData = await scheduleAllocationsRes.json();
 
       console.log(`[useProjectSchedule] Fetched all data in ${Date.now() - start}ms`);
       

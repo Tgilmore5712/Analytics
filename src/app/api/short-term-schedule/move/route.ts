@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       targetDateKey,      // YYYY-MM-DD format
       targetForemanId,
       hours,
+      allowScopeOverrun,
     } = body;
 
     console.log('[SHORT-TERM-MOVE] Request:', { jobKey, scopeOfWork, sourceDateKey, targetDateKey, targetForemanId, hours });
@@ -26,6 +27,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let warning: string | null = null;
+    if (allowScopeOverrun === true) {
+      const normalizedScope = String(scopeOfWork || '').trim();
+      const numericHours = typeof hours === 'number' && Number.isFinite(hours) ? hours : 8;
+
+      const scope = await prisma.projectScope.findFirst({
+        where: {
+          jobKey,
+          title: normalizedScope,
+        },
+        select: {
+          hours: true,
+        },
+      });
+
+      const scopeHourCap = scope?.hours ?? null;
+      if (scopeHourCap !== null && scopeHourCap >= 0) {
+        const existingTargetEntry = await prisma.activeSchedule.findUnique({
+          where: {
+            jobKey_scopeOfWork_date: {
+              jobKey,
+              scopeOfWork: normalizedScope,
+              date: targetDateKey,
+            },
+          },
+          select: {
+            hours: true,
+          },
+        });
+
+        const currentScopeAggregate = await prisma.activeSchedule.aggregate({
+          where: {
+            jobKey,
+            scopeOfWork: normalizedScope,
+          },
+          _sum: {
+            hours: true,
+          },
+        });
+
+        const existingTotal = currentScopeAggregate._sum.hours ?? 0;
+        const existingTargetHours = existingTargetEntry?.hours ?? 0;
+        const projectedTotal = existingTotal - existingTargetHours + numericHours;
+
+        if (projectedTotal > scopeHourCap + 1e-9) {
+          warning = `Scope hours exceeded for '${normalizedScope}'. Scheduled anyway because override is enabled.`;
+        }
+      }
+    }
+
     const reconcileResult = await reconcileDailyAssignment({
       jobKey,
       scopeOfWork,
@@ -34,7 +85,7 @@ export async function POST(request: NextRequest) {
       targetForemanId,
       hours,
       fallbackSource: 'wip-page',
-      enforceScopeHourCap: true,
+      enforceScopeHourCap: allowScopeOverrun === true ? false : true,
     });
 
     console.log('[SHORT-TERM-MOVE] Reconcile result:', reconcileResult);
@@ -63,6 +114,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'Project moved successfully',
       data: reconcileResult,
+      warning,
     });
   } catch (error) {
     if (error instanceof SchedulingConflictError) {
@@ -99,14 +151,48 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    const normalizedScopeOfWork = String(scopeOfWork).trim();
+
+    const existingEntry = await prisma.activeSchedule.findUnique({
+      where: {
+        jobKey_scopeOfWork_date: {
+          jobKey,
+          scopeOfWork: normalizedScopeOfWork,
+          date,
+        },
+      },
+      select: {
+        source: true,
+      },
+    });
+
     const result = await prisma.activeSchedule.deleteMany({
       where: {
         jobKey,
-        scopeOfWork: String(scopeOfWork).trim(),
+        scopeOfWork: normalizedScopeOfWork,
         date,
-        source: 'wip-page',
       },
     });
+
+    // Keep gantt scope totals in sync when deleting a gantt-backed daily assignment.
+    if ((existingEntry?.source || '').toLowerCase() === 'gantt' && result.count > 0) {
+      const matchingScope = await prisma.$queryRawUnsafe<Array<{ scope_id: string; title: string }>>(
+        `
+          SELECT s.id AS scope_id, s.title
+          FROM gantt_v2_projects p
+          JOIN gantt_v2_scopes s ON s.project_id = p.id
+          WHERE CONCAT(COALESCE(p.customer, ''), '~', COALESCE(p.project_number, ''), '~', COALESCE(p.project_name, '')) = $1
+            AND LOWER(TRIM(s.title)) = LOWER(TRIM($2))
+          LIMIT 1
+        `,
+        jobKey,
+        normalizedScopeOfWork
+      );
+
+      if (matchingScope.length > 0) {
+        await syncActiveScheduleToScope(matchingScope[0].scope_id, jobKey, matchingScope[0].title);
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -115,9 +201,9 @@ export async function DELETE(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[SHORT-TERM-MOVE] Failed to delete custom scope:', error);
+    console.error('[SHORT-TERM-MOVE] Failed to delete day assignment:', error);
     return NextResponse.json(
-      { success: false, error: `Failed to delete custom scope: ${String(error)}` },
+      { success: false, error: `Failed to delete day assignment: ${String(error)}` },
       { status: 500 }
     );
   }

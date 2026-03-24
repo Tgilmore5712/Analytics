@@ -103,14 +103,6 @@ function normalizeTimeOffRecord(row: {
   };
 }
 
-async function ensureProjectScopeColumns() {
-  await prisma.$executeRawUnsafe(`
-    ALTER TABLE "ProjectScope"
-      ADD COLUMN IF NOT EXISTS "schedulingMode" TEXT NOT NULL DEFAULT 'contiguous',
-      ADD COLUMN IF NOT EXISTS "selectedDays" JSONB
-  `);
-}
-
 async function ensureScheduleDataColumn() {
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "Schedule"
@@ -189,14 +181,14 @@ async function setStoredScheduleMonth(jobKey: string, doc: StoredScheduleDoc) {
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureProjectScopeColumns();
-    await ensureScheduleDataColumn();
     const searchParams = request.nextUrl.searchParams;
     const action = searchParams.get('action');
     const jobKey = searchParams.get('jobKey');
     const month = searchParams.get('month');
 
     if (!action && jobKey) {
+      // Only touch the legacy JSON column for endpoints that still use it.
+      await ensureScheduleDataColumn();
       const stored = await getStoredScheduleData(jobKey);
       if (month) {
         const monthDoc = stored[month];

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ProjectScopesModal } from "@/app/project-schedule/components/ProjectScopesModal";
 import { type ProjectInfo, type Scope } from "@/types";
+import { fetchJsonWithRetry } from "@/utils/fetchJsonWithRetry";
 
 interface WeekColumn {
   weekStartDate: Date;
@@ -152,6 +153,7 @@ function getAssignmentKey(jobKey: string, scopeOfWork: string): string {
 export default function LongTermSchedulePage() {
   const [weekColumns, setWeekColumns] = useState<WeekColumn[]>([]);
   const [foremanRows, setForemanRows] = useState<ForemanRow[]>([]);
+  const [activeForemen, setActiveForemen] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedProject, setDraggedProject] = useState<{
     jobKey: string;
@@ -168,7 +170,11 @@ export default function LongTermSchedulePage() {
   const [pmOverrides, setPmOverrides] = useState<Record<string, string>>({});
   const [jobKeyToProjectPM, setJobKeyToProjectPM] = useState<Record<string, string>>({});
   const [editingPMForJob, setEditingPMForJob] = useState<string | null>(null);
+  const [editingForemanForJob, setEditingForemanForJob] = useState<string | null>(null);
   const [savingPM, setSavingPM] = useState(false);
+  const [savingForeman, setSavingForeman] = useState(false);
+  const [removingAssignmentKey, setRemovingAssignmentKey] = useState<string | null>(null);
+  const [removeSuccessMessage, setRemoveSuccessMessage] = useState<string | null>(null);
   const [collapsedPMGroups, setCollapsedPMGroups] = useState<Set<string>>(new Set());
   const [dispatchCapacityStaff, setDispatchCapacityStaff] = useState<Employee[]>([]);
   const [timeOffRequests, setTimeOffRequests] = useState<TimeOffRequest[]>([]);
@@ -182,6 +188,12 @@ export default function LongTermSchedulePage() {
   useEffect(() => {
     loadSchedules();
   }, []);
+
+  useEffect(() => {
+    if (!removeSuccessMessage) return;
+    const timer = setTimeout(() => setRemoveSuccessMessage(null), 2400);
+    return () => clearTimeout(timer);
+  }, [removeSuccessMessage]);
 
   async function loadSchedules() {
     try {
@@ -204,21 +216,38 @@ export default function LongTermSchedulePage() {
       const startDate = currentWeekStart.toISOString().split("T")[0];
       const endDate = rangeEnd.toISOString().split("T")[0];
 
-      const [employeesRes, scheduleRes, holidaysRes, projectsRes, pmAssignmentsRes, timeOffRes] = await Promise.all([
-        fetch("/api/short-term-schedule?action=employees"),
-        fetch(`/api/short-term-schedule?action=active-schedule&startDate=${startDate}&endDate=${endDate}`),
-        fetch("/api/holidays?page=1&pageSize=500"),
-        fetch("/api/projects?page=1&pageSize=500"),
-        fetch("/api/long-term-schedule/pm-assignments"),
-        fetch("/api/time-off"),
+      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson] = await Promise.all([
+        fetchJsonWithRetry<{ data?: Employee[] }>("/api/short-term-schedule?action=employees", {
+          fallback: { data: [] },
+          label: "long-term employees",
+        }),
+        fetchJsonWithRetry<{ data?: ActiveScheduleEntry[] }>(
+          `/api/short-term-schedule?action=active-schedule&startDate=${startDate}&endDate=${endDate}`,
+          {
+            fallback: { data: [] },
+            label: "long-term active schedule",
+          }
+        ),
+        fetchJsonWithRetry<{ data?: Holiday[] }>("/api/holidays?page=1&pageSize=500", {
+          fallback: { data: [] },
+          label: "long-term holidays",
+        }),
+        fetchJsonWithRetry<{ data?: Array<{ id?: string; customer?: string; projectNumber?: string; projectName?: string; projectManager?: string }> }>(
+          "/api/projects?page=1&pageSize=500",
+          {
+            fallback: { data: [] },
+            label: "long-term projects",
+          }
+        ),
+        fetchJsonWithRetry<{ data?: PMAssignment[] }>("/api/long-term-schedule/pm-assignments", {
+          fallback: { data: [] },
+          label: "long-term pm assignments",
+        }),
+        fetchJsonWithRetry<{ data?: RawTimeOffRecord[] }>("/api/time-off", {
+          fallback: { data: [] },
+          label: "long-term time off",
+        }),
       ]);
-
-      const employeesJson = await employeesRes.json();
-      const scheduleJson = await scheduleRes.json();
-      const holidaysJson = holidaysRes.ok ? await holidaysRes.json() : { data: [] };
-      const projectsJson = projectsRes.ok ? await projectsRes.json() : { data: [] };
-      const pmAssignmentsJson = pmAssignmentsRes.ok ? await pmAssignmentsRes.json() : { data: [] };
-      const timeOffJson = timeOffRes.ok ? await timeOffRes.json() : { data: [] };
 
       const employees: Employee[] = employeesJson?.data || [];
       const activeSchedules: ActiveScheduleEntry[] = scheduleJson?.data || [];
@@ -262,6 +291,9 @@ export default function LongTermSchedulePage() {
       const pmEmployeeList = employees.filter((emp) => emp.isActive && PM_TITLES.includes(emp.jobTitle));
       setPmEmployees(pmEmployeeList);
 
+      const foremen = employees.filter((emp) => emp.isActive && isForemanRole(emp.jobTitle));
+      setActiveForemen(foremen);
+
       const dispatchStaff = employees.filter(
         (emp) => emp.isActive && (isForemanRole(emp.jobTitle) || isDispatchCapacityFieldRole(emp.jobTitle))
       );
@@ -300,22 +332,7 @@ export default function LongTermSchedulePage() {
         return source === "gantt" || source === "wip-page";
       });
 
-      const foremen = employees
-        .filter((emp) => emp.isActive && isForemanRole(emp.jobTitle))
-        .slice(0, 6);
-
       const hasUnassignedEntries = ganttInitiatedSchedules.some((entry) => !entry.foreman);
-
-      while (foremen.length < 6) {
-        const n = foremen.length + 1;
-        foremen.push({
-          id: `placeholder-${n}`,
-          firstName: `Foreman ${n}`,
-          lastName: "",
-          jobTitle: "Foreman",
-          isActive: true,
-        });
-      }
 
       const rowEmployees = hasUnassignedEntries
         ? [
@@ -411,6 +428,16 @@ export default function LongTermSchedulePage() {
     }
   }
 
+  async function saveForemanAssignment(jobKey: string, scopeOfWork: string, foremanId: string) {
+    try {
+      setSavingForeman(true);
+      await assignProjectToForeman(jobKey, scopeOfWork, foremanId);
+    } finally {
+      setSavingForeman(false);
+      setEditingForemanForJob(null);
+    }
+  }
+
   async function savePMAssignment(assignmentKey: string, jobKey: string, pmId: string) {
     try {
       setSavingPM(true);
@@ -462,6 +489,12 @@ export default function LongTermSchedulePage() {
     const pm = pmEmployees.find((emp) => emp.id === pmId);
     return pm ? `${pm.firstName} ${pm.lastName}`.trim() : "Unknown PM";
   }, [pmEmployees]);
+
+  const getResolvedForemanName = useCallback((foremanId: string | null | undefined): string => {
+    if (!foremanId || foremanId === "__unassigned__") return "Unassigned";
+    const foreman = activeForemen.find((emp) => emp.id === foremanId);
+    return foreman ? `${foreman.firstName} ${foreman.lastName}`.trim() : "Unknown Foreman";
+  }, [activeForemen]);
 
   function handleDragStart(
     e: React.DragEvent,
@@ -531,6 +564,26 @@ export default function LongTermSchedulePage() {
     }
   }
 
+  async function removeProjectFromDay(jobKey: string, scopeOfWork: string, dateKey: string) {
+    const normalizedScopeOfWork = (scopeOfWork || '').trim();
+    if (!jobKey || !normalizedScopeOfWork || !dateKey) return;
+
+    const response = await fetch('/api/short-term-schedule/move', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobKey,
+        scopeOfWork: normalizedScopeOfWork,
+        date: dateKey,
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.error || 'Failed to remove assignment from day');
+    }
+  }
+
   function toggleWeek(weekKey: string) {
     setExpandedWeeks((prev) => {
       const next = new Set(prev);
@@ -553,6 +606,8 @@ export default function LongTermSchedulePage() {
       }
       return next;
     });
+    setEditingPMForJob(null);
+    setEditingForemanForJob(null);
   }
 
   const pmGroups = useMemo<PMGroup[]>(() => {
@@ -699,8 +754,10 @@ export default function LongTermSchedulePage() {
     return projects.map((proj, idx) => {
       const assignmentKey = getAssignmentKey(proj.jobKey, proj.scopeOfWork);
       const resolvedPmId = getResolvedPMId(assignmentKey, proj.jobKey);
+      const resolvedForemanId = dragContext?.sourceForemanId || "__unassigned__";
       const defaultPMName = jobKeyToProjectPM[proj.jobKey] || "Project Default";
       const canDrag = Boolean(dragContext?.sourceDateKey);
+      const canRemoveFromDay = Boolean(dragContext?.sourceDateKey);
 
       return (
         <div
@@ -721,6 +778,37 @@ export default function LongTermSchedulePage() {
           <div className="font-black text-gray-900 truncate">{proj.scopeOfWork}</div>
           <div className="text-gray-500 truncate">{proj.jobKey.split("~")[2] || proj.jobKey}</div>
           <div className="mt-1.5 flex items-center gap-1">
+            {canRemoveFromDay && (
+              <button
+                type="button"
+                disabled={removingAssignmentKey === assignmentKey}
+                className="text-[10px] text-red-700 font-black hover:text-red-800 disabled:opacity-50"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const sourceDateKey = dragContext?.sourceDateKey;
+                  if (!sourceDateKey) return;
+
+                  const confirmed = window.confirm(
+                    `Remove "${proj.scopeOfWork}" from ${proj.jobKey.split("~")[2] || proj.jobKey} on ${sourceDateKey}?`
+                  );
+                  if (!confirmed) return;
+
+                  try {
+                    setRemovingAssignmentKey(assignmentKey);
+                    await removeProjectFromDay(proj.jobKey, proj.scopeOfWork, sourceDateKey);
+                    await loadSchedules();
+                    setRemoveSuccessMessage(`Removed from ${sourceDateKey}`);
+                  } catch (error) {
+                    console.error('Failed removing assignment from long-term day view:', error);
+                    alert(error instanceof Error ? error.message : 'Failed to remove assignment from day');
+                  } finally {
+                    setRemovingAssignmentKey(null);
+                  }
+                }}
+              >
+                Remove from Day
+              </button>
+            )}
             <button
               type="button"
               className="text-[10px] text-blue-600 font-black hover:text-blue-800 mr-1"
@@ -737,10 +825,22 @@ export default function LongTermSchedulePage() {
               className="text-[10px] text-orange-700 font-black hover:text-orange-800"
               onClick={(e) => {
                 e.stopPropagation();
+                setEditingForemanForJob(null);
                 setEditingPMForJob(editingPMForJob === assignmentKey ? null : assignmentKey);
               }}
             >
               PM: {getResolvedPMName(resolvedPmId)}
+            </button>
+            <button
+              type="button"
+              className="text-[10px] text-sky-700 font-black hover:text-sky-800"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingPMForJob(null);
+                setEditingForemanForJob(editingForemanForJob === assignmentKey ? null : assignmentKey);
+              }}
+            >
+              Foreman: {getResolvedForemanName(resolvedForemanId)}
             </button>
           </div>
           {editingPMForJob === assignmentKey && (
@@ -755,6 +855,23 @@ export default function LongTermSchedulePage() {
                 {pmEmployees.map((pm) => (
                   <option key={pm.id} value={pm.id}>
                     {pm.firstName} {pm.lastName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {editingForemanForJob === assignmentKey && (
+            <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+              <select
+                disabled={savingForeman}
+                className="w-full text-[10px] border border-sky-400 rounded px-2 py-1 bg-white"
+                value={resolvedForemanId}
+                onChange={(e) => saveForemanAssignment(proj.jobKey, proj.scopeOfWork, e.target.value)}
+              >
+                <option value="__unassigned__">Unassigned</option>
+                {activeForemen.map((foreman) => (
+                  <option key={foreman.id} value={foreman.id}>
+                    {foreman.firstName} {foreman.lastName}
                   </option>
                 ))}
               </select>
@@ -775,6 +892,12 @@ export default function LongTermSchedulePage() {
             </h1>
           </div>
         </div>
+
+        {removeSuccessMessage && (
+          <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+            {removeSuccessMessage}
+          </div>
+        )}
 
         {loading ? (
           <div className="bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 p-12 text-center">
@@ -1017,7 +1140,7 @@ export default function LongTermSchedulePage() {
                                           {hours.toFixed(1)}
                                           <span className="text-[10px] opacity-40 ml-0.5">H</span>
                                         </div>
-                                        {renderProjects(allocation.projects)}
+                                        {renderProjects(allocation.projects, false, { sourceForemanId: row.id })}
                                       </div>
                                     )}
                                   </td>
@@ -1148,7 +1271,7 @@ export default function LongTermSchedulePage() {
                                 </div>
 
                                 {!expanded ? (
-                                  renderProjects(allocation?.projects || [], true)
+                                  renderProjects(allocation?.projects || [], true, { sourceForemanId: row.id })
                                 ) : (
                                   <div className="space-y-2">
                                     {Array.from({ length: 5 }).map((_, i) => {

@@ -282,6 +282,21 @@ type ProjectShowResponse = {
   raw?: unknown;
 };
 
+type BidFormPatchTestResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  dryRun?: boolean;
+  projectId?: string;
+  bidPackageId?: string;
+  bidFormId?: string;
+  proposalId?: number;
+  patchEndpoint?: string;
+  patchedEndpoint?: string;
+  patchPayload?: Record<string, unknown>;
+  data?: unknown;
+};
+
 export default function ProcoreProductivityFeedPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [procoreConnected, setProcoreConnected] = useState(false);
@@ -370,6 +385,15 @@ export default function ProcoreProductivityFeedPage() {
   const [budgetLineItemsSyncLoading, setBudgetLineItemsSyncLoading] = useState(false);
   const [budgetLineItemsSyncError, setBudgetLineItemsSyncError] = useState<string | null>(null);
   const [budgetLineItemsSyncResponse, setBudgetLineItemsSyncResponse] = useState<BudgetLineItemsSyncResponse | null>(null);
+  const [qtyPatchProjectId, setQtyPatchProjectId] = useState("598134326377772");
+  const [qtyPatchProposalId, setQtyPatchProposalId] = useState("3169188");
+  const [qtyPatchBidPackageId, setQtyPatchBidPackageId] = useState("");
+  const [qtyPatchBidFormId, setQtyPatchBidFormId] = useState("");
+  const [qtyPatchTitle, setQtyPatchTitle] = useState("Concrete API Test");
+  const [qtyPatchUpdatesJson, setQtyPatchUpdatesJson] = useState('[\n  { "id": 1235, "locked_quantity": 10.5 }\n]');
+  const [qtyPatchLoading, setQtyPatchLoading] = useState(false);
+  const [qtyPatchError, setQtyPatchError] = useState<string | null>(null);
+  const [qtyPatchResponse, setQtyPatchResponse] = useState<BidFormPatchTestResponse | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1001,6 +1025,62 @@ export default function ProcoreProductivityFeedPage() {
     }
   }
 
+  async function runBidFormQuantityPatch(dryRun: boolean) {
+    setQtyPatchLoading(true);
+    setQtyPatchError(null);
+    try {
+      const proposalId = Number.parseInt(qtyPatchProposalId.trim() || "2989879", 10);
+      let quantityUpdates: unknown[] = [];
+      try {
+        quantityUpdates = JSON.parse(qtyPatchUpdatesJson);
+        if (!Array.isArray(quantityUpdates)) {
+          setQtyPatchError("Quantity updates must be a JSON array.");
+          setQtyPatchLoading(false);
+          return;
+        }
+      } catch {
+        setQtyPatchError("Invalid JSON in Quantity Updates.");
+        setQtyPatchLoading(false);
+        return;
+      }
+
+      const payload = {
+        projectId: qtyPatchProjectId.trim() || "598134326241241",
+        proposalId: Number.isFinite(proposalId) ? proposalId : 2989879,
+        bidPackageId: qtyPatchBidPackageId.trim() || undefined,
+        bidFormId: qtyPatchBidFormId.trim() || undefined,
+        title: qtyPatchTitle.trim() || undefined,
+        quantityUpdates,
+        dryRun,
+      };
+
+      const res = await fetch("/api/procore/test/bidform-patch", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = (await res.json()) as BidFormPatchTestResponse;
+      if (!res.ok || !json.success) {
+        const errorMsg = json.details 
+          ? `${json.error}: ${json.details}`
+          : (json.error || "Failed to update bid form quantities");
+        setQtyPatchError(errorMsg);
+        if (res.status === 401) setProcoreConnected(false);
+        setQtyPatchResponse(null);
+        return;
+      }
+
+      setQtyPatchResponse(json);
+    } catch (err) {
+      setQtyPatchError(err instanceof Error ? err.message : "Unknown error");
+      setQtyPatchResponse(null);
+    } finally {
+      setQtyPatchLoading(false);
+    }
+  }
+
   function connectProcore() {
     const returnTo = `${window.location.pathname}${window.location.search}`;
     window.location.href = `/api/auth/procore/login?returnTo=${encodeURIComponent(returnTo)}`;
@@ -1038,6 +1118,107 @@ export default function ProcoreProductivityFeedPage() {
               Open Projects Feed Tools
             </Link>
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 mb-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-[0.2em] text-rose-900">
+                Bid Form Quantity Update
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-rose-950">
+                Update bid form quantities for a project from this page. Use dry run first to confirm target IDs.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <label className="text-xs font-bold uppercase tracking-wider text-rose-800">
+              Project ID
+              <input
+                value={qtyPatchProjectId}
+                onChange={(e) => setQtyPatchProjectId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-rose-800">
+              Proposal ID
+              <input
+                value={qtyPatchProposalId}
+                onChange={(e) => setQtyPatchProposalId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-rose-800">
+              Bid Package ID (optional)
+              <input
+                value={qtyPatchBidPackageId}
+                onChange={(e) => setQtyPatchBidPackageId(e.target.value)}
+                placeholder="Auto-discovers first package"
+                className="mt-1 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-rose-800">
+              Bid Form ID (optional)
+              <input
+                value={qtyPatchBidFormId}
+                onChange={(e) => setQtyPatchBidFormId(e.target.value)}
+                placeholder="Auto-discovers first form"
+                className="mt-1 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-rose-800 md:col-span-2 xl:col-span-2">
+              Patch Title (optional)
+              <input
+                value={qtyPatchTitle}
+                onChange={(e) => setQtyPatchTitle(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-rose-800 md:col-span-2 xl:col-span-3">
+              Quantity Updates JSON (target specific line IDs)
+              <textarea
+                value={qtyPatchUpdatesJson}
+                onChange={(e) => setQtyPatchUpdatesJson(e.target.value)}
+                rows={7}
+                className="mt-1 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-gray-900"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              onClick={() => runBidFormQuantityPatch(true)}
+              disabled={qtyPatchLoading}
+              className="px-4 py-2 rounded-lg border border-amber-300 bg-amber-100 text-amber-900 font-black text-[10px] uppercase tracking-widest hover:bg-amber-200 disabled:opacity-50"
+            >
+              {qtyPatchLoading ? "Working..." : "Dry Run Quantity Update"}
+            </button>
+            <button
+              onClick={() => runBidFormQuantityPatch(false)}
+              disabled={qtyPatchLoading}
+              className="px-4 py-2 rounded-lg bg-rose-700 text-white font-black text-[10px] uppercase tracking-widest hover:bg-rose-800 disabled:opacity-50"
+            >
+              {qtyPatchLoading ? "Working..." : "Run Live Quantity Update"}
+            </button>
+          </div>
+
+          {qtyPatchError && (
+            <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800">
+              {qtyPatchError}
+            </div>
+          )}
+
+          {qtyPatchResponse && (
+            <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-rose-200 bg-white p-3 text-[11px] leading-relaxed text-gray-800">
+              {JSON.stringify(qtyPatchResponse, null, 2)}
+            </pre>
+          )}
         </section>
 
         <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 mb-6">

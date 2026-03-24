@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/auditLog';
+import { getCanonicalProjectCustomFields, getCanonicalProjectIdentity } from '@/lib/projectCanonical';
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 
@@ -205,15 +206,14 @@ export async function GET(request: NextRequest) {
     }
 
     const projectsWithPMC = projects.map((project) => {
-      const customFields =
-        project.customFields && typeof project.customFields === 'object' && !Array.isArray(project.customFields)
-          ? (project.customFields as Record<string, unknown>)
-          : {};
+      const customFields = getCanonicalProjectCustomFields(project.customFields);
 
       const fallback = pmcFromDetailsByProjectId.get(project.id);
+      const identity = getCanonicalProjectIdentity(project);
 
       return {
         ...project,
+        ...identity,
         pmcGroup: customFields.pmcGroup ?? fallback?.pmcGroup ?? null,
         pmcBreakdown: customFields.pmcBreakdown ?? fallback?.pmcBreakdown ?? null,
         pmcMappingSource: customFields.pmcMappingSource ?? fallback?.pmcMappingSource ?? null,
@@ -265,6 +265,13 @@ export async function PUT(request: NextRequest) {
       });
       updatedCount = updated ? 1 : 0;
     } else {
+      if (!customer && !projectNumber && !projectName) {
+        return NextResponse.json(
+          { success: false, error: 'Provide at least one selector: customer, projectNumber, or projectName' },
+          { status: 400 }
+        );
+      }
+
       const where: Prisma.ProjectWhereInput = {};
       if (customer) where.customer = customer;
 
