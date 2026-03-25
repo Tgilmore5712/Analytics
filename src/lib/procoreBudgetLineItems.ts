@@ -12,68 +12,7 @@ function normalizeTimestamp(value: string | Date | null | undefined): string | n
 }
 
 export async function ensureBudgetLineItemsTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS budgetlineitems (
-      id BIGSERIAL PRIMARY KEY,
-      company_id TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      budget_line_item_id TEXT NOT NULL,
-      name TEXT NULL,
-      cost_code TEXT NULL,
-      cost_code_description TEXT NULL,
-      wbs_code_id TEXT NULL,
-      line_item_type TEXT NULL,
-      uom TEXT NULL,
-      quantity DOUBLE PRECISION NULL,
-      unit_cost DOUBLE PRECISION NULL,
-      original_budget_amount DOUBLE PRECISION NULL,
-      amount DOUBLE PRECISION NULL,
-      calculation_strategy TEXT NULL,
-      currency_iso_code TEXT NULL,
-      source_created_at TIMESTAMPTZ NULL,
-      source_updated_at TIMESTAMPTZ NULL,
-      payload JSONB NOT NULL,
-      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(company_id, project_id, budget_line_item_id)
-    )
-  `);
-
-  // Add new columns to existing tables safely
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS name TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS cost_code TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS cost_code_description TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS wbs_code_id TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS line_item_type TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS uom TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS quantity DOUBLE PRECISION NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS unit_cost DOUBLE PRECISION NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS original_budget_amount DOUBLE PRECISION NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS amount DOUBLE PRECISION NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS calculation_strategy TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS currency_iso_code TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS source_created_at TIMESTAMPTZ NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE budgetlineitems ADD COLUMN IF NOT EXISTS source_updated_at TIMESTAMPTZ NULL');
-
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_budgetlineitems_company ON budgetlineitems(company_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_budgetlineitems_project ON budgetlineitems(project_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_budgetlineitems_budget_line_item_id ON budgetlineitems(budget_line_item_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_budgetlineitems_synced_at ON budgetlineitems(synced_at DESC)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_budgetlineitems_cost_code ON budgetlineitems(cost_code)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_budgetlineitems_wbs_code_id ON budgetlineitems(wbs_code_id)'
-  );
+  return;
 }
 
 function readNum(value: unknown): number | null {
@@ -153,36 +92,7 @@ async function ensureBudgetLineItemUnpackedFieldsTable() {
   if (unpackedFieldsTableReady) return unpackedFieldsTableReady;
 
   unpackedFieldsTableReady = (async () => {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS budgetlineitem_unpacked_fields (
-        id BIGSERIAL PRIMARY KEY,
-        company_id TEXT NOT NULL,
-        project_id TEXT NOT NULL,
-        budget_line_item_id TEXT NOT NULL,
-        field_path TEXT NOT NULL,
-        value_type TEXT NOT NULL,
-        value_text TEXT NULL,
-        value_number DOUBLE PRECISION NULL,
-        value_boolean BOOLEAN NULL,
-        value_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(company_id, project_id, budget_line_item_id, field_path)
-      )
-    `);
-
-    await prisma.$executeRawUnsafe(
-      'CREATE INDEX IF NOT EXISTS idx_budgetlineitem_unpacked_item ON budgetlineitem_unpacked_fields(company_id, project_id, budget_line_item_id)'
-    );
-    await prisma.$executeRawUnsafe(
-      'CREATE INDEX IF NOT EXISTS idx_budgetlineitem_unpacked_path ON budgetlineitem_unpacked_fields(field_path)'
-    );
-    await prisma.$executeRawUnsafe(
-      'CREATE INDEX IF NOT EXISTS idx_budgetlineitem_unpacked_text ON budgetlineitem_unpacked_fields(value_text)'
-    );
-    await prisma.$executeRawUnsafe(
-      'CREATE INDEX IF NOT EXISTS idx_budgetlineitem_unpacked_path_text ON budgetlineitem_unpacked_fields(field_path, value_text)'
-    );
+    return;
   })();
 
   return unpackedFieldsTableReady;

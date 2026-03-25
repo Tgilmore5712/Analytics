@@ -92,34 +92,7 @@ async function ensureUnpackedFieldsTable() {
   if (unpackedFieldsTableReady) return unpackedFieldsTableReady;
 
   unpackedFieldsTableReady = (async () => {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS timecard_time_type_unpacked_fields (
-        id BIGSERIAL PRIMARY KEY,
-        type_id TEXT NOT NULL,
-        field_path TEXT NOT NULL,
-        value_type TEXT NOT NULL,
-        value_text TEXT NULL,
-        value_number DOUBLE PRECISION NULL,
-        value_boolean BOOLEAN NULL,
-        value_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (type_id, field_path),
-        CONSTRAINT fk_tc_time_type_unpacked
-          FOREIGN KEY (type_id)
-          REFERENCES "TimecardTimeType"(id)
-          ON DELETE CASCADE
-      )
-    `);
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_tc_tt_unpacked_field_path ON timecard_time_type_unpacked_fields(field_path)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_tc_tt_unpacked_value_text ON timecard_time_type_unpacked_fields(value_text)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_tc_tt_unpacked_path_text ON timecard_time_type_unpacked_fields(field_path, value_text)"
-    );
+    return;
   })();
 
   return unpackedFieldsTableReady;

@@ -8,8 +8,6 @@ const DEFAULT_ESTIMATING_BASE_URL =
 const FALLBACK_ESTIMATING_BASE_URL =
   "https://estimating-esticom-829a58c093c92de.na-east-01-tugboat.procoretech-qa.com";
 
-type DynamicColumnType = "text" | "jsonb";
-
 const RESERVED_COLUMNS = new Set([
   "id",
   "company_id",
@@ -23,20 +21,7 @@ const RESERVED_COLUMNS = new Set([
 ]);
 
 async function ensureEstimatingCatalogItemStagingTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS procore_estimating_catalog_item_staging (
-      id BIGSERIAL PRIMARY KEY,
-      company_id TEXT NOT NULL,
-      item_id TEXT NOT NULL,
-      base_url TEXT NOT NULL,
-      name TEXT NULL,
-      code TEXT NULL,
-      cost_code_id TEXT NULL,
-      payload JSONB NOT NULL,
-      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(company_id, item_id, base_url)
-    )
-  `);
+  return;
 }
 
 async function upsertEstimatingCatalogItem(params: {
@@ -48,72 +33,32 @@ async function upsertEstimatingCatalogItem(params: {
   costCodeId?: string | null;
   payload: unknown;
   dynamicFields?: Record<string, unknown>;
-  knownColumns: Map<string, DynamicColumnType>;
 }) {
-  const { companyId, itemId, baseUrl, name, code, costCodeId, payload, dynamicFields = {}, knownColumns } = params;
-
-  const dynamicEntries = Object.entries(dynamicFields);
-
-  if (dynamicEntries.length > 0) {
-    for (const [columnName, columnType] of dynamicEntries.map(([columnName, value]) => {
-      const existingType = knownColumns.get(columnName);
-      const inferredType: DynamicColumnType = value !== null && typeof value === "object" ? "jsonb" : "text";
-      return [columnName, existingType || inferredType] as const;
-    })) {
-      if (knownColumns.has(columnName)) continue;
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE procore_estimating_catalog_item_staging ADD COLUMN IF NOT EXISTS "${columnName}" ${columnType.toUpperCase()}`
-      );
-      knownColumns.set(columnName, columnType);
-    }
-  }
-
-  const baseColumns = ["company_id", "item_id", "base_url", "name", "code", "cost_code_id", "payload", "synced_at"];
-  const baseValues: unknown[] = [companyId, itemId, baseUrl, name ?? null, code ?? null, costCodeId ?? null, JSON.stringify(payload)];
-  const basePlaceholders = ["$1", "$2", "$3", "$4", "$5", "$6", "$7::jsonb", "NOW()"];
-
-  const dynamicColumns: string[] = [];
-  const dynamicPlaceholders: string[] = [];
-  const dynamicValues: unknown[] = [];
-
-  for (const [columnName, rawValue] of dynamicEntries) {
-    const columnType = knownColumns.get(columnName) || "text";
-    dynamicColumns.push(`"${columnName}"`);
-
-    const paramIndex = baseValues.length + dynamicValues.length + 1;
-    dynamicPlaceholders.push(columnType === "jsonb" ? `$${paramIndex}::jsonb` : `$${paramIndex}`);
-
-    if (rawValue === null || rawValue === undefined) {
-      dynamicValues.push(null);
-    } else if (columnType === "jsonb") {
-      dynamicValues.push(JSON.stringify(rawValue));
-    } else {
-      dynamicValues.push(String(rawValue));
-    }
-  }
-
-  const insertColumns = [...baseColumns.slice(0, 7), ...dynamicColumns, baseColumns[7]].join(", ");
-  const insertValuesSql = [...basePlaceholders.slice(0, 7), ...dynamicPlaceholders, basePlaceholders[7]].join(", ");
-  const dynamicUpdates = dynamicColumns.map((c) => `${c} = EXCLUDED.${c}`).join(",\n        ");
-  const updateSqlSuffix = dynamicUpdates ? `,\n        ${dynamicUpdates}` : "";
+  const { companyId, itemId, baseUrl, name, code, costCodeId, payload, dynamicFields = {} } = params;
 
   await prisma.$executeRawUnsafe(
     `
       INSERT INTO procore_estimating_catalog_item_staging
-        (${insertColumns})
+        (company_id, item_id, base_url, name, code, cost_code_id, payload, dynamic_fields, synced_at)
       VALUES
-        (${insertValuesSql})
+        ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, NOW())
       ON CONFLICT (company_id, item_id, base_url)
       DO UPDATE SET
         name = EXCLUDED.name,
         code = EXCLUDED.code,
         cost_code_id = EXCLUDED.cost_code_id,
         payload = EXCLUDED.payload,
-        ${dynamicUpdates ? `${dynamicUpdates},` : ""}
+        dynamic_fields = EXCLUDED.dynamic_fields,
         synced_at = NOW()
     `,
-    ...baseValues,
-    ...dynamicValues
+    companyId,
+    itemId,
+    baseUrl,
+    name ?? null,
+    code ?? null,
+    costCodeId ?? null,
+    JSON.stringify(payload),
+    JSON.stringify(dynamicFields)
   );
 }
 
@@ -215,22 +160,6 @@ export async function POST(request: Request) {
     }
 
     await ensureEstimatingCatalogItemStagingTable();
-    const existingColumns = await prisma.$queryRawUnsafe<Array<{ column_name: string; udt_name: string }>>(
-      `
-        SELECT column_name, udt_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'procore_estimating_catalog_item_staging'
-      `
-    );
-    const knownColumns = new Map<string, DynamicColumnType>();
-    for (const col of existingColumns) {
-      if (col.udt_name === "jsonb") {
-        knownColumns.set(col.column_name, "jsonb");
-      } else {
-        knownColumns.set(col.column_name, "text");
-      }
-    }
 
     const requestHeaders = {
       Authorization: `Bearer ${String(accessToken).trim()}`,
@@ -378,7 +307,6 @@ export async function POST(request: Request) {
         costCodeId,
         payload: itemPayload,
         dynamicFields: payloadObj,
-        knownColumns,
       });
 
       const counts = await prisma.$queryRawUnsafe<Array<{ row_count: bigint }>>(
@@ -678,7 +606,6 @@ export async function POST(request: Request) {
           costCodeId,
           payload: item,
           dynamicFields: buildDynamicFieldsFromPayload(item),
-          knownColumns,
         });
         keptItems += 1;
 

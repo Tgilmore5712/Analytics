@@ -122,40 +122,7 @@ async function ensureUnpackedFieldsTable() {
   if (unpackedFieldsTableReady) return unpackedFieldsTableReady;
 
   unpackedFieldsTableReady = (async () => {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS commitment_contract_unpacked_fields (
-        id BIGSERIAL PRIMARY KEY,
-        contract_id TEXT NOT NULL,
-        field_path TEXT NOT NULL,
-        value_type TEXT NOT NULL,
-        value_text TEXT NULL,
-        value_number DOUBLE PRECISION NULL,
-        value_boolean BOOLEAN NULL,
-        value_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (contract_id, field_path),
-        CONSTRAINT fk_commitment_unpacked_contract
-          FOREIGN KEY (contract_id)
-          REFERENCES "CommitmentContract"(id)
-          ON DELETE CASCADE
-      )
-    `);
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_cc_unpacked_field_path ON commitment_contract_unpacked_fields(field_path)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_cc_unpacked_value_text ON commitment_contract_unpacked_fields(value_text)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_cc_unpacked_value_number ON commitment_contract_unpacked_fields(value_number)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_cc_unpacked_value_boolean ON commitment_contract_unpacked_fields(value_boolean)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_cc_unpacked_path_text ON commitment_contract_unpacked_fields(field_path, value_text)"
-    );
+    return;
   })();
 
   return unpackedFieldsTableReady;

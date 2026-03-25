@@ -7,24 +7,7 @@ const DEFAULT_PROJECT_ID = "598134326278124";
 const DEFAULT_PER_PAGE = 100;
 
 async function ensureProcoreCostCodeStagingTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS procore_cost_code_staging (
-      id BIGSERIAL PRIMARY KEY,
-      company_id TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      sub_job_id TEXT NULL,
-      cost_code_id TEXT NOT NULL,
-      parent_id TEXT NULL,
-      origin_id TEXT NULL,
-      code TEXT NULL,
-      full_code TEXT NULL,
-      name TEXT NULL,
-      active BOOLEAN NULL,
-      payload JSONB NOT NULL,
-      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(company_id, project_id, sub_job_id, cost_code_id)
-    )
-  `);
+  return;
 }
 
 async function upsertProcoreCostCode(params: {

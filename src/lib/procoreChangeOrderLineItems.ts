@@ -102,34 +102,7 @@ function extractLineItemColumns(
 async function ensureLineItemUnpackedTable() {
   if (lineItemUnpackedTableReady) return lineItemUnpackedTableReady;
   lineItemUnpackedTableReady = (async () => {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS commitment_change_order_line_item_unpacked_fields (
-        id BIGSERIAL PRIMARY KEY,
-        line_item_id TEXT NOT NULL,
-        field_path TEXT NOT NULL,
-        value_type TEXT NOT NULL,
-        value_text TEXT,
-        value_number DOUBLE PRECISION,
-        value_boolean BOOLEAN,
-        value_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (line_item_id, field_path),
-        CONSTRAINT fk_ccoli_unpacked_line_item
-          FOREIGN KEY (line_item_id)
-          REFERENCES "CommitmentChangeOrderLineItem"(id)
-          ON DELETE CASCADE
-      )
-    `);
-    for (const sql of [
-      `CREATE INDEX IF NOT EXISTS idx_ccoli_uf_field_path ON commitment_change_order_line_item_unpacked_fields(field_path)`,
-      `CREATE INDEX IF NOT EXISTS idx_ccoli_uf_value_text ON commitment_change_order_line_item_unpacked_fields(value_text)`,
-      `CREATE INDEX IF NOT EXISTS idx_ccoli_uf_value_number ON commitment_change_order_line_item_unpacked_fields(value_number)`,
-      `CREATE INDEX IF NOT EXISTS idx_ccoli_uf_value_boolean ON commitment_change_order_line_item_unpacked_fields(value_boolean)`,
-      `CREATE INDEX IF NOT EXISTS idx_ccoli_uf_path_text ON commitment_change_order_line_item_unpacked_fields(field_path, value_text)`,
-    ]) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    return;
   })();
   return lineItemUnpackedTableReady;
 }

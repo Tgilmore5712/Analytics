@@ -98,41 +98,7 @@ async function ensureUnpackedFieldsTable() {
   }
 
   unpackedFieldsTableReady = (async () => {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS productivity_log_unpacked_fields (
-        id BIGSERIAL PRIMARY KEY,
-        log_id TEXT NOT NULL,
-        field_path TEXT NOT NULL,
-        value_type TEXT NOT NULL,
-        value_text TEXT NULL,
-        value_number DOUBLE PRECISION NULL,
-        value_boolean BOOLEAN NULL,
-        value_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (log_id, field_path),
-        CONSTRAINT fk_productivity_unpacked_log
-          FOREIGN KEY (log_id)
-          REFERENCES "ProductivityLog"(id)
-          ON DELETE CASCADE
-      )
-    `);
-
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_prod_unpacked_field_path ON productivity_log_unpacked_fields(field_path)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_prod_unpacked_value_text ON productivity_log_unpacked_fields(value_text)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_prod_unpacked_value_number ON productivity_log_unpacked_fields(value_number)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_prod_unpacked_value_boolean ON productivity_log_unpacked_fields(value_boolean)"
-    );
-    await prisma.$executeRawUnsafe(
-      "CREATE INDEX IF NOT EXISTS idx_prod_unpacked_path_text ON productivity_log_unpacked_fields(field_path, value_text)"
-    );
+    return;
   })();
 
   return unpackedFieldsTableReady;
