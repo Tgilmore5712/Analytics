@@ -12,16 +12,7 @@ type PMAssignment = {
   updatedAt: string;
 };
 
-async function ensureAssignmentsTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS long_term_pm_assignments (
-      assignment_key TEXT PRIMARY KEY,
-      job_key TEXT NOT NULL,
-      pm_id TEXT NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
+async function backfillLegacyAssignmentsIfEmpty() {
   // One-time migration from legacy local JSON file if table is empty.
   const existingCountRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
     SELECT COUNT(*)::bigint AS count FROM long_term_pm_assignments
@@ -66,7 +57,7 @@ async function ensureAssignmentsTable() {
 
 export async function GET() {
   try {
-    await ensureAssignmentsTable();
+    await backfillLegacyAssignmentsIfEmpty();
 
     const rows = await prisma.$queryRaw<Array<{
       assignment_key: string;
@@ -98,7 +89,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    await ensureAssignmentsTable();
+    await backfillLegacyAssignmentsIfEmpty();
 
     const body = await request.json();
     const assignmentKey = (body?.assignmentKey || '').trim();
@@ -139,7 +130,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await ensureAssignmentsTable();
+    await backfillLegacyAssignmentsIfEmpty();
 
     const body = await request.json();
     const assignmentKey = (body?.assignmentKey || '').trim();

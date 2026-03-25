@@ -14,21 +14,6 @@ type ConcreteOrderRow = {
   created_at: Date;
 };
 
-async function ensureConcreteOrdersTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS concrete_orders (
-      id TEXT PRIMARY KEY,
-      job_key TEXT NOT NULL,
-      project_name TEXT NOT NULL,
-      concrete_company TEXT NOT NULL,
-      date TEXT NOT NULL,
-      time TEXT NOT NULL,
-      total_yards DOUBLE PRECISION NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-}
-
 function toResponseShape(row: ConcreteOrderRow) {
   return {
     id: row.id,
@@ -44,8 +29,6 @@ function toResponseShape(row: ConcreteOrderRow) {
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureConcreteOrdersTable();
-
     const startDate = request.nextUrl.searchParams.get('startDate') || '';
     const endDate = request.nextUrl.searchParams.get('endDate') || '';
     const beforeTime = request.nextUrl.searchParams.get('beforeTime') || '';
@@ -78,8 +61,6 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await ensureConcreteOrdersTable();
-
     const body = await request.json();
     const jobKey = (body?.jobKey || '').trim();
     const projectName = (body?.projectName || '').trim();
@@ -125,8 +106,6 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await ensureConcreteOrdersTable();
-
     const body = await request.json();
     const id = (body?.id || '').trim();
 
