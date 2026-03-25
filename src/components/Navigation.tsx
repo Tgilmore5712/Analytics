@@ -64,10 +64,8 @@ export default function Navigation({
   const isGlobalNavigationManaged = useContext(GlobalNavigationContext);
 
   useEffect(() => {
-    const redirectToLogin = () => {
-      const currentPath = `${window.location.pathname}${window.location.search}`;
-      const loginUrl = `/login?returnTo=${encodeURIComponent(currentPath || "/")}`;
-      window.location.replace(loginUrl);
+    const redirectToSignedOutPage = () => {
+      window.location.replace('/auth/logout-complete');
     };
 
     let channel: BroadcastChannel | null = null;
@@ -75,14 +73,14 @@ export default function Navigation({
       channel = new BroadcastChannel(AUTH_LOGOUT_SIGNAL_CHANNEL);
       channel.onmessage = (event) => {
         if (event.data === AUTH_LOGOUT_SIGNAL_KEY) {
-          redirectToLogin();
+          redirectToSignedOutPage();
         }
       };
     }
 
     const onStorage = (event: StorageEvent) => {
       if (event.key === AUTH_LOGOUT_SIGNAL_KEY && event.newValue) {
-        redirectToLogin();
+        redirectToSignedOutPage();
       }
     };
 
