@@ -739,6 +739,9 @@ export function ProjectScopesModal({
 
       let savedScope;
       if (ganttProjectId) {
+        // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
+        await upsertProjectScopeMetadata(payload);
+
         const ganttPayload = {
           title: payload.title,
           startDate: payload.startDate || null,
@@ -769,10 +772,6 @@ export function ProjectScopesModal({
             setActiveScopeId(savedScope.id);
           }
         }
-
-        // Persist description/tasks and any local metadata to project-scopes so
-        // they are not lost on refresh when canonical data comes from gantt-v2.
-        await upsertProjectScopeMetadata(payload);
 
         const refreshedScopes = await loadCanonicalScopes();
         onScopesUpdated(
