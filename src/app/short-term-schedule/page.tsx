@@ -907,6 +907,24 @@ function ShortTermScheduleContent() {
         emp.isActive && isForemanRole(emp.jobTitle)
       );
       setForemen(foremenList);
+
+      const normalizeForemanRef = (value: unknown) => String(value || '').trim().toLowerCase();
+      const foremanIdByRef = new Map<string, string>();
+      foremenList.forEach((foreman: Employee) => {
+        const canonicalId = String(foreman.id || '').trim();
+        if (!canonicalId) return;
+
+        foremanIdByRef.set(normalizeForemanRef(canonicalId), canonicalId);
+
+        const email = String(foreman.email || '').trim();
+        if (email) foremanIdByRef.set(normalizeForemanRef(email), canonicalId);
+
+        const personalEmail = String(foreman.personalEmail || '').trim();
+        if (personalEmail) foremanIdByRef.set(normalizeForemanRef(personalEmail), canonicalId);
+
+        const fullName = `${foreman.firstName || ''} ${foreman.lastName || ''}`.trim();
+        if (fullName) foremanIdByRef.set(normalizeForemanRef(fullName), canonicalId);
+      });
       
       // Set project scopes
       const rawScopes: Scope[] = scopes.map((s: any) => ({
@@ -1094,16 +1112,14 @@ function ShortTermScheduleContent() {
       const foremanDateMap: Record<string, Record<string, DayProject[]>> = {};
       Object.entries(projectsByDay).forEach(([dateKey, projects]) => {
         projects.forEach(project => {
-          const rawForemanId = project.foreman || "__unassigned__";
-          const visibleForeman =
-            rawForemanId !== "__unassigned__" &&
-            foremenList.some((f) => f.id === rawForemanId);
-          const fid = visibleForeman ? rawForemanId : "__unassigned__";
+          const rawForemanRef = project.foreman || "__unassigned__";
+          const resolvedForemanId = foremanIdByRef.get(normalizeForemanRef(rawForemanRef)) || null;
+          const fid = resolvedForemanId || "__unassigned__";
           if (!foremanDateMap[fid]) foremanDateMap[fid] = {};
           if (!foremanDateMap[fid][dateKey]) foremanDateMap[fid][dateKey] = [];
           foremanDateMap[fid][dateKey].push({
             ...project,
-            foreman: fid === "__unassigned__" ? '' : project.foreman,
+            foreman: fid === "__unassigned__" ? '' : fid,
           });
         });
       });
