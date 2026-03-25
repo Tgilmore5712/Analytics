@@ -2,8 +2,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { procoreConfig, makeRequest } from "@/lib/procore";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
 
-export async function GET(request: Request) {
+export async function GET() {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     // Check configuration
     const config = {
@@ -44,6 +48,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     const body = await request.json();
     const { accessToken: bodyToken, endpoint } = body;

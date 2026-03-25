@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { makeRequest } from "@/lib/procore";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
 
 type JsonMap = Record<string, unknown>;
 type QuantityUpdate = {
@@ -196,6 +197,9 @@ async function tryPatch(accessToken: string, endpoints: string[], body: JsonMap)
 }
 
 export async function POST(request: Request) {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     const body = (await request.json().catch(() => ({}))) as JsonMap;
     const cookieStore = await cookies();

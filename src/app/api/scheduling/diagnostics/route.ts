@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,9 @@ function parseJobKey(jobKey: string): { customer: string; projectNumber: string;
 }
 
 export async function GET(request: NextRequest) {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const jobKey = String(searchParams.get("jobKey") || "").trim();

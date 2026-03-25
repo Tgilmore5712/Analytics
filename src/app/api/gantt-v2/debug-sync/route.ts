@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic';
  * Debug endpoint to see what the sync logic is finding
  */
 export async function GET(request: NextRequest) {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const projectId = searchParams.get('projectId');

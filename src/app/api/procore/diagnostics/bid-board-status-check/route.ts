@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { makeRequest, procoreConfig } from "@/lib/procore";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
+
+type V1ProjectRow = {
+  id?: string | number;
+  status?: string;
+  project_status?: { name?: string };
+  project_stage?: { name?: string };
+};
+
+type BidBoardProjectRow = {
+  id?: string | number;
+  name?: string;
+  project_id?: string | number;
+  status?: string;
+};
 
 export async function POST(request: NextRequest) {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     const body = await request.json();
     const { accessToken: bodyToken } = body;
@@ -16,13 +34,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Fetch All V1 Projects (to get their Status)
-    const allV1Projects: any[] = [];
+    const allV1Projects: V1ProjectRow[] = [];
     let page = 1;
     while (true) {
       const endpoint = `/rest/v1.0/projects?company_id=${companyId}&page=${page}&per_page=100`;
       const data = await makeRequest(endpoint, token);
       if (!Array.isArray(data) || data.length === 0) break;
-      allV1Projects.push(...data);
+      allV1Projects.push(...(data as V1ProjectRow[]));
       if (data.length < 100) break;
       page++;
       if (page > 20) break;
@@ -39,7 +57,7 @@ export async function POST(request: NextRequest) {
     // 2. Fetch All V2 Bid Board Projects
     // We try the successful host first
     const host = 'https://api.procore.com';
-    const allBidBoardProjects: any[] = [];
+    const allBidBoardProjects: BidBoardProjectRow[] = [];
     page = 1;
     while (true) {
       const url = `${host}/rest/v2.0/companies/${companyId}/estimating/bid_board_projects?page=${page}&per_page=100`;
@@ -53,7 +71,7 @@ export async function POST(request: NextRequest) {
       const json = await response.json();
       const pageItems = Array.isArray(json) ? json : (json?.data || []);
       if (pageItems.length === 0) break;
-      allBidBoardProjects.push(...pageItems);
+      allBidBoardProjects.push(...(pageItems as BidBoardProjectRow[]));
       if (pageItems.length < 100) break;
       page++;
       if (page > 20) break;

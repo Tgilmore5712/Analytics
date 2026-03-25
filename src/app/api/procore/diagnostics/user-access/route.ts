@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { makeRequest, procoreConfig } from "@/lib/procore";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -18,6 +19,9 @@ function asObjectArray(value: unknown): JsonObject[] {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = denyDiagnosticsInProduction();
+  if (blocked) return blocked;
+
   try {
     const body = await request.json();
     const { email, accessToken: bodyToken } = body;
