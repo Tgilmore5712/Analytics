@@ -68,46 +68,7 @@ export function toProjectVendorRow(companyId: string, projectId: string, vendor:
 }
 
 export async function ensureProcoreProjectVendorsTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS procore_project_vendors (
-      id BIGSERIAL PRIMARY KEY,
-      company_id TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      procore_vendor_id TEXT NOT NULL,
-      name TEXT NULL,
-      abbreviated_name TEXT NULL,
-      is_active BOOLEAN NULL,
-      business_phone TEXT NULL,
-      address_city TEXT NULL,
-      address_state_code TEXT NULL,
-      address_country_code TEXT NULL,
-      email_address TEXT NULL,
-      vendor_type TEXT NULL,
-      is_employee BOOLEAN NULL,
-      soft_deleted BOOLEAN NOT NULL DEFAULT FALSE,
-      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      payload JSONB NOT NULL,
-      UNIQUE(company_id, project_id, procore_vendor_id)
-    )
-  `);
-
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_procore_project_vendors_company_project ON procore_project_vendors(company_id, project_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_procore_project_vendors_vendor_id ON procore_project_vendors(procore_vendor_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_procore_project_vendors_name ON procore_project_vendors(name)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_procore_project_vendors_soft_deleted ON procore_project_vendors(soft_deleted)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_procore_project_vendors_synced_at ON procore_project_vendors(synced_at DESC)'
-  );
+  return;
 }
 
 export async function upsertProcoreProjectVendor(row: ProjectVendorRow) {

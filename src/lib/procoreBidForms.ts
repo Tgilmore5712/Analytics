@@ -9,47 +9,7 @@ function normalizeTimestamp(value: string | Date | null | undefined): string | n
 }
 
 export async function ensureBidFormsTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS bidforms (
-      id BIGSERIAL PRIMARY KEY,
-      company_id TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      bid_package_id TEXT NOT NULL,
-      bid_form_id TEXT NOT NULL,
-      name TEXT NULL,
-      status TEXT NULL,
-      created_by TEXT NULL,
-      source_created_at TIMESTAMPTZ NULL,
-      payload JSONB NOT NULL,
-      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(company_id, project_id, bid_package_id, bid_form_id)
-    )
-  `);
-
-  await prisma.$executeRawUnsafe('ALTER TABLE bidforms ADD COLUMN IF NOT EXISTS status TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE bidforms ADD COLUMN IF NOT EXISTS created_by TEXT NULL');
-  await prisma.$executeRawUnsafe('ALTER TABLE bidforms ADD COLUMN IF NOT EXISTS source_created_at TIMESTAMPTZ NULL');
-
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_bidforms_company ON bidforms(company_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_bidforms_project ON bidforms(project_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_bidforms_bid_package ON bidforms(bid_package_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_bidforms_bid_form_id ON bidforms(bid_form_id)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_bidforms_name ON bidforms(name)'
-  );
-  await prisma.$executeRawUnsafe(
-    'CREATE INDEX IF NOT EXISTS idx_bidforms_synced_at ON bidforms(synced_at DESC)'
-  );
+  return;
 }
 
 export async function upsertBidForm(params: {

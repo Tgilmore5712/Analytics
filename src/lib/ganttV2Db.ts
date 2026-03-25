@@ -87,59 +87,7 @@ const getWorkdayCountPerMonth = (start: Date, end: Date): Map<string, number> =>
 };
 
 export async function ensureGanttV2Schema(): Promise<void> {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS gantt_v2_projects (
-      id TEXT PRIMARY KEY,
-      project_name TEXT NOT NULL,
-      customer TEXT,
-      project_number TEXT,
-      status TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      start_date DATE,
-      end_date DATE,
-      total_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-      crew_size DOUBLE PRECISION,
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      CONSTRAINT fk_gantt_v2_project
-        FOREIGN KEY(project_id)
-          REFERENCES gantt_v2_projects(id)
-          ON DELETE CASCADE
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS gantt_v2_schedule_entries (
-      id TEXT PRIMARY KEY,
-      scope_id TEXT NOT NULL,
-      work_date DATE NOT NULL,
-      scheduled_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      CONSTRAINT fk_gantt_v2_scope
-        FOREIGN KEY(scope_id)
-          REFERENCES gantt_v2_scopes(id)
-          ON DELETE CASCADE
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_scope_id ON gantt_v2_schedule_entries(scope_id);
-  `);
+  return;
 }
 
 export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {

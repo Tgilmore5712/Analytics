@@ -7,21 +7,7 @@ import { extractCustomerFromCustomFields, isMeaningfulCustomer } from "@/lib/pro
 const prisma = new PrismaClient();
 
 async function ensureProcoreStagingTable() {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS procore_project_staging (
-      id BIGSERIAL PRIMARY KEY,
-      source TEXT NOT NULL,
-      company_id TEXT NOT NULL,
-      external_id TEXT NOT NULL,
-      procore_project_id TEXT NULL,
-      name TEXT NULL,
-      status TEXT NULL,
-      customer TEXT NULL,
-      payload JSONB NOT NULL,
-      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(source, company_id, external_id)
-    )
-  `);
+  return;
 }
 
 async function upsertProcoreStaging(params: {
