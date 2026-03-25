@@ -145,7 +145,7 @@ export default function Navigation({
       
       <button
         type="button"
-        onClick={() => {
+        onClick={async () => {
           if (window.confirm('Are you sure you want to sign out?')) {
             const currentPath = `${window.location.pathname}${window.location.search}`;
             const isEmbedded = (() => {
@@ -171,6 +171,15 @@ export default function Navigation({
 
             const logoutReturnTo = `${window.location.origin}/auth/logout-complete`;
             const logoutUrl = `/api/auth/logout?returnTo=${encodeURIComponent(logoutReturnTo)}`;
+
+            try {
+              await fetch('/api/auth/logout/local', {
+                method: 'POST',
+                credentials: 'include',
+              });
+            } catch {
+              // Ignore local logout failures and continue with Auth0 logout.
+            }
 
             try {
               if (isEmbedded) {
