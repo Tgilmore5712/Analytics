@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { makeRequest, procoreConfig } from "@/lib/procore";
-import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate";
 
 type JsonObject = Record<string, unknown>;
 

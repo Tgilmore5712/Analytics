@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { procoreConfig, makeRequest } from "@/lib/procore";
-import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate";
 
 export async function GET() {
   const blocked = denyDiagnosticsInProduction();

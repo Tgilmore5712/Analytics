@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate";
 
 export const dynamic = 'force-dynamic';
 

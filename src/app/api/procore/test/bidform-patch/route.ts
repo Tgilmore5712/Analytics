@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { makeRequest } from "@/lib/procore";
-import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate";
 
 type JsonMap = Record<string, unknown>;
 type QuantityUpdate = {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { makeRequest, procoreConfig } from "@/lib/procore";
-import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate.ts";
+import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate";
 
 const DEFAULT_ESTIMATING_BASE_URL =
   "https://estimating-esticom-829a58c093c92de.na-east-01-tugboat.procoretech-qa.com";
