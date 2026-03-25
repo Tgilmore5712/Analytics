@@ -12,17 +12,7 @@ function LoginContent() {
   const [status, setStatus] = useState<string>("Choose a login method.");
   const pollRef = useRef<number | null>(null);
 
-  const normalizeReturnTo = (value: string | null) => {
-    const candidate = (value || "/").trim();
-    if (!candidate.startsWith("/")) return "/";
-
-    const lower = candidate.toLowerCase();
-    if (lower.startsWith("/login") || lower.startsWith("/auth/start") || lower.startsWith("/api/auth/")) {
-      return "/";
-    }
-
-    return candidate;
-  };
+  const normalizeReturnTo = (_value: string | null) => "/";
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
