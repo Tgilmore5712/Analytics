@@ -8,6 +8,7 @@ const API_RATE_WINDOW_MS = 60 * 1000;
 
 export async function middleware(request: NextRequest) {
   const isDev = process.env.NODE_ENV !== 'production';
+  const allowProdDiagnostics = String(process.env.ENABLE_PROD_DIAGNOSTICS || '').toLowerCase() === 'true';
   const auth0Domain = (process.env.AUTH0_DOMAIN || '').trim().toLowerCase();
   const auth0ClientId = (process.env.AUTH0_CLIENT_ID || '').trim();
   const auth0Secret = (process.env.AUTH0_SECRET || '').trim();
@@ -20,6 +21,22 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith('/api/');
   const isAuthApiRoute = pathname.startsWith('/api/auth/');
+  const isDiagnosticsOrTestApiRoute = [
+    '/api/procore/test',
+    '/api/procore/test/bidform-patch',
+    '/api/procore/diagnostics/bid-board-status-check',
+    '/api/procore/diagnostics/project-coverage',
+    '/api/procore/diagnostics/user-access',
+    '/api/gantt-v2/debug-sync',
+    '/api/scheduling/diagnostics',
+  ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
+
+  if (!isDev && !allowProdDiagnostics && isDiagnosticsOrTestApiRoute) {
+    return NextResponse.json(
+      { success: false, error: 'Not found' },
+      { status: 404 }
+    );
+  }
 
   // In dev mode without Auth0 config, bypass all middleware
   if (isDev && auth0Misconfigured) {
