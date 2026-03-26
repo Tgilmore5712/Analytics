@@ -22,7 +22,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   ],
   "OPERATIONS": [
     "home", "scheduling", "short-term-schedule", "crew-dispatch", "crew-management", "productivity",
-    "long-term-schedule", "concrete-orders-schedule", "project-schedule", "project", "wip", "projects", "field", "equipment", "certifications", "dashboard", "kpi", "handbook"
+    "long-term-schedule", "concrete-orders-schedule", "project-schedule", "wip", "projects", "field", "equipment", "certifications", "dashboard", "kpi", "handbook"
   ],
   "PMs": [
     "home", "scheduling", "short-term-schedule", "crew-dispatch", "crew-management", "productivity",
