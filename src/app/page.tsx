@@ -454,7 +454,7 @@ function HomeContent() {
           fetch(`/api/concrete-orders?startDate=${startDate}&endDate=${endDate}`, { cache: "no-store" }),
           fetch("/api/long-term-schedule/pm-assignments", { cache: "no-store" }),
           fetch("/api/crew-templates", { cache: "no-store" }),
-          fetch("/api/projects?page=1&pageSize=500", { cache: "no-store" }),
+          fetch("/api/projects?page=1&pageSize=500&summary=true", { cache: "no-store" }),
         ]);
 
         const [employeesJson, scheduleJson, timeOffJson, concreteJson, pmJson, crewTemplatesJson, projectsJson] = await Promise.all([

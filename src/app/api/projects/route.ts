@@ -20,6 +20,7 @@ function choosePrimaryGroup(groupTotals: Record<string, number>) {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
+    const summaryOnly = (searchParams.get('summary') || '').trim().toLowerCase() === 'true';
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
     const requestedPageSize = Number.parseInt(searchParams.get('pageSize') || '100', 10) || 100;
     const pageSize = Math.min(500, Math.max(1, requestedPageSize));
@@ -80,7 +81,70 @@ export async function GET(request: NextRequest) {
 
     let total: number | undefined;
     let hasNextPage = false;
-    let projects;
+    let projects: any[];
+
+    if (summaryOnly) {
+      const summarySelect = {
+        id: true,
+        customer: true,
+        projectNumber: true,
+        projectName: true,
+        projectManager: true,
+      } as const;
+
+      if (includeTotal) {
+        const [countValue, rows] = await Promise.all([
+          queryWhere ? prisma.project.count({ where: queryWhere }) : prisma.project.count(),
+          queryWhere
+            ? prisma.project.findMany({
+                where: queryWhere,
+                ...baseFindManyArgs,
+                take: pageSize,
+                select: summarySelect,
+              })
+            : prisma.project.findMany({
+                ...baseFindManyArgs,
+                take: pageSize,
+                select: summarySelect,
+              }),
+        ]);
+        total = countValue;
+        projects = rows;
+        hasNextPage = skip + projects.length < total;
+      } else {
+        const pagePlusOne = queryWhere
+          ? await prisma.project.findMany({
+              where: queryWhere,
+              ...baseFindManyArgs,
+              take: pageSize + 1,
+              select: summarySelect,
+            })
+          : await prisma.project.findMany({
+              ...baseFindManyArgs,
+              take: pageSize + 1,
+              select: summarySelect,
+            });
+
+        hasNextPage = pagePlusOne.length > pageSize;
+        projects = hasNextPage ? pagePlusOne.slice(0, pageSize) : pagePlusOne;
+      }
+
+      const totalPages = includeTotal && typeof total === 'number'
+        ? Math.max(1, Math.ceil(total / pageSize))
+        : (hasNextPage ? page + 1 : page);
+
+      return NextResponse.json({
+        success: true,
+        count: projects.length,
+        ...(typeof total === 'number' ? { total } : {}),
+        page,
+        pageSize,
+        totalPages,
+        hasNextPage,
+        hasPreviousPage: page > 1,
+        data: projects,
+      });
+    }
 
     if (includeTotal) {
       [total, projects] = await Promise.all([
@@ -127,7 +191,9 @@ export async function GET(request: NextRequest) {
     >();
 
     if (projectsMissingPmc.length > 0) {
-      const missingProjectIds = projectsMissingPmc.map((p) => p.id);
+      const missingProjectIds: string[] = projectsMissingPmc
+        .map((p) => (typeof p.id === 'string' ? p.id : String(p.id || '')))
+        .filter((id) => id.length > 0);
       const [mappings, details] = await Promise.all([
         prisma.pmcGroupMapping.findMany({
           select: {
