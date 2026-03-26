@@ -2,7 +2,7 @@
  * activeScheduleLoader.ts
  * 
  * Simplified schedule loading that reads from activeSchedule table.
- * Uses API endpoints instead of direct Firebase access.
+ * Uses API endpoints instead of direct database access.
  */
 
 import { ActiveScheduleEntry } from './activeScheduleUtils';

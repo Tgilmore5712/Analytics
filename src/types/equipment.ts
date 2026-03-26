@@ -18,7 +18,7 @@ export interface EquipmentAssignment {
   id: string;
   equipmentId: string;
   equipmentName: string;
-  projectId: string; // Firestore ID
+  projectId: string; // Database ID
   projectName: string;
   jobKey: string;
   scopeId?: string;

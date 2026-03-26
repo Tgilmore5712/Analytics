@@ -1262,13 +1262,6 @@ function ShortTermScheduleContent() {
     setSaving(false);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function saveProjectToFirestore(project: DayProject) {
-    // Deprecated: This function is no longer needed with the API approach
-    // Schedule data is saved through the API endpoints
-    console.log("saveProjectToFirestore called (deprecated):", project);
-  }
-
   if (!mounted) {
     return <div className="h-screen bg-gray-50 flex items-center justify-center font-black text-gray-400 p-6 animate-pulse uppercase tracking-[0.2em]">Loading Schedule...</div>;
   }

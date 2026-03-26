@@ -392,7 +392,7 @@ export default function KPIPage() {
   const [monthFilter, setMonthFilter] = useState<number>(new Date().getMonth() + 1);
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [dataSource, setDataSource] = useState<'firestore' | 'procore'>('firestore');
+  const [dataSource, setDataSource] = useState<'database' | 'procore'>('database');
   const [procoreAuthError, setProcoreAuthError] = useState(false);
 
   // Fetch KPI data separately when yearFilter changes
@@ -657,7 +657,7 @@ function KPIPageContent({
   }, [yearFilter]);
 
   // Project and Schedule data is now fetched in the parent KPIPage component
-  // to support dynamic data source switching between Firestore and Procore Live.
+  // to support dynamic data source switching between Database and Procore Live.
 
   useEffect(() => {
     async function loadCardDataFromAPI() {
@@ -1395,19 +1395,19 @@ function KPIPageContent({
           <div style={{ color: "#666", fontWeight: 600, fontSize: 13 }}>Data Source:</div>
           <div style={{ display: "flex", background: "#f0f0f0", borderRadius: 4, padding: 2 }}>
             <button
-              onClick={() => setDataSource('firestore')}
+              onClick={() => setDataSource('database')}
               style={{
                 padding: "4px 10px",
                 border: "none",
                 borderRadius: 2,
                 fontSize: 11,
                 cursor: "pointer",
-                background: dataSource === 'firestore' ? "#15616D" : "transparent",
-                color: dataSource === 'firestore' ? "white" : "#666",
+                background: dataSource === 'database' ? "#15616D" : "transparent",
+                color: dataSource === 'database' ? "white" : "#666",
                 fontWeight: 600,
               }}
             >
-              Firestore (Sync)
+              Database (Sync)
             </button>
             <button
               onClick={() => setDataSource('procore')}

@@ -53,7 +53,7 @@ export default function SeedKPICardsPage() {
           }}
         >
         <p style={{ margin: "0 0 10px 0" }}>
-          This will populate the Firestore database with the default KPI card data including:
+          This will populate the database with the default KPI card data including:
         </p>
         <ul style={{ margin: "10px 0", paddingLeft: "20px" }}>
           <li>Estimates By Month (2 rows)</li>
@@ -124,7 +124,7 @@ export default function SeedKPICardsPage() {
       <div style={{ marginTop: "20px", fontSize: "12px", color: "#999" }}>
         <p>After seeding, you can:</p>
         <ul>
-          <li>Visit <code>/kpi</code> to view KPI cards loaded from Firestore</li>
+          <li>Visit <code>/kpi</code> to view KPI cards loaded from the database</li>
           <li>Visit <code>/kpi-cards-management</code> to edit cards</li>
           <li>Delete the CSV file once confirmed working</li>
         </ul>

@@ -1,7 +1,7 @@
 /**
  * Project Query Utilities
  * 
- * This file contains all Firestore query functions used across the dashboard.
+ * This file contains all query functions used across the dashboard.
  * Each function has a specific purpose and should not be modified without
  * considering its impact on all pages that use it.
  */

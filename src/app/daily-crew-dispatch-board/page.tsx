@@ -392,7 +392,7 @@ function DailyCrewDispatchBoardContent() {
       let cachedScopes = getCache('dispatch_projectScopes');
       let cachedHolidays = getCache('dispatch_holidays');
       
-      // Fetch data from API endpoints instead of Firebase
+      // Fetch data from API endpoints instead of the database
       const safeJsonFetch = async (url: string) => {
         try {
           const res = await fetch(url);

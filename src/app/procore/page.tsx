@@ -30,7 +30,7 @@ function ProcoreContent() {
   const [syncingProductivity, setSyncingProductivity] = useState(false);
   const [debugging, setDebugging] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [checkingFirebase, setCheckingFirebase] = useState(false);
+  const [checkingDatabase, setCheckingDatabase] = useState(false);
   const [syncResult, setSyncResult] = useState<{ count: number; message: string } | null>(null);
   const [productivityResult, setProductivityResult] = useState<{ count: number; message: string } | null>(null);
   const [debugResult, setDebugResult] = useState<any>(null);
@@ -235,15 +235,15 @@ function ProcoreContent() {
     }
   };
 
-  const handleCheckFirebase = async () => {
-    setCheckingFirebase(true);
+  const handleCheckDatabase = async () => {
+    setCheckingDatabase(true);
     setError(null);
     setDebugResult(null);
     try {
       const response = await fetch("/api/procore/check-firebase");
 
       if (!response.ok) {
-        console.warn("Procore check-firebase endpoint not available");
+        console.warn("Procore check-database endpoint not available");
         return;
       }
 
@@ -251,12 +251,12 @@ function ProcoreContent() {
         const result = await response.json();
         setDebugResult(result);
       } catch (e) {
-        console.warn("Failed to parse check-firebase response");
+        console.warn("Failed to parse check-database response");
       }
     } catch (err) {
-      console.warn('Error checking Firebase:', err);
+      console.warn('Error checking database:', err);
     } finally {
-      setCheckingFirebase(false);
+      setCheckingDatabase(false);
     }
   };
 
@@ -471,11 +471,11 @@ function ProcoreContent() {
             {debugResult && debugResult.logsCount !== undefined && (
               <div className="bg-white rounded-lg shadow p-6 border-2 border-indigo-500 mb-6">
                 <h2 className="text-xl font-bold text-indigo-900 mb-4">
-                  📊 Firebase Data Status
+                  📊 Database Status
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="bg-indigo-50 p-4 rounded">
-                    <div className="text-sm text-indigo-700 font-semibold">Logs in Firebase</div>
+                    <div className="text-sm text-indigo-700 font-semibold">Logs in Database</div>
                     <div className="text-2xl font-bold text-indigo-900">{debugResult.logsCount}</div>
                   </div>
                   <div className="bg-indigo-50 p-4 rounded">
@@ -503,7 +503,7 @@ function ProcoreContent() {
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
               <button
                 onClick={handleExplore}
-                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingFirebase}
+                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingDatabase}
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded text-sm"
               >
                 {loading ? "Exploring..." : "Explore Available Data"}
@@ -511,7 +511,7 @@ function ProcoreContent() {
               
               <button
                 onClick={handleSync}
-                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingFirebase}
+                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingDatabase}
                 className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded text-sm"
               >
                 {syncing ? "Syncing..." : "Sync Bid Board"}
@@ -519,7 +519,7 @@ function ProcoreContent() {
 
               <button
                 onClick={handleClearProductivity}
-                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingFirebase}
+                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingDatabase}
                 className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded text-sm"
               >
                 {clearing ? "Clearing..." : "🗑️ Clear Old Data"}
@@ -527,7 +527,7 @@ function ProcoreContent() {
 
               <button
                 onClick={handleSyncProductivity}
-                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingFirebase}
+                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingDatabase}
                 className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded text-sm"
               >
                 {syncingProductivity ? "Syncing..." : "Sync Productivity"}
@@ -535,18 +535,18 @@ function ProcoreContent() {
 
               <button
                 onClick={handleDebugProductivity}
-                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingFirebase}
+                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingDatabase}
                 className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded text-sm"
               >
                 {debugging ? "Checking..." : "Check Data Sources"}
               </button>
 
               <button
-                onClick={handleCheckFirebase}
-                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingFirebase}
+                onClick={handleCheckDatabase}
+                disabled={loading || syncing || syncingProductivity || debugging || clearing || checkingDatabase}
                 className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded text-sm"
               >
-                {checkingFirebase ? "Checking..." : "📊 Check Firebase"}
+                {checkingDatabase ? "Checking..." : "📊 Check Database"}
               </button>
             </div>
 
