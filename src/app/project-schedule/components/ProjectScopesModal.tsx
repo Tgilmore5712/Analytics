@@ -18,6 +18,8 @@ type GanttProjectResponse = {
   }>;
 };
 
+const NEW_SCOPE_ID = '__new_scope__';
+
 interface ProjectScopesModalProps {
   project: ProjectInfo;
   scopes: Scope[];
@@ -114,6 +116,7 @@ export function ProjectScopesModal({
   onScopesUpdated,
 }: ProjectScopesModalProps) {
   const [activeScopeId, setActiveScopeId] = useState<string | null>(selectedScopeId);
+  const [isCreatingNewScope, setIsCreatingNewScope] = useState(false);
   const [ganttProjectId, setGanttProjectId] = useState<string | null>(null);
   const [canonicalScopes, setCanonicalScopes] = useState<Scope[] | null>(null);
   const [projectBudgetHours, setProjectBudgetHours] = useState<number | null>(null);
@@ -132,6 +135,18 @@ export function ProjectScopesModal({
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
   const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
+
+  const emptyScopeDetail: Partial<Scope> = {
+    title: "",
+    startDate: "",
+    endDate: "",
+    manpower: undefined,
+    hours: undefined,
+    description: "",
+    tasks: [],
+    schedulingMode: "contiguous",
+    selectedDays: [],
+  };
 
   const normalize = (value: string | null | undefined) =>
     (value || "")
@@ -424,24 +439,29 @@ export function ProjectScopesModal({
     return total;
   };
 
+  // Keep the local modal selection in sync with incoming props, except when
+  // the user explicitly clicked "+ Add Scope" and is in create mode.
   useEffect(() => {
+    if (isCreatingNewScope) return;
+
     if (selectedScopeId) {
+      setIsCreatingNewScope(false);
       setActiveScopeId(selectedScopeId);
       return;
     }
 
-    if (selectedScopeTitle) {
-      const match = effectiveScopes.find(
-        (scope) => normalize(scope.title) === normalize(selectedScopeTitle)
-      );
-      if (match) {
-        setActiveScopeId(match.id);
-        return;
-      }
+    if (!selectedScopeTitle) return;
+    const match = effectiveScopes.find(
+      (scope) => normalize(scope.title) === normalize(selectedScopeTitle)
+    );
+    if (match) {
+      setIsCreatingNewScope(false);
+      setActiveScopeId(match.id);
+      return;
     }
 
     setActiveScopeId(null);
-  }, [selectedScopeId, selectedScopeTitle, effectiveScopes]);
+  }, [selectedScopeId, selectedScopeTitle, effectiveScopes, isCreatingNewScope]);
 
   useEffect(() => {
     loadCanonicalScopes().catch((error) => {
@@ -475,22 +495,24 @@ export function ProjectScopesModal({
     loadPaidHolidays();
   }, []);
 
+  // Initialize blank form once when entering explicit create mode.
   useEffect(() => {
+    if (!isCreatingNewScope) return;
+    setScopeDetail(emptyScopeDetail);
+  }, [isCreatingNewScope]);
+
+  // Keep form blank when nothing is selected and not in create mode.
+  useEffect(() => {
+    if (isCreatingNewScope) return;
+    if (activeScopeId) return;
+    setScopeDetail(emptyScopeDetail);
+  }, [activeScopeId, isCreatingNewScope]);
+
+  // Populate from selected scope only when editing an existing scope.
+  useEffect(() => {
+    if (isCreatingNewScope || !activeScopeId) return;
     const scope = effectiveScopes.find((item) => item.id === activeScopeId);
-    if (!scope) {
-      setScopeDetail({
-        title: "",
-        startDate: "",
-        endDate: "",
-        manpower: undefined,
-        hours: undefined,
-        description: "",
-        tasks: [],
-        schedulingMode: "contiguous",
-        selectedDays: [],
-      });
-      return;
-    }
+    if (!scope) return;
 
     const normalizedSchedulingMode = scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
     const selectedDayEntry =
@@ -514,7 +536,7 @@ export function ProjectScopesModal({
       schedulingMode: normalizedSchedulingMode,
       selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
     });
-  }, [activeScopeId, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
+  }, [activeScopeId, isCreatingNewScope, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
 
   const handleAddTask = () => {
     const trimmed = newTask.trim();
@@ -732,6 +754,7 @@ export function ProjectScopesModal({
       }
 
       const isGeneratedScopeId = !!activeScopeId && (
+        activeScopeId === NEW_SCOPE_ID ||
         activeScopeId.startsWith('fallback-') ||
         activeScopeId.startsWith('virtual-') ||
         activeScopeId.startsWith('generated-')
@@ -769,6 +792,7 @@ export function ProjectScopesModal({
           if (!result.success) throw new Error(result.error || 'Failed to create scope');
           savedScope = result.data;
           if (savedScope?.id) {
+            setIsCreatingNewScope(false);
             setActiveScopeId(savedScope.id);
           }
         }
@@ -808,6 +832,7 @@ export function ProjectScopesModal({
             : effectiveScopes;
 
           onScopesUpdated(resolvedJobKey || project.jobKey || '', [...filteredScopes, newScope]);
+          setIsCreatingNewScope(false);
           setActiveScopeId(savedScope.id);
         }
       }
@@ -874,7 +899,16 @@ export function ProjectScopesModal({
                 >
                   {isResetting ? "Resetting..." : "Reset Schedule"}
                 </button>
-                <button type="button" onClick={() => setActiveScopeId(null)} className="text-xs font-semibold px-3 py-1.5 rounded-md border border-orange-300 text-orange-700 hover:bg-orange-50">+ Add Scope</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingNewScope(true);
+                    setActiveScopeId(NEW_SCOPE_ID);
+                  }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-md border border-orange-300 text-orange-700 hover:bg-orange-50"
+                >
+                  + Add Scope
+                </button>
               </div>
             </div>
             {scheduledHoursByJobKeyDate && (
@@ -898,7 +932,10 @@ export function ProjectScopesModal({
                   <button
                     key={scope.id}
                     type="button"
-                    onClick={() => setActiveScopeId(scope.id)}
+                    onClick={() => {
+                      setIsCreatingNewScope(false);
+                      setActiveScopeId(scope.id);
+                    }}
                     className={`text-left border rounded-md px-3 py-2 transition-colors ${
                       activeScopeId === scope.id ? "border-orange-400 bg-orange-50" : "border-gray-200 hover:border-orange-200"
                     }`}
