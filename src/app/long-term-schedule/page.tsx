@@ -155,6 +155,7 @@ export default function LongTermSchedulePage() {
   const [foremanRows, setForemanRows] = useState<ForemanRow[]>([]);
   const [activeForemen, setActiveForemen] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [draggedProject, setDraggedProject] = useState<{
     jobKey: string;
     scopeOfWork: string;
@@ -400,6 +401,7 @@ export default function LongTermSchedulePage() {
       setForemanRows([]);
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }
 
@@ -893,13 +895,22 @@ export default function LongTermSchedulePage() {
           </div>
         </div>
 
+        {loading && hasLoadedOnce && (
+          <div className="pointer-events-none fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
+            <div className="inline-flex items-center gap-3 rounded-full border border-white/60 bg-orange-500/70 px-5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white shadow-2xl backdrop-blur-md">
+              <span className="h-2.5 w-2.5 rounded-full bg-white/90 animate-pulse" aria-hidden="true" />
+              Updating Schedule
+            </div>
+          </div>
+        )}
+
         {removeSuccessMessage && (
           <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
             {removeSuccessMessage}
           </div>
         )}
 
-        {loading ? (
+        {loading && !hasLoadedOnce ? (
           <div className="bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 p-12 text-center">
             <p className="text-gray-400 font-black uppercase tracking-[0.2em]">Loading Long-Term Data...</p>
           </div>
