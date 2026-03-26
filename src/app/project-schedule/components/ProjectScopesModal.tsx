@@ -740,7 +740,12 @@ export function ProjectScopesModal({
       let savedScope;
       if (ganttProjectId) {
         // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
-        await upsertProjectScopeMetadata(payload);
+        // Non-fatal: if the user lacks project-scopes permission, the gantt scope still saves.
+        try {
+          await upsertProjectScopeMetadata(payload);
+        } catch (metaErr) {
+          console.warn('Scope metadata sync skipped (may lack permission):', metaErr);
+        }
 
         const ganttPayload = {
           title: payload.title,
