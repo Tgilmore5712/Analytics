@@ -51,7 +51,7 @@ export const USER_PERMISSIONS: Record<string, string[]> = {
 
 
 // PM access
-"mervin@pmcdecor.com": ["PMs"],
+"mervin@pmcdecor.com": ["PMs", "OPERATIONS"],
 "abner@pmcdecor.com": ["PMs"],
 
 // Operations access
