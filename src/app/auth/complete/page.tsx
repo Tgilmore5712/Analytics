@@ -8,6 +8,19 @@ const AUTH_SIGNAL_CHANNEL = "analytics-auth";
 export default function AuthCompletePage() {
   const procoreAppUrl = "https://us02.procore.com/598134325658789/company/apps/598134325530275";
 
+  const resolveFallbackUrl = () => {
+    if (typeof window === "undefined") return procoreAppUrl;
+
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = params.get("returnTo");
+
+    if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("/api/auth")) {
+      return returnTo;
+    }
+
+    return procoreAppUrl;
+  };
+
   useEffect(() => {
     try {
       localStorage.setItem(AUTH_SIGNAL_KEY, String(Date.now()));
@@ -31,8 +44,9 @@ export default function AuthCompletePage() {
     }
 
     // Fallback for browsers that block window.close.
+    const fallbackUrl = resolveFallbackUrl();
     const timer = window.setTimeout(() => {
-      window.location.replace(procoreAppUrl);
+      window.location.replace(fallbackUrl);
     }, 300);
 
     return () => window.clearTimeout(timer);

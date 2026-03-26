@@ -12,7 +12,12 @@ function LoginContent() {
   const [status, setStatus] = useState<string>("Choose a login method.");
   const pollRef = useRef<number | null>(null);
 
-  const normalizeReturnTo = (_value: string | null) => "/";
+  const normalizeReturnTo = (value: string | null) => {
+    if (!value) return "/";
+    if (!value.startsWith("/")) return "/";
+    if (value.startsWith("/api/auth")) return "/";
+    return value;
+  };
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);

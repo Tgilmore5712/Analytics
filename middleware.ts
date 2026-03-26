@@ -102,7 +102,8 @@ export async function middleware(request: NextRequest) {
     }
 
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('returnTo', pathname);
+    const returnTo = `${pathname}${request.nextUrl.search}`;
+    loginUrl.searchParams.set('returnTo', returnTo);
     return NextResponse.redirect(loginUrl);
   }
 
