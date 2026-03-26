@@ -84,38 +84,34 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       notes
     );
 
-    // Sync to ActiveSchedule. Keep metadata update successful even on sync conflicts.
-    let syncWarning: string | null = null;
-    let conflict: { code: string; details: unknown } | null = null;
-    try {
-      await syncScopeToActiveSchedule(
-        scopeId,
-        projectId,
-        title,
-        startDate,
-        endDate,
-        Number.isFinite(totalHours) ? totalHours : 0,
-        crewSize
+    // Sync to ActiveSchedule
+    await syncScopeToActiveSchedule(
+      scopeId,
+      projectId,
+      title,
+      startDate,
+      endDate,
+      Number.isFinite(totalHours) ? totalHours : 0,
+      crewSize
+    );
+    console.log('[PUT] Scope sync complete');
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof SchedulingConflictError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          conflict: {
+            code: error.code,
+            details: error.details ?? null,
+          },
+        },
+        { status: 409 }
       );
-      console.log('[PUT] Scope sync complete');
-    } catch (error) {
-      if (error instanceof SchedulingConflictError) {
-        syncWarning = error.message;
-        conflict = {
-          code: error.code,
-          details: error.details ?? null,
-        };
-      } else {
-        throw error;
-      }
     }
 
-    return NextResponse.json({
-      success: true,
-      warning: syncWarning,
-      conflict,
-    });
-  } catch (error) {
     return NextResponse.json(
       { success: false, error: `Failed to update Gantt V2 scope: ${String(error)}` },
       { status: 500 }
