@@ -80,18 +80,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       notes
     );
 
-    // Sync to ActiveSchedule if dates and hours are provided
+    // Sync to ActiveSchedule if dates and hours are provided.
+    // Scope persistence should succeed even if scheduling sync has conflicts.
+    let syncWarning: string | null = null;
+    let conflict: { code: string; details: unknown } | null = null;
     console.log('[POST] About to sync scope for ActiveSchedule');
-    await syncScopeToActiveSchedule(
-      id,
-      projectId,
-      title,
-      startDate,
-      endDate,
-      Number.isFinite(totalHours) ? totalHours : 0,
-      crewSize
-    );
-    console.log('[POST] Scope sync complete');
+    try {
+      await syncScopeToActiveSchedule(
+        id,
+        projectId,
+        title,
+        startDate,
+        endDate,
+        Number.isFinite(totalHours) ? totalHours : 0,
+        crewSize
+      );
+      console.log('[POST] Scope sync complete');
+    } catch (error) {
+      if (error instanceof SchedulingConflictError) {
+        syncWarning = error.message;
+        conflict = {
+          code: error.code,
+          details: error.details ?? null,
+        };
+      } else {
+        throw error;
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -105,22 +120,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         crewSize,
         notes,
       },
+      warning: syncWarning,
+      conflict,
     });
   } catch (error) {
-    if (error instanceof SchedulingConflictError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-          conflict: {
-            code: error.code,
-            details: error.details ?? null,
-          },
-        },
-        { status: 409 }
-      );
-    }
-
     return NextResponse.json(
       { success: false, error: `Failed to create Gantt V2 scope: ${String(error)}` },
       { status: 500 }
