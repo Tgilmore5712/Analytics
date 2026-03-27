@@ -90,7 +90,63 @@ const getWorkdayCountPerMonth = (start: Date, end: Date): Map<string, number> =>
 };
 
 export async function ensureGanttV2Schema(): Promise<void> {
-  return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS gantt_v2_projects (
+      id TEXT PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      customer TEXT,
+      project_number TEXT,
+      status TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES gantt_v2_projects(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      start_date DATE,
+      end_date DATE,
+      total_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+      crew_size DOUBLE PRECISION,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS gantt_v2_schedule_entries (
+      id TEXT PRIMARY KEY,
+      scope_id TEXT NOT NULL REFERENCES gantt_v2_scopes(id) ON DELETE CASCADE,
+      work_date DATE NOT NULL,
+      scheduled_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(scope_id, work_date)
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_scope_id ON gantt_v2_schedule_entries(scope_id);`
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_work_date ON gantt_v2_schedule_entries(work_date);`
+  );
 }
 
 export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
