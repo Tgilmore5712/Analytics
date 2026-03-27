@@ -231,15 +231,23 @@ export async function POST(request: NextRequest) {
         tasks: tasks || null,
         schedulingMode: normalizedSchedulingMode,
         selectedDays: normalizedSelectedDays,
-      } as any, // Type bypass for new color/taskColors columns
+      } as any,
     });
 
-    // Update color and taskColors as separate query since Prisma schema may not be synced
-    if (color || taskColors) {
+    // Update color and taskColors with raw SQL - handle them separately for clarity
+    try {
+      const colorValue = color || null;
+      const taskColorsValue = taskColors ? JSON.stringify(taskColors) : null;
+      
       await prisma.$executeRawUnsafe(
-        `UPDATE "ProjectScope" SET ${color ? '"color" = $1' : ''} ${color && taskColors ? ',' : ''} ${taskColors ? `"taskColors" = ${taskColors ? '$2' : '$1'}` : ''} WHERE id = $3`,
-        ...[...(color ? [color] : []), ...(taskColors ? [JSON.stringify(taskColors)] : []), scope.id].filter(v => v !== undefined)
+        `UPDATE "ProjectScope" SET "color" = $1, "taskColors" = $2 WHERE id = $3`,
+        colorValue,
+        taskColorsValue,
+        scope.id
       );
+    } catch (colorError) {
+      console.error('Failed to update scope colors:', colorError);
+      // Don't fail the whole request if color save fails
     }
 
     const shouldSync = syncToActiveSchedule !== false;
@@ -335,33 +343,38 @@ export async function PUT(request: NextRequest) {
         ...(tasks !== undefined && { tasks: tasks || null }),
         ...(normalizedSchedulingMode !== undefined && { schedulingMode: normalizedSchedulingMode }),
         ...(normalizedSelectedDays !== undefined && { selectedDays: normalizedSelectedDays }),
-      } as any, // Type bypass for new color/taskColors columns
+      } as any,
     });
 
-    // Update color and taskColors as separate query since Prisma schema may not be synced
+    // Update color and taskColors with raw SQL
     if (color !== undefined || taskColors !== undefined) {
-      const updateParts = [];
-      const params = [];
-      let paramIndex = 1;
-
-      if (color !== undefined) {
-        updateParts.push(`"color" = $${paramIndex}`);
-        params.push(color || null);
-        paramIndex++;
-      }
-
-      if (taskColors !== undefined) {
-        updateParts.push(`"taskColors" = $${paramIndex}`);
-        params.push(taskColors ? JSON.stringify(taskColors) : null);
-        paramIndex++;
-      }
-
-      if (updateParts.length > 0) {
-        params.push(id);
-        await prisma.$executeRawUnsafe(
-          `UPDATE "ProjectScope" SET ${updateParts.join(', ')} WHERE id = $${paramIndex}`,
-          ...params
-        );
+      try {
+        const colorValue = color !== undefined ? (color || null) : undefined;
+        const taskColorsValue = taskColors !== undefined ? (taskColors ? JSON.stringify(taskColors) : null) : undefined;
+        
+        const updates = [];
+        const params: any[] = [];
+        
+        if (color !== undefined) {
+          updates.push(`"color" = $${updates.length + 1}`);
+          params.push(colorValue);
+        }
+        
+        if (taskColors !== undefined) {
+          updates.push(`"taskColors" = $${updates.length + 1}`);
+          params.push(taskColorsValue);
+        }
+        
+        if (updates.length > 0) {
+          params.push(id);
+          await prisma.$executeRawUnsafe(
+            `UPDATE "ProjectScope" SET ${updates.join(', ')} WHERE id = $${params.length}`,
+            ...params
+          );
+        }
+      } catch (colorError) {
+        console.error('Failed to update scope colors:', colorError);
+        // Don't fail the whole request if color save fails
       }
     }
 

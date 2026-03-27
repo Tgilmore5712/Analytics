@@ -134,9 +134,11 @@ export function ProjectScopesModal({
   const [newTask, setNewTask] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskDays, setNewTaskDays] = useState("");
+  const [newTaskColor, setNewTaskColor] = useState("#A855F7"); // Default task color
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
   const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
+  const [editingTaskColorIndex, setEditingTaskColorIndex] = useState<number | null>(null);
   const formSectionRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const previousActiveScopeIdRef = useRef<string | null>(selectedScopeId);
@@ -149,6 +151,8 @@ export function ProjectScopesModal({
     hours: undefined,
     description: "",
     tasks: [],
+    color: undefined,
+    taskColors: {},
     schedulingMode: "contiguous",
     selectedDays: [],
   };
@@ -627,6 +631,8 @@ export function ProjectScopesModal({
           : getEffectiveScopeHours(scope),
       description: scope.description || "",
       tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
+      color: scope.color,
+      taskColors: (scope.taskColors as Record<string, string>) || {},
       schedulingMode: normalizedSchedulingMode,
       selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
     });
@@ -641,19 +647,51 @@ export function ProjectScopesModal({
     const dateText = newTaskDate ? newTaskDate : "";
     const prefix = [dateText, daysText].filter(Boolean).join(" | ");
     const taskEntry = prefix ? `[${prefix}] ${trimmed}` : trimmed;
+    
     setScopeDetail((prev) => ({
       ...prev,
       tasks: [...(prev.tasks || []), taskEntry],
+      taskColors: {
+        ...(prev.taskColors || {}),
+        [trimmed]: newTaskColor,
+      },
     }));
     setNewTask("");
     setNewTaskDate("");
     setNewTaskDays("");
+    setNewTaskColor("#A855F7");
   };
 
   const handleRemoveTask = (index: number) => {
+    setScopeDetail((prev) => {
+      const taskToRemove = prev.tasks?.[index];
+      const taskName = taskToRemove?.replace(/^\[.*?\]\s*/, '') || '';
+      
+      const updatedTaskColors = { ...(prev.taskColors || {}) };
+      delete updatedTaskColors[taskName];
+      
+      return {
+        ...prev,
+        tasks: prev.tasks?.filter((_, i) => i !== index) || [],
+        taskColors: updatedTaskColors,
+      };
+    });
+  };
+
+  const extractTaskName = (taskString: string): string => {
+    // Extract task name from "[DATE | Days] TaskName" format
+    const match = taskString.match(/^\[.*?\]\s*(.+)$|^(.+)$/);
+    return match ? (match[1] || match[2]) : taskString;
+  };
+
+  const updateTaskColor = (taskString: string, newColor: string) => {
+    const taskName = extractTaskName(taskString);
     setScopeDetail((prev) => ({
       ...prev,
-      tasks: prev.tasks?.filter((_, i) => i !== index) || [],
+      taskColors: {
+        ...(prev.taskColors || {}),
+        [taskName]: newColor,
+      },
     }));
   };
 
@@ -1344,7 +1382,7 @@ export function ProjectScopesModal({
             </div>
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-2">Tasks</label>
-              <div className="grid grid-cols-[1fr_160px_90px_auto] gap-2 mb-3">
+              <div className="grid grid-cols-[1fr_160px_90px_70px_auto] gap-2 mb-3">
                 <div>
                   <label className="block text-xs font-semibold mb-1 text-gray-700">Task Name</label>
                   <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddTask()} className="w-full px-3 py-2 border rounded-md text-sm" />
@@ -1357,18 +1395,68 @@ export function ProjectScopesModal({
                   <label className="block text-xs font-semibold mb-1 text-gray-700"># of Days</label>
                   <input type="number" min="1" step="1" value={newTaskDays} onChange={(e) => setNewTaskDays(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-700">Color</label>
+                  <input 
+                    type="color" 
+                    value={newTaskColor} 
+                    onChange={(e) => setNewTaskColor(e.target.value)} 
+                    className="w-full h-9 border rounded-md cursor-pointer"
+                    title="Task color"
+                  />
+                </div>
                 <div className="flex items-end">
                   <button type="button" onClick={handleAddTask} className="w-full px-4 py-2 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300">Add</button>
                 </div>
               </div>
               {scopeDetail.tasks && scopeDetail.tasks.length > 0 && (
                 <div className="space-y-2 bg-gray-50 p-3 rounded">
-                  {scopeDetail.tasks.map((task, index) => (
-                    <div key={index} className="flex items-start justify-between gap-2 bg-white p-2 rounded border border-gray-200">
-                      <div className="text-sm flex-1">{task}</div>
-                      <button type="button" onClick={() => handleRemoveTask(index)} className="text-red-500 hover:text-red-700 font-bold">x</button>
-                    </div>
-                  ))}
+                  {scopeDetail.tasks.map((task, index) => {
+                    const taskName = extractTaskName(task);
+                    const taskColor = scopeDetail.taskColors?.[taskName] || '#A855F7';
+                    const isEditing = editingTaskColorIndex === index;
+                    
+                    return (
+                      <div key={index} className="flex items-center justify-between gap-2 bg-white p-2 rounded border border-gray-200">
+                        <div className="text-sm flex-1">{task}</div>
+                        <div className="flex items-center gap-2">
+                          {isEditing ? (
+                            <>
+                              <input 
+                                type="color" 
+                                value={taskColor} 
+                                onChange={(e) => updateTaskColor(task, e.target.value)} 
+                                className="w-8 h-8 border rounded cursor-pointer"
+                              />
+                              <button 
+                                type="button" 
+                                onClick={() => setEditingTaskColorIndex(null)} 
+                                className="px-2 py-1 text-xs bg-gray-200 rounded hover:bg-gray-300"
+                              >
+                                Done
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div 
+                                className="w-6 h-6 rounded border border-gray-300 cursor-pointer hover:border-gray-600" 
+                                style={{ backgroundColor: taskColor }}
+                                onClick={() => setEditingTaskColorIndex(index)}
+                                title="Click to edit color"
+                              />
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveTask(index)} 
+                                className="text-red-500 hover:text-red-700 font-bold"
+                              >
+                                x
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
