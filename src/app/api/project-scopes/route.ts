@@ -356,13 +356,13 @@ export async function PUT(request: NextRequest) {
         const params: any[] = [];
         
         if (color !== undefined) {
-          updates.push(`"color" = $${updates.length + 1}`);
           params.push(colorValue);
+          updates.push(`"color" = $${params.length}`);
         }
         
         if (taskColors !== undefined) {
-          updates.push(`"taskColors" = $${updates.length + 1}`);
           params.push(taskColorsValue);
+          updates.push(`"taskColors" = $${params.length}`);
         }
         
         if (updates.length > 0) {
