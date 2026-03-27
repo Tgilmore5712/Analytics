@@ -76,6 +76,8 @@ model ProjectScope {
   hours       Float? // Total hours
   description String? @db.Text
   tasks       Json? // Array of task strings
+  color       String? // Hex color code for scope (e.g., "#3B82F6")
+  taskColors  Json? // Map of task names to color codes for individual task colors
   schedulingMode String @default("contiguous") // contiguous | specific-days
   selectedDays Json? // Array<{ date: string, hours: number, foreman?: string | null }>
 

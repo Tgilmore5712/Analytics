@@ -29,6 +29,8 @@ export interface Scope {
   manpower?: number;
   description?: string;
   tasks?: string[];
+  color?: string; // Hex color code for scope (e.g., "#3B82F6")
+  taskColors?: Record<string, string>; // Map of task names to color codes
   schedulingMode?: "contiguous" | "specific-days";
   selectedDays?: Array<{
     date: string;

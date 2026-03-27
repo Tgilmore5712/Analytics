@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProjectScopesModal } from "@/app/project-schedule/components/ProjectScopesModal";
 import { ProjectInfo, Scope } from "@/types";
 
@@ -28,6 +28,8 @@ type ScopeRow = {
   crewSize: number | null;
   notes: string | null;
   tasks?: string[];
+  color?: string; // Hex color code for scope
+  taskColors?: Record<string, string>; // Map of task names to color codes
   scheduledHours: number;
   remainingHours: number;
 };
@@ -53,8 +55,41 @@ const monthLabel = (value: Date) =>
 
 const asDate = (value: string | null) => {
   if (!value) return null;
+  // Parse YYYY-MM-DD as local date to avoid UTC timezone shifts (e.g. Apr 1 displaying in Mar)
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getScopeColor = (scope: ScopeRow): string => {
+  // Return custom color if set, otherwise use default blue
+  return scope.color || "#3B82F6"; // Default to blue-500
+};
+
+const getTaskColor = (taskName: string, scope: ScopeRow): string => {
+  // Check if task has a custom color, otherwise use scope color
+  if (scope.taskColors && scope.taskColors[taskName]) {
+    return scope.taskColors[taskName];
+  }
+  return scope.color || "#A855F7"; // Default to purple-500
+};
+
+const lightenColor = (hex: string, percent: number): string => {
+  // Lighten a hex color by a percentage for hover states
+  const num = parseInt(hex.slice(1), 16);
+  const amt = Math.round(2.55 * percent);
+  const R = Math.min(255, (num >> 16) + amt);
+  const G = Math.min(255, (num >> 8 & 0x00FF) + amt);
+  const B = Math.min(255, (num & 0x0000FF) + amt);
+  return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 };
 
 export default function ProjectSchedulePage() {
@@ -73,6 +108,10 @@ export default function ProjectSchedulePage() {
     projectNumber: "",
     status: "In Progress",
   });
+  const topScrollbarRef = useRef<HTMLDivElement | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const isSyncingScrollRef = useRef<"top" | "table" | null>(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
 
   const toggleProjectCollapse = (projectId: string) => {
     const newCollapsed = new Set(collapsedProjects);
@@ -109,23 +148,56 @@ export default function ProjectSchedulePage() {
     return { taskName, startDate, days };
   };
 
+  const updateTableScrollWidth = useCallback(() => {
+    if (!tableScrollRef.current) return;
+    setTableScrollWidth(tableScrollRef.current.scrollWidth);
+  }, []);
+
+  const handleTopScrollbarScroll = () => {
+    if (!topScrollbarRef.current || !tableScrollRef.current) return;
+    if (isSyncingScrollRef.current === "table") return;
+
+    isSyncingScrollRef.current = "top";
+    tableScrollRef.current.scrollLeft = topScrollbarRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScrollRef.current = null;
+    });
+  };
+
+  const handleTableScroll = () => {
+    if (!topScrollbarRef.current || !tableScrollRef.current) return;
+    if (isSyncingScrollRef.current === "top") return;
+
+    isSyncingScrollRef.current = "table";
+    topScrollbarRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    requestAnimationFrame(() => {
+      isSyncingScrollRef.current = null;
+    });
+  };
+
   // Generate timeline based on view mode
   const timeline = useMemo(() => {
+    // For month view, start from the first of the current month
+    // For day/week views, start from the Monday of the current week
     const base = new Date();
-    base.setDate(1);
     base.setHours(0, 0, 0, 0);
 
     if (viewMode === "day") {
-      // Next 30 days
+      // Start from Monday of the current week, show 60 days forward
+      const d = new Date(base);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      d.setDate(diff);
+      
       const days: Date[] = [];
-      for (let i = 0; i < 30; i++) {
-        const d = new Date(base);
-        d.setDate(d.getDate() + i);
-        days.push(d);
+      for (let i = 0; i < 60; i++) {
+        const dayDate = new Date(d);
+        dayDate.setDate(dayDate.getDate() + i);
+        days.push(dayDate);
       }
       return days;
     } else if (viewMode === "week") {
-      // Next 20 weeks (Mondays)
+      // Start from Monday of the current week, show next 20 weeks
       const d = new Date(base);
       const day = d.getDay();
       const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -138,7 +210,8 @@ export default function ProjectSchedulePage() {
       }
       return weeks;
     } else {
-      // Month view: 10 months
+      // Month view: 10 months starting from the current month
+      base.setDate(1);
       const months: Date[] = [];
       for (let i = 0; i < 10; i++) {
         months.push(new Date(base.getFullYear(), base.getMonth() + i, 1));
@@ -164,6 +237,9 @@ export default function ProjectSchedulePage() {
     if (viewMode === "week") return "minmax(60px, 1fr)";
     return "minmax(80px, 1fr)";
   };
+
+  const trailingColumns = viewMode === "day" ? 14 : viewMode === "week" ? 8 : 4;
+  const totalTimelineColumns = timeline.length + trailingColumns;
 
   const getPositionAndWidth = (start: Date | null, end: Date | null) => {
     if (!start || !end || start > end) return { startIdx: -1, endIdx: -1 };
@@ -253,6 +329,14 @@ export default function ProjectSchedulePage() {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    updateTableScrollWidth();
+
+    const onResize = () => updateTableScrollWidth();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [updateTableScrollWidth, timeline.length, viewMode, loading, projects.length]);
 
   const addProject = async () => {
     if (!newProject.projectName.trim()) return;
@@ -390,23 +474,41 @@ export default function ProjectSchedulePage() {
         </div>
 
         <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <div className="grid" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-            <div className="sticky left-0 bg-gray-50 border-r border-b border-gray-200 px-3 py-2 text-xs font-bold uppercase text-gray-500">Project</div>
+          <div
+            ref={topScrollbarRef}
+            onScroll={handleTopScrollbarScroll}
+            className="overflow-x-auto overflow-y-hidden border-b border-gray-200 bg-gray-50"
+          >
+            <div
+              style={{
+                width: tableScrollWidth > 0 ? `${tableScrollWidth}px` : "100%",
+                height: "14px",
+              }}
+            />
+          </div>
+
+          <div ref={tableScrollRef} onScroll={handleTableScroll} className="overflow-x-auto">
+            <div className="min-w-max">
+              <div className="grid" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
+            <div className="sticky left-0 z-30 bg-gray-50 border-r border-b border-gray-200 px-3 py-2 text-xs font-bold uppercase text-gray-500">Project</div>
             {timeline.map((t) => (
               <div key={t.toISOString()} className="border-b border-r border-gray-200 px-2 py-2 text-xs font-bold text-gray-500 text-center">
                 {getTimelineLabel(t)}
               </div>
             ))}
-          </div>
+            {Array.from({ length: trailingColumns }).map((_, idx) => (
+              <div key={`trailing-${idx}`} className="border-b border-r border-gray-200 px-2 py-2" />
+            ))}
+              </div>
 
-          {loading ? (
-            <div className="p-4 text-sm text-gray-500">Loading...</div>
-          ) : filteredProjects.length === 0 ? (
-            <div className="p-4 text-sm text-gray-500">
-              {searchTerm.trim() ? "No projects match your search." : "No projects yet."}
-            </div>
-          ) : (
-            filteredProjects.map((project) => {
+              {loading ? (
+                <div className="p-4 text-sm text-gray-500">Loading...</div>
+              ) : filteredProjects.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">
+                  {searchTerm.trim() ? "No projects match your search." : "No projects yet."}
+                </div>
+              ) : (
+                filteredProjects.map((project) => {
               const scopes = project.scopes || [];
               const isCollapsed = collapsedProjects.has(project.id);
               const projectAllocations = project.scheduleAllocations || [];
@@ -417,13 +519,13 @@ export default function ProjectSchedulePage() {
               return (
                 <React.Fragment key={project.id}>
                   {/* Project header row */}
-                  <div className="grid border-t border-gray-100 bg-gray-50" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-                    <div className="sticky left-0 bg-gray-50 border-r border-gray-200 px-3 py-3 flex items-start justify-between">
+                  <div className="grid border-t border-gray-100 bg-gray-50" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
+                    <div className="sticky left-0 z-20 bg-gray-50 border-r border-gray-200 px-3 py-3 flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => toggleProjectCollapse(project.id)}
-                            className="text-gray-600 hover:text-gray-800 p-1 -ml-1"
+                            className="relative z-30 text-gray-600 hover:text-gray-800 p-1 -ml-1"
                             title={isCollapsed ? "Expand" : "Collapse"}
                           >
                             <svg
@@ -500,8 +602,8 @@ export default function ProjectSchedulePage() {
                     <>
                       {scopes.length === 0 ? (
                         projectTotalHours > 0 && projectAllocations.length > 0 ? (
-                          <div className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-                            <div className="sticky left-0 bg-white border-r border-gray-200 px-3 py-2 ml-6">
+                          <div className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
+                            <div className="sticky left-0 z-20 bg-white border-r border-gray-200 px-3 py-2 ml-6">
                               <div
                                 onClick={() => {
                                   setSelectedScopeId(null);
@@ -549,8 +651,8 @@ export default function ProjectSchedulePage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-                            <div className="sticky left-0 bg-white border-r border-gray-200 px-3 py-2 ml-6">
+                          <div className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
+                            <div className="sticky left-0 z-20 bg-white border-r border-gray-200 px-3 py-2 ml-6">
                               <div className="text-xs italic text-gray-400">No scopes yet</div>
                             </div>
                           </div>
@@ -569,14 +671,14 @@ export default function ProjectSchedulePage() {
                           const projectHours = projectTotalHours || 0;
 
                           return (
-                            <>
-                              <div key={scope.id} className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-                                <div className="sticky left-0 bg-white border-r border-gray-200 px-3 py-2 ml-6">
+                            <React.Fragment key={scope.id}>
+                              <div className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
+                                <div className="sticky left-0 z-20 bg-white border-r border-gray-200 px-3 py-2 ml-6">
                                   <div className="flex items-start gap-2">
                                     {scope.tasks && scope.tasks.length > 0 && (
                                       <button
                                         onClick={() => toggleScopeExpand(scope.id)}
-                                        className="text-gray-600 hover:text-gray-800 p-0.5 -ml-1 flex-shrink-0 mt-0.5"
+                                        className="relative z-30 text-gray-600 hover:text-gray-800 p-0.5 -ml-1 flex-shrink-0 mt-0.5"
                                         title={expandedScopes.has(scope.id) ? "Collapse tasks" : "Expand tasks"}
                                       >
                                         <svg
@@ -627,10 +729,17 @@ export default function ProjectSchedulePage() {
                                       setSelectedScopeId(scope.id);
                                       setSelectedProject(project);
                                     }}
-                                    className="absolute top-1.5 h-6 rounded bg-blue-500 text-white text-xs font-semibold px-2 flex items-center cursor-pointer hover:bg-blue-600"
+                                    className="absolute top-1.5 h-6 rounded text-white text-xs font-semibold px-2 flex items-center cursor-pointer"
                                     style={{
+                                      backgroundColor: getScopeColor(scope),
                                       left: `calc(${(startIdx / timeline.length) * 100}% + 4px)`,
                                       width: `calc(${((endIdx - startIdx + 1) / timeline.length) * 100}% - 8px)`,
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = lightenColor(getScopeColor(scope), 10);
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = getScopeColor(scope);
                                     }}
                                   >
                                     {scope.totalHours.toFixed(0)}h
@@ -648,6 +757,7 @@ export default function ProjectSchedulePage() {
                                       projectHours > 0 ? (alloc.hours * scopeHours) / projectHours : 0;
                                     if (scopeAllocationHours <= 0) return null;
 
+                                    const scopeColor = getScopeColor(scope);
                                     return (
                                       <div
                                         key={`${scope.id}-${alloc.period}`}
@@ -655,10 +765,17 @@ export default function ProjectSchedulePage() {
                                           setSelectedScopeId(scope.id);
                                           setSelectedProject(project);
                                         }}
-                                        className="absolute top-1.5 h-6 rounded bg-green-500 text-white text-xs font-semibold px-2 flex items-center cursor-pointer hover:bg-green-600"
+                                        className="absolute top-1.5 h-6 rounded text-white text-xs font-semibold px-2 flex items-center cursor-pointer"
                                         style={{
+                                          backgroundColor: scopeColor,
                                           left: `calc(${(allocIdx / timeline.length) * 100}% + 4px)`,
                                           width: `calc(${(1 / timeline.length) * 100}% - 8px)`,
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = lightenColor(scopeColor, 10);
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = scopeColor;
                                         }}
                                       >
                                         {scopeAllocationHours.toFixed(0)}h
@@ -684,8 +801,8 @@ export default function ProjectSchedulePage() {
                                   const taskHasBar = taskStartIdx >= 0 && taskEndIdx >= 0 && taskEndIdx >= taskStartIdx;
 
                                   return (
-                                    <div key={`${scope.id}-task-${taskIdx}`} className="grid border-t border-gray-200" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-                                      <div className="sticky left-0 bg-gray-50 border-r border-gray-200 px-3 py-2 ml-12">
+                                    <div key={`${scope.id}-task-${taskIdx}`} className="grid border-t border-gray-200" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
+                                      <div className="sticky left-0 z-20 bg-gray-50 border-r border-gray-200 px-3 py-2 ml-12">
                                         <div className="text-xs text-gray-600 truncate">
                                           {taskName}
                                         </div>
@@ -710,10 +827,17 @@ export default function ProjectSchedulePage() {
 
                                         {taskHasBar && taskStart && (
                                           <div
-                                            className="absolute top-1.5 h-5 rounded bg-purple-500 text-white text-[10px] font-semibold px-1.5 flex items-center hover:bg-purple-600"
+                                            className="absolute top-1.5 h-5 rounded text-white text-[10px] font-semibold px-1.5 flex items-center"
                                             style={{
+                                              backgroundColor: getTaskColor(taskName, scope),
                                               left: `calc(${(taskStartIdx / timeline.length) * 100}% + 4px)`,
                                               width: `calc(${((taskEndIdx - taskStartIdx + 1) / timeline.length) * 100}% - 8px)`,
+                                            }}
+                                            onMouseEnter={(e) => {
+                                              e.currentTarget.style.backgroundColor = lightenColor(getTaskColor(taskName, scope), 10);
+                                            }}
+                                            onMouseLeave={(e) => {
+                                              e.currentTarget.style.backgroundColor = getTaskColor(taskName, scope);
                                             }}
                                             title={`${taskName} - ${startDate} (${days}d)`}
                                           >
@@ -728,7 +852,7 @@ export default function ProjectSchedulePage() {
                                 })}
                               </>
                             )}
-                          </>
+                          </React.Fragment>
                         );
                       })
                       )}
@@ -737,7 +861,9 @@ export default function ProjectSchedulePage() {
                 </React.Fragment>
               );
             })
-          )}
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

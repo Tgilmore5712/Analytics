@@ -816,6 +816,8 @@ export function ProjectScopesModal({
           endDate: resolvedEndDate,
           description: scopeDetail.description || '',
           tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
+          color: scopeDetail.color,
+          taskColors: scopeDetail.taskColors,
           schedulingMode: effectiveSchedulingMode,
           selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
           manpower: scopeDetail.manpower,
@@ -853,6 +855,8 @@ export function ProjectScopesModal({
           : (scopeDetail.endDate || ""),
         description: scopeDetail.description || "",
         tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
+        color: scopeDetail.color,
+        taskColors: scopeDetail.taskColors,
         schedulingMode: effectiveSchedulingMode,
         selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
       };
@@ -1126,6 +1130,38 @@ export function ProjectScopesModal({
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-1">Scope Title</label>
               <input ref={titleInputRef} type="text" value={scopeDetail.title || ""} onChange={(e) => setScopeDetail(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-orange-500" />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-1">Scope Color</label>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="color" 
+                  value={scopeDetail.color || "#3B82F6"} 
+                  onChange={(e) => setScopeDetail(p => ({ ...p, color: e.target.value }))} 
+                  className="w-12 h-10 border rounded-md cursor-pointer"
+                  title="Choose a color for this scope"
+                />
+                <input 
+                  type="text" 
+                  value={scopeDetail.color || "#3B82F6"} 
+                  onChange={(e) => {
+                    const hex = e.target.value;
+                    if (/^#[0-9A-F]{6}$/i.test(hex)) {
+                      setScopeDetail(p => ({ ...p, color: hex }));
+                    }
+                  }} 
+                  placeholder="#3B82F6"
+                  className="flex-1 px-3 py-2 border rounded-md text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setScopeDetail(p => ({ ...p, color: undefined }))}
+                  className="px-3 py-2 border rounded-md text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
 
             <div className="mb-4">

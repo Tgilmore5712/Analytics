@@ -21,6 +21,9 @@ export type GanttV2ScopeRow = {
   totalHours: number;
   crewSize: number | null;
   notes: string | null;
+  tasks?: string[];
+  color?: string; // Hex color code for scope
+  taskColors?: Record<string, string>; // Map of task names to color codes
   scheduledHours: number;
   remainingHours: number;
 };
@@ -169,6 +172,7 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
       manpower: true,
       hours: true,
       description: true,
+      tasks: true,
     },
   });
 
@@ -222,6 +226,41 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
           scopes = await getGanttV2Scopes(project.id);
         }
       }
+
+      const normalizeTitle = (value: string | null | undefined) =>
+        normalizeIdentity(value || '');
+
+      const parseLegacyTasks = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return [];
+        return value
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter((item) => item.length > 0);
+      };
+
+      const scopesWithTasks = scopes.map((scope) => {
+        const scopeStart = toSqlDate(scope.startDate);
+        const scopeEnd = toSqlDate(scope.endDate);
+
+        const exactMatch = legacyForProject.find((legacyScope) =>
+          normalizeTitle(legacyScope.title) === normalizeTitle(scope.title) &&
+          toSqlDate(legacyScope.startDate) === scopeStart &&
+          toSqlDate(legacyScope.endDate) === scopeEnd
+        );
+
+        const titleOnlyMatch = !exactMatch
+          ? legacyForProject.find(
+              (legacyScope) => normalizeTitle(legacyScope.title) === normalizeTitle(scope.title)
+            )
+          : null;
+
+        const matchedLegacy = exactMatch || titleOnlyMatch;
+        const tasks = matchedLegacy ? parseLegacyTasks(matchedLegacy.tasks) : [];
+
+        return {
+          ...scope,
+          tasks,
+        };
+      });
       
       const scheduleOrFilters: Array<{
         projectId?: string;
@@ -318,9 +357,9 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
       
       return {
         ...project,
-        scopeCount: scopes.length,
+        scopeCount: scopesWithTasks.length,
         scopedHours: effectiveScopedHours,
-        scopes,
+        scopes: scopesWithTasks,
         scheduleAllocations,
       };
     })
