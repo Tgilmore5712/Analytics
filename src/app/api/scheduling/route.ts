@@ -12,44 +12,68 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(500, Math.max(1, requestedPageSize));
     const skip = (page - 1) * pageSize;
 
-    // Get all schedules
-    const [total, schedules] = await Promise.all([
-      prisma.schedule.count(),
-      prisma.schedule.findMany({
-        skip,
-        take: pageSize,
-        select: {
-          id: true,
-          jobKey: true,
-          customer: true,
-          projectName: true,
-          projectNumber: true,
-          status: true,
-          totalHours: true,
-          allocationsList: {
-            select: {
-              period: true,
-              hours: true,
-              percent: true,
-            },
-            orderBy: { period: 'asc' },
-          },
-        },
-      }),
-    ]);
+    let total = 0;
+    let data: Array<Record<string, unknown>> = [];
 
-    // Transform allocations to the expected format
-    const data = schedules.map((s) => {
-      const { allocationsList, ...rest } = s;
-      return {
-        ...rest,
-        allocations: allocationsList.map((alloc) => ({
-          month: alloc.period,
-          percent: alloc.percent || 0,
-          hours: alloc.hours,
-        })),
-      };
-    });
+    try {
+      const [countValue, schedules] = await Promise.all([
+        prisma.schedule.count(),
+        prisma.schedule.findMany({
+          skip,
+          take: pageSize,
+          select: {
+            id: true,
+            jobKey: true,
+            customer: true,
+            projectName: true,
+            projectNumber: true,
+            status: true,
+            totalHours: true,
+            allocationsList: {
+              select: {
+                period: true,
+                hours: true,
+                percent: true,
+              },
+              orderBy: { period: 'asc' },
+            },
+          },
+        }),
+      ]);
+
+      total = countValue;
+      data = schedules.map((s) => {
+        const { allocationsList, ...rest } = s;
+        return {
+          ...rest,
+          allocations: allocationsList.map((alloc) => ({
+            month: alloc.period,
+            percent: alloc.percent || 0,
+            hours: alloc.hours,
+          })),
+        };
+      });
+    } catch (allocationsError) {
+      console.warn('Scheduling allocations unavailable; falling back to schedules without allocations:', allocationsError);
+      const [countValue, schedules] = await Promise.all([
+        prisma.schedule.count(),
+        prisma.schedule.findMany({
+          skip,
+          take: pageSize,
+          select: {
+            id: true,
+            jobKey: true,
+            customer: true,
+            projectName: true,
+            projectNumber: true,
+            status: true,
+            totalHours: true,
+          },
+        }),
+      ]);
+      total = countValue;
+      data = schedules.map((s) => ({ ...s, allocations: [] }));
+    }
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -67,7 +91,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Failed to fetch schedules:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch schedules' },
+      { success: false, error: `Failed to fetch schedules: ${String(error)}` },
       { status: 500 }
     );
   }

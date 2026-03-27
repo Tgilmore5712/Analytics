@@ -104,10 +104,15 @@ function normalizeTimeOffRecord(row: {
 }
 
 async function ensureScheduleDataColumn() {
-  await prisma.$executeRawUnsafe(`
-    ALTER TABLE "Schedule"
-      ADD COLUMN IF NOT EXISTS "scheduleData" JSONB
-  `);
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Schedule"
+        ADD COLUMN IF NOT EXISTS "scheduleData" JSONB
+    `);
+  } catch (error) {
+    // Some production roles cannot run DDL; continue with non-legacy paths.
+    console.warn('ensureScheduleDataColumn skipped:', error);
+  }
 }
 
 function isValidDayData(value: any): value is StoredDayData {
@@ -241,21 +246,39 @@ export async function GET(request: NextRequest) {
 
     if (action === 'scopes') {
       // GET project scopes
-      const scopes = await prisma.projectScope.findMany({
-        select: {
-          id: true,
-          jobKey: true,
-          title: true,
-          startDate: true,
-          endDate: true,
-          manpower: true,
-          hours: true,
-          description: true,
-          tasks: true,
-          schedulingMode: true,
-          selectedDays: true,
-        },
-      });
+      let scopes: Array<Record<string, unknown>> = [];
+      try {
+        scopes = await prisma.projectScope.findMany({
+          select: {
+            id: true,
+            jobKey: true,
+            title: true,
+            startDate: true,
+            endDate: true,
+            manpower: true,
+            hours: true,
+            description: true,
+            tasks: true,
+            schedulingMode: true,
+            selectedDays: true,
+          },
+        }) as unknown as Array<Record<string, unknown>>;
+      } catch (scopeError) {
+        console.warn('Falling back to legacy scope select:', scopeError);
+        scopes = await prisma.projectScope.findMany({
+          select: {
+            id: true,
+            jobKey: true,
+            title: true,
+            startDate: true,
+            endDate: true,
+            manpower: true,
+            hours: true,
+            description: true,
+            tasks: true,
+          },
+        }) as unknown as Array<Record<string, unknown>>;
+      }
 
       return NextResponse.json({
         success: true,
@@ -265,23 +288,44 @@ export async function GET(request: NextRequest) {
 
     if (action === 'projects') {
       // GET projects
-      const projects = await prisma.project.findMany({
-        where: {
-          status: {
-            notIn: ['Bid Submitted', 'Lost'],
+      let projects: Array<Record<string, unknown>> = [];
+      try {
+        projects = await prisma.project.findMany({
+          where: {
+            status: {
+              notIn: ['Bid Submitted', 'Lost'],
+            },
+            projectArchived: false,
           },
-          projectArchived: false,
-        },
-        select: {
-          id: true,
-          projectNumber: true,
-          projectName: true,
-          customer: true,
-          status: true,
-          hours: true,
-          projectManager: true,
-        },
-      });
+          select: {
+            id: true,
+            projectNumber: true,
+            projectName: true,
+            customer: true,
+            status: true,
+            hours: true,
+            projectManager: true,
+          },
+        }) as unknown as Array<Record<string, unknown>>;
+      } catch (projectError) {
+        console.warn('Falling back to projects query without archived filter:', projectError);
+        projects = await prisma.project.findMany({
+          where: {
+            status: {
+              notIn: ['Bid Submitted', 'Lost'],
+            },
+          },
+          select: {
+            id: true,
+            projectNumber: true,
+            projectName: true,
+            customer: true,
+            status: true,
+            hours: true,
+            projectManager: true,
+          },
+        }) as unknown as Array<Record<string, unknown>>;
+      }
 
       return NextResponse.json({
         success: true,
@@ -294,27 +338,41 @@ export async function GET(request: NextRequest) {
       const startDate = searchParams.get('startDate');
       const endDate = searchParams.get('endDate');
 
-      const activeSchedules = await prisma.activeSchedule.findMany({
-        where: {
-          ...(startDate && endDate && {
-            date: {
-              gte: startDate,
-              lte: endDate,
-            },
-          }),
-        },
-        select: {
-          id: true,
-          jobKey: true,
-          scopeOfWork: true,
-          date: true,
-          hours: true,
-          foreman: true,
-          manpower: true,
-          source: true,
-        },
-        orderBy: { date: 'asc' },
-      });
+      let activeSchedules: Array<{
+        id: string;
+        jobKey: string;
+        scopeOfWork: string;
+        date: string;
+        hours: number;
+        foreman: string | null;
+        manpower: number | null;
+        source: string;
+      }> = [];
+      try {
+        activeSchedules = await prisma.activeSchedule.findMany({
+          where: {
+            ...(startDate && endDate && {
+              date: {
+                gte: startDate,
+                lte: endDate,
+              },
+            }),
+          },
+          select: {
+            id: true,
+            jobKey: true,
+            scopeOfWork: true,
+            date: true,
+            hours: true,
+            foreman: true,
+            manpower: true,
+            source: true,
+          },
+          orderBy: { date: 'asc' },
+        });
+      } catch (activeScheduleError) {
+        console.warn('Active schedule table unavailable; returning empty active schedule:', activeScheduleError);
+      }
 
       // Parse jobKey to extract customer, projectNumber, projectName
       const enrichedSchedules = activeSchedules.map(schedule => {
@@ -360,14 +418,11 @@ export async function GET(request: NextRequest) {
           hours: true,
           description: true,
           tasks: true,
-          schedulingMode: true,
-          selectedDays: true,
         },
       }),
       prisma.project.findMany({
         where: {
           status: { notIn: ['Bid Submitted', 'Lost'] },
-          projectArchived: false,
         },
         select: {
           id: true,
@@ -393,7 +448,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Failed to fetch short-term schedule data:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch data' },
+      { success: false, error: `Failed to fetch data: ${String(error)}` },
       { status: 500 }
     );
   }

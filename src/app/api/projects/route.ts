@@ -146,25 +146,38 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (includeTotal) {
-      [total, projects] = await Promise.all([
-        queryWhere ? prisma.project.count({ where: queryWhere }) : prisma.project.count(),
-        queryWhere
-          ? prisma.project.findMany({
-              where: queryWhere,
-              ...baseFindManyArgs,
-              take: pageSize,
-            })
-          : prisma.project.findMany({
-              ...baseFindManyArgs,
-              take: pageSize,
-            }),
-      ]);
-      hasNextPage = skip + projects.length < total;
-    } else {
-      const pagePlusOne = queryWhere
+    const legacyWhere: Prisma.ProjectWhereInput = {};
+    if (statusList.length > 0) legacyWhere.status = { in: statusList };
+    if (customer) legacyWhere.customer = customer;
+    if (projectNumber) legacyWhere.projectNumber = projectNumber;
+    if (projectName) legacyWhere.projectName = projectName;
+    const legacyQueryWhere = Object.keys(legacyWhere).length > 0 ? legacyWhere : undefined;
+
+    const fetchProjectsPage = async (whereArg: Prisma.ProjectWhereInput | undefined) => {
+      if (includeTotal) {
+        const [countValue, rows] = await Promise.all([
+          whereArg ? prisma.project.count({ where: whereArg }) : prisma.project.count(),
+          whereArg
+            ? prisma.project.findMany({
+                where: whereArg,
+                ...baseFindManyArgs,
+                take: pageSize,
+              })
+            : prisma.project.findMany({
+                ...baseFindManyArgs,
+                take: pageSize,
+              }),
+        ]);
+        return {
+          total: countValue,
+          rows,
+          hasNextPage: skip + rows.length < countValue,
+        };
+      }
+
+      const pagePlusOne = whereArg
         ? await prisma.project.findMany({
-            where: queryWhere,
+            where: whereArg,
             ...baseFindManyArgs,
             take: pageSize + 1,
           })
@@ -173,8 +186,25 @@ export async function GET(request: NextRequest) {
             take: pageSize + 1,
           });
 
-      hasNextPage = pagePlusOne.length > pageSize;
-      projects = hasNextPage ? pagePlusOne.slice(0, pageSize) : pagePlusOne;
+      const next = pagePlusOne.length > pageSize;
+      return {
+        total: undefined,
+        rows: next ? pagePlusOne.slice(0, pageSize) : pagePlusOne,
+        hasNextPage: next,
+      };
+    };
+
+    try {
+      const result = await fetchProjectsPage(queryWhere);
+      total = result.total;
+      projects = result.rows;
+      hasNextPage = result.hasNextPage;
+    } catch (queryError) {
+      console.warn('Retrying projects query without archived filter:', queryError);
+      const result = await fetchProjectsPage(legacyQueryWhere);
+      total = result.total;
+      projects = result.rows;
+      hasNextPage = result.hasNextPage;
     }
 
     const projectsMissingPmc = projects.filter((project) => {
@@ -194,80 +224,85 @@ export async function GET(request: NextRequest) {
       const missingProjectIds: string[] = projectsMissingPmc
         .map((p) => (typeof p.id === 'string' ? p.id : String(p.id || '')))
         .filter((id) => id.length > 0);
-      const [mappings, details] = await Promise.all([
-        prisma.pmcGroupMapping.findMany({
-          select: {
-            costItemNorm: true,
-            costTypeNorm: true,
-            pmcGroup: true,
-          },
-        }),
-        prisma.purchaseOrderLineItemContractDetail.findMany({
-          where: {
-            projectId: { in: missingProjectIds },
-            description: { not: null },
-          },
-          select: {
-            projectId: true,
-            description: true,
-            costType: true,
-            quantity: true,
-          },
-        }),
-      ]);
 
-      const detailsByProjectId = new Map<string, Array<{ descriptionNorm: string; costTypeNorm: string; quantity: number }>>();
-      for (const d of details) {
-        const projectId = (d.projectId || '').toString().trim();
-        const descriptionNorm = normalizeForPmc(d.description);
-        if (!projectId || !descriptionNorm) continue;
-        const row = {
-          descriptionNorm,
-          costTypeNorm: normalizeForPmc(d.costType),
-          quantity: Number(d.quantity) || 1,
-        };
-        if (!detailsByProjectId.has(projectId)) detailsByProjectId.set(projectId, []);
-        detailsByProjectId.get(projectId)!.push(row);
-      }
+      try {
+        const [mappings, details] = await Promise.all([
+          prisma.pmcGroupMapping.findMany({
+            select: {
+              costItemNorm: true,
+              costTypeNorm: true,
+              pmcGroup: true,
+            },
+          }),
+          prisma.purchaseOrderLineItemContractDetail.findMany({
+            where: {
+              projectId: { in: missingProjectIds },
+              description: { not: null },
+            },
+            select: {
+              projectId: true,
+              description: true,
+              costType: true,
+              quantity: true,
+            },
+          }),
+        ]);
 
-      for (const projectId of missingProjectIds) {
-        const groupTotals: Record<string, number> = {};
-        const projectDetails = detailsByProjectId.get(projectId) || [];
-
-        for (const detail of projectDetails) {
-          const exact = mappings.filter((m) => m.costItemNorm === detail.descriptionNorm);
-          const fuzzy = exact.length
-            ? []
-            : mappings.filter(
-                (m) =>
-                  m.costItemNorm.split(/\s+/).length >= 2 &&
-                  (detail.descriptionNorm.includes(m.costItemNorm) || m.costItemNorm.includes(detail.descriptionNorm))
-              );
-          const candidates = exact.length ? exact : fuzzy;
-          if (!candidates.length) continue;
-
-          const withType = candidates.filter((c) => c.costTypeNorm && c.costTypeNorm === detail.costTypeNorm);
-          const withoutType = candidates.filter((c) => !c.costTypeNorm);
-          const chosenPool = withType.length ? withType : withoutType.length ? withoutType : candidates;
-          const chosen = chosenPool.sort((a, b) => b.costItemNorm.length - a.costItemNorm.length)[0];
-
-          const weight = detail.quantity > 0 ? detail.quantity : 1;
-          groupTotals[chosen.pmcGroup] = (groupTotals[chosen.pmcGroup] || 0) + weight;
+        const detailsByProjectId = new Map<string, Array<{ descriptionNorm: string; costTypeNorm: string; quantity: number }>>();
+        for (const d of details) {
+          const projectId = (d.projectId || '').toString().trim();
+          const descriptionNorm = normalizeForPmc(d.description);
+          if (!projectId || !descriptionNorm) continue;
+          const row = {
+            descriptionNorm,
+            costTypeNorm: normalizeForPmc(d.costType),
+            quantity: Number(d.quantity) || 1,
+          };
+          if (!detailsByProjectId.has(projectId)) detailsByProjectId.set(projectId, []);
+          detailsByProjectId.get(projectId)!.push(row);
         }
 
-        if (Object.keys(groupTotals).length > 0) {
-          pmcFromDetailsByProjectId.set(projectId, {
-            pmcGroup: choosePrimaryGroup(groupTotals) || 'No Match',
-            pmcBreakdown: groupTotals,
-            pmcMappingSource: 'api:projects:costitem:description',
-          });
-        } else {
-          pmcFromDetailsByProjectId.set(projectId, {
-            pmcGroup: 'No Match',
-            pmcBreakdown: {},
-            pmcMappingSource: 'api:projects:costitem:no-match',
-          });
+        for (const projectId of missingProjectIds) {
+          const groupTotals: Record<string, number> = {};
+          const projectDetails = detailsByProjectId.get(projectId) || [];
+
+          for (const detail of projectDetails) {
+            const exact = mappings.filter((m) => m.costItemNorm === detail.descriptionNorm);
+            const fuzzy = exact.length
+              ? []
+              : mappings.filter(
+                  (m) =>
+                    m.costItemNorm.split(/\s+/).length >= 2 &&
+                    (detail.descriptionNorm.includes(m.costItemNorm) || m.costItemNorm.includes(detail.descriptionNorm))
+                );
+            const candidates = exact.length ? exact : fuzzy;
+            if (!candidates.length) continue;
+
+            const withType = candidates.filter((c) => c.costTypeNorm && c.costTypeNorm === detail.costTypeNorm);
+            const withoutType = candidates.filter((c) => !c.costTypeNorm);
+            const chosenPool = withType.length ? withType : withoutType.length ? withoutType : candidates;
+            const chosen = chosenPool.sort((a, b) => b.costItemNorm.length - a.costItemNorm.length)[0];
+
+            const weight = detail.quantity > 0 ? detail.quantity : 1;
+            groupTotals[chosen.pmcGroup] = (groupTotals[chosen.pmcGroup] || 0) + weight;
+          }
+
+          if (Object.keys(groupTotals).length > 0) {
+            pmcFromDetailsByProjectId.set(projectId, {
+              pmcGroup: choosePrimaryGroup(groupTotals) || 'No Match',
+              pmcBreakdown: groupTotals,
+              pmcMappingSource: 'api:projects:costitem:description',
+            });
+          } else {
+            pmcFromDetailsByProjectId.set(projectId, {
+              pmcGroup: 'No Match',
+              pmcBreakdown: {},
+              pmcMappingSource: 'api:projects:costitem:no-match',
+            });
+          }
         }
+      } catch (pmcEnrichmentError) {
+        console.warn('Skipping PMC enrichment due to missing mapping/detail tables:', pmcEnrichmentError);
       }
     }
 
@@ -304,7 +339,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Failed to fetch projects:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch projects' },
+      { success: false, error: `Failed to fetch projects: ${String(error)}` },
       { status: 500 }
     );
   }

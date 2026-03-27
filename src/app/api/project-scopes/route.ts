@@ -74,13 +74,18 @@ async function validateSpecificDays(entries: SelectedDayEntry[] | null, scheduli
 }
 
 async function ensureProjectScopeColumns() {
-  await prisma.$executeRawUnsafe(`
-    ALTER TABLE "ProjectScope"
-      ADD COLUMN IF NOT EXISTS "schedulingMode" TEXT NOT NULL DEFAULT 'contiguous',
-      ADD COLUMN IF NOT EXISTS "selectedDays" JSONB,
-      ADD COLUMN IF NOT EXISTS "color" VARCHAR(7),
-      ADD COLUMN IF NOT EXISTS "taskColors" JSONB
-  `);
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "ProjectScope"
+        ADD COLUMN IF NOT EXISTS "schedulingMode" TEXT NOT NULL DEFAULT 'contiguous',
+        ADD COLUMN IF NOT EXISTS "selectedDays" JSONB,
+        ADD COLUMN IF NOT EXISTS "color" VARCHAR(7),
+        ADD COLUMN IF NOT EXISTS "taskColors" JSONB
+    `);
+  } catch (error) {
+    // Production DBs may disallow DDL from the app role. Continue with fallback selects.
+    console.warn('ensureProjectScopeColumns skipped:', error);
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -89,57 +94,104 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const jobKey = searchParams.get('jobKey');
 
-    // Fetch both projects and scopes in parallel
-    const [projects, scopes] = await Promise.all([
-      prisma.project.findMany({
-        where: jobKey ? {
-          OR: [
-            { customer: { contains: jobKey } },
-            { projectNumber: { contains: jobKey } },
-            { projectName: { contains: jobKey } },
-          ]
-        } : undefined,
-        select: {
-          id: true,
-          customer: true,
-          projectNumber: true,
-          projectName: true,
-          status: true,
-          hours: true,
-          sales: true,
-          projectArchived: true,
-          cost: true,
-          laborSales: true,
-          laborCost: true,
-          dateCreated: true,
-          dateUpdated: true,
-          estimator: true,
-          projectManager: true,
-          customFields: true,
-        },
-      }),
-      prisma.projectScope.findMany({
-        where: jobKey ? { jobKey } : undefined,
-        select: {
-          id: true,
-          jobKey: true,
-          title: true,
-          startDate: true,
-          endDate: true,
-          manpower: true,
-          hours: true,
-          description: true,
-          tasks: true,
-          schedulingMode: true,
-          selectedDays: true,
-        },
-      }),
-    ]);
+    let projects: Array<Record<string, unknown>> = [];
+    let scopes: Array<Record<string, unknown>> = [];
+
+    try {
+      // Preferred path with newer columns.
+      [projects, scopes] = await Promise.all([
+        prisma.project.findMany({
+          where: jobKey ? {
+            OR: [
+              { customer: { contains: jobKey } },
+              { projectNumber: { contains: jobKey } },
+              { projectName: { contains: jobKey } },
+            ]
+          } : undefined,
+          select: {
+            id: true,
+            customer: true,
+            projectNumber: true,
+            projectName: true,
+            status: true,
+            hours: true,
+            sales: true,
+            projectArchived: true,
+            cost: true,
+            laborSales: true,
+            laborCost: true,
+            dateCreated: true,
+            dateUpdated: true,
+            estimator: true,
+            projectManager: true,
+            customFields: true,
+          },
+        }) as unknown as Promise<Array<Record<string, unknown>>>,
+        prisma.projectScope.findMany({
+          where: jobKey ? { jobKey } : undefined,
+          select: {
+            id: true,
+            jobKey: true,
+            title: true,
+            startDate: true,
+            endDate: true,
+            manpower: true,
+            hours: true,
+            description: true,
+            tasks: true,
+            schedulingMode: true,
+            selectedDays: true,
+          },
+        }) as unknown as Promise<Array<Record<string, unknown>>>,
+      ]);
+    } catch (schemaError) {
+      console.warn('Falling back to legacy project/projectScope selects:', schemaError);
+      [projects, scopes] = await Promise.all([
+        prisma.project.findMany({
+          where: jobKey ? {
+            OR: [
+              { customer: { contains: jobKey } },
+              { projectNumber: { contains: jobKey } },
+              { projectName: { contains: jobKey } },
+            ]
+          } : undefined,
+          select: {
+            id: true,
+            customer: true,
+            projectNumber: true,
+            projectName: true,
+            status: true,
+            hours: true,
+            sales: true,
+            cost: true,
+            dateCreated: true,
+            dateUpdated: true,
+            estimator: true,
+            projectManager: true,
+            customFields: true,
+          },
+        }) as unknown as Promise<Array<Record<string, unknown>>>,
+        prisma.projectScope.findMany({
+          where: jobKey ? { jobKey } : undefined,
+          select: {
+            id: true,
+            jobKey: true,
+            title: true,
+            startDate: true,
+            endDate: true,
+            manpower: true,
+            hours: true,
+            description: true,
+            tasks: true,
+          },
+        }) as unknown as Promise<Array<Record<string, unknown>>>,
+      ]);
+    }
 
     // Fetch color and taskColors using raw SQL since they may not be in Prisma schema yet
     let scopesWithColors = scopes;
     try {
-      const scopeIds = scopes.map(s => s.id);
+      const scopeIds = scopes.map((s) => String(s.id || ''));
       if (scopeIds.length > 0) {
         console.log(`[GET] Fetching colors for ${scopeIds.length} scopes`);
         
@@ -154,8 +206,8 @@ export async function GET(request: NextRequest) {
         
         scopesWithColors = scopes.map(scope => ({
           ...scope,
-          color: colorMap.get(scope.id)?.color || null,
-          taskColors: colorMap.get(scope.id)?.taskColors || null,
+          color: colorMap.get(String(scope.id || ''))?.color || null,
+          taskColors: colorMap.get(String(scope.id || ''))?.taskColors || null,
         }));
       }
     } catch (colorError) {
@@ -164,9 +216,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Add jobKey to each project for consistency
-    const projectsWithJobKey = projects.map(p => ({
+    const projectsWithJobKey = projects.map((p) => ({
       ...p,
-      jobKey: `${p.customer || ''}~${p.projectNumber || ''}~${p.projectName || ''}`,
+      jobKey: `${String(p.customer || '')}~${String(p.projectNumber || '')}~${String(p.projectName || '')}`,
     }));
 
     return NextResponse.json({
@@ -246,7 +298,7 @@ export async function POST(request: NextRequest) {
       console.log(`[POST] Updating colors for new scope ${scope.id}:`, { colorValue, taskColorsValue });
       
       await prisma.$executeRawUnsafe(
-        `UPDATE "ProjectScope" SET "color" = $1, "taskColors" = $2 WHERE id = $3`,
+        `UPDATE "ProjectScope" SET "color" = $1, "taskColors" = $2::jsonb WHERE id = $3`,
         colorValue,
         taskColorsValue,
         scope.id
@@ -372,7 +424,7 @@ export async function PUT(request: NextRequest) {
         
         if (taskColors !== undefined) {
           params.push(taskColorsValue);
-          updates.push(`"taskColors" = $${params.length}`);
+          updates.push(`"taskColors" = $${params.length}::jsonb`);
         }
         
         if (updates.length > 0) {
@@ -412,5 +464,39 @@ export async function PUT(request: NextRequest) {
       { success: false, error: 'Failed to update scope' },
       { status: 500 }
     );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = request.nextUrl.searchParams.get('id');
+    const jobKey = request.nextUrl.searchParams.get('jobKey');
+    const title = request.nextUrl.searchParams.get('title');
+
+    if (!id && !(jobKey && title)) {
+      return NextResponse.json(
+        { success: false, error: 'id is required, or provide both jobKey and title' },
+        { status: 400 }
+      );
+    }
+
+    // Clean up ActiveSchedule entries before deleting (only applicable when scope id is known)
+    if (id) {
+      await deleteProjectScopeFromActiveSchedule(id);
+    }
+
+    const deleted = await prisma.projectScope.deleteMany({
+      where: id
+        ? { id }
+        : {
+            jobKey: String(jobKey || ''),
+            title: String(title || ''),
+          },
+    });
+
+    return NextResponse.json({ success: true, deletedCount: deleted.count });
+  } catch (error) {
+    console.error('Failed to delete scope:', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete scope' }, { status: 500 });
   }
 }
