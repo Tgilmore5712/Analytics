@@ -141,10 +141,14 @@ export async function GET(request: NextRequest) {
     try {
       const scopeIds = scopes.map(s => s.id);
       if (scopeIds.length > 0) {
+        console.log(`[GET] Fetching colors for ${scopeIds.length} scopes`);
+        
         const colorData = await prisma.$queryRawUnsafe<Array<{ id: string; color: string | null; taskColors: any }>>(
           `SELECT id, "color", "taskColors" FROM "ProjectScope" WHERE id = ANY($1)`,
           scopeIds
         );
+        
+        console.log(`[GET] Retrieved color data:`, colorData);
         
         const colorMap = new Map(colorData.map(d => [d.id, { color: d.color, taskColors: d.taskColors }]));
         
@@ -239,14 +243,18 @@ export async function POST(request: NextRequest) {
       const colorValue = color || null;
       const taskColorsValue = taskColors ? JSON.stringify(taskColors) : null;
       
+      console.log(`[POST] Updating colors for new scope ${scope.id}:`, { colorValue, taskColorsValue });
+      
       await prisma.$executeRawUnsafe(
         `UPDATE "ProjectScope" SET "color" = $1, "taskColors" = $2 WHERE id = $3`,
         colorValue,
         taskColorsValue,
         scope.id
       );
+      
+      console.log(`[POST] Color update successful for scope ${scope.id}`);
     } catch (colorError) {
-      console.error('Failed to update scope colors:', colorError);
+      console.error('Failed to update scope colors on POST:', colorError);
       // Don't fail the whole request if color save fails
     }
 
@@ -352,6 +360,8 @@ export async function PUT(request: NextRequest) {
         const colorValue = color !== undefined ? (color || null) : undefined;
         const taskColorsValue = taskColors !== undefined ? (taskColors ? JSON.stringify(taskColors) : null) : undefined;
         
+        console.log(`[PUT] Received color update for scope ${id}:`, { color, colorValue, taskColors, taskColorsValue });
+        
         const updates = [];
         const params: any[] = [];
         
@@ -367,13 +377,16 @@ export async function PUT(request: NextRequest) {
         
         if (updates.length > 0) {
           params.push(id);
-          await prisma.$executeRawUnsafe(
-            `UPDATE "ProjectScope" SET ${updates.join(', ')} WHERE id = $${params.length}`,
-            ...params
-          );
+          const query = `UPDATE "ProjectScope" SET ${updates.join(', ')} WHERE id = $${params.length}`;
+          console.log(`[PUT] Executing query:`, query);
+          console.log(`[PUT] With params:`, params);
+          
+          await prisma.$executeRawUnsafe(query, ...params);
+          
+          console.log(`[PUT] Color update successful for scope ${id}`);
         }
       } catch (colorError) {
-        console.error('Failed to update scope colors:', colorError);
+        console.error('Failed to update scope colors on PUT:', colorError);
         // Don't fail the whole request if color save fails
       }
     }
