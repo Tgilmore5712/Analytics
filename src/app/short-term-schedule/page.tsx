@@ -142,6 +142,7 @@ function ShortTermScheduleContent() {
   const [saving, setSaving] = useState(false);
   const [removeSuccessMessage, setRemoveSuccessMessage] = useState<string | null>(null);
   const [selectedGanttProject, setSelectedGanttProject] = useState<ProjectInfo | null>(null);
+  const [selectedGanttScopeId, setSelectedGanttScopeId] = useState<string | null>(null);
   const [selectedGanttScopeTitle, setSelectedGanttScopeTitle] = useState<string | null>(null);
   const [selectedGanttDateKey, setSelectedGanttDateKey] = useState<string | null>(null);
   const [selectedGanttHours, setSelectedGanttHours] = useState<number | null>(null);
@@ -231,6 +232,28 @@ function ShortTermScheduleContent() {
     });
 
     if (project) {
+      const normalizedScopeTitle = (scopeTitle || "").trim().toLowerCase();
+      const scopeCandidates = scopesByJobKey[jobKey] || [];
+      const titleMatches = normalizedScopeTitle
+        ? scopeCandidates.filter((scope) => (scope.title || "").trim().toLowerCase() === normalizedScopeTitle)
+        : [];
+
+      const dateScopedMatch = dateKey
+        ? titleMatches.find((scope) => {
+            const scopeStart = (scope.startDate || "").trim();
+            const scopeEnd = (scope.endDate || "").trim();
+            if (!scopeStart && !scopeEnd) return false;
+            const start = scopeStart || dateKey;
+            const end = scopeEnd || dateKey;
+            return dateKey >= start && dateKey <= end;
+          })
+        : null;
+
+      const resolvedScopeId =
+        dateScopedMatch?.id ||
+        (titleMatches.length === 1 ? titleMatches[0].id : null) ||
+        (titleMatches[0]?.id ?? null);
+
       setSelectedGanttProject({
         jobKey,
         customer: project.customer || "",
@@ -238,6 +261,7 @@ function ShortTermScheduleContent() {
         projectNumber: project.projectNumber || "",
         projectDocId: project.id
       });
+      setSelectedGanttScopeId(resolvedScopeId);
       setSelectedGanttScopeTitle(scopeTitle?.trim() || null);
       setSelectedGanttDateKey(dateKey || null);
       setSelectedGanttHours(typeof scheduledHours === 'number' ? scheduledHours : null);
@@ -1771,7 +1795,7 @@ function ShortTermScheduleContent() {
             scopes={scopesByJobKey[selectedGanttProject.jobKey || ""] || []}
             allScopes={scopesByJobKey}
             scheduledHoursByJobKeyDate={scheduledHoursByJobKeyDate}
-            selectedScopeId={null}
+            selectedScopeId={selectedGanttScopeId}
             selectedScopeTitle={selectedGanttScopeTitle}
             selectedScheduleDate={selectedGanttDateKey}
             selectedScheduledHours={selectedGanttHours}
@@ -1780,6 +1804,7 @@ function ShortTermScheduleContent() {
             companyCapacity={companyCapacity}
             onClose={() => {
               setSelectedGanttProject(null);
+              setSelectedGanttScopeId(null);
               setSelectedGanttScopeTitle(null);
               setSelectedGanttDateKey(null);
               setSelectedGanttHours(null);

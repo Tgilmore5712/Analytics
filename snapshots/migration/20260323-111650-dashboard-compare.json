@@ -1,0 +1,131 @@
+{
+  "generatedAt": "2026-03-23T11:16:50.624Z",
+  "scope": "dashboard-only",
+  "inputs": {
+    "before": "snapshots/migration/20260323-111403-pre-migration-dashboard.json",
+    "after": "snapshots/migration/20260323-111403-pre-migration-dashboard.json",
+    "beforeLabel": "pre-migration-dashboard",
+    "afterLabel": "pre-migration-dashboard"
+  },
+  "checksums": {
+    "projects": {
+      "before": "aa0e7030303f768cc23955705f7dd47c3c374dfdabb991efdeb80f2708f8edb3",
+      "after": "aa0e7030303f768cc23955705f7dd47c3c374dfdabb991efdeb80f2708f8edb3",
+      "changed": false
+    },
+    "dashboardSummary": {
+      "before": "9ad17065c108838b0b76948bb2bd39b29f4cb17c79ad39cfda8670807a5786e7",
+      "after": "9ad17065c108838b0b76948bb2bd39b29f4cb17c79ad39cfda8670807a5786e7",
+      "changed": false
+    }
+  },
+  "summary": {
+    "totalFieldChanges": 0,
+    "changedFields": {}
+  },
+  "totals": {
+    "countAll": {
+      "before": 584,
+      "after": 584,
+      "delta": 0
+    },
+    "countActive": {
+      "before": 574,
+      "after": 574,
+      "delta": 0
+    },
+    "salesActive": {
+      "before": 119174038.81000008,
+      "after": 119174038.81000008,
+      "delta": 0
+    },
+    "costActive": {
+      "before": 92442629.48000006,
+      "after": 92442629.48000006,
+      "delta": 0
+    },
+    "hoursActive": {
+      "before": 586383.0099999999,
+      "after": 586383.0099999999,
+      "delta": 0
+    },
+    "salesAll": {
+      "before": 119280100.76000006,
+      "after": 119280100.76000006,
+      "delta": 0
+    },
+    "costAll": {
+      "before": 92520162.38000005,
+      "after": 92520162.38000005,
+      "delta": 0
+    },
+    "hoursAll": {
+      "before": 586951.06,
+      "after": 586951.06,
+      "delta": 0
+    }
+  },
+  "dashboardSummary": {
+    "available": true,
+    "changedShape": false,
+    "totals": {
+      "totalSales": {
+        "before": 84024331.64999998,
+        "after": 84024331.64999998,
+        "delta": 0
+      },
+      "totalCost": {
+        "before": 64990354.67000002,
+        "after": 64990354.67000002,
+        "delta": 0
+      },
+      "totalHours": {
+        "before": 422232.14,
+        "after": 422232.14,
+        "delta": 0
+      }
+    },
+    "lastUpdated": {
+      "before": "2026-03-11T12:58:52.846Z",
+      "after": "2026-03-11T12:58:52.846Z"
+    }
+  },
+  "projects": {
+    "rowCounts": {
+      "before": 584,
+      "after": 584,
+      "added": 0,
+      "removed": 0,
+      "common": 584
+    },
+    "fieldChanges": {
+      "customer": {
+        "count": 0,
+        "samples": []
+      },
+      "status": {
+        "count": 0,
+        "samples": []
+      },
+      "projectName": {
+        "count": 0,
+        "samples": []
+      },
+      "projectNumber": {
+        "count": 0,
+        "samples": []
+      },
+      "dateCreated": {
+        "count": 0,
+        "samples": []
+      },
+      "dateUpdated": {
+        "count": 0,
+        "samples": []
+      }
+    },
+    "statusTransitions": {},
+    "addedSamples": [],
+    "removedSamples": []
+  }
+}

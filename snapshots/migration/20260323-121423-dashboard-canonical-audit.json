@@ -1,0 +1,1025 @@
+{
+  "generatedAt": "2026-03-23T12:14:23.084Z",
+  "scope": "dashboard-only-canonical-audit",
+  "summary": {
+    "linkedProjectRowsScanned": 92,
+    "canonicalProcoreIdConflicts": 0,
+    "conflictingProjectRows": 0
+  },
+  "linkedProjectFeedStats": [
+    {
+      "linked_project_id": "cmm9abyuz0001e3n4x0iyymw8",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377360"
+      ],
+      "project_names": [
+        "Audubon Collegeville"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9abyyu0004e3n4f16ag6zi",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326486537"
+      ],
+      "project_names": [
+        "John F Martin"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9abzdu000de3n4dqpmzn5x",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326376810"
+      ],
+      "project_names": [
+        "Sadsbury Commons"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9abzir000he3n430x3fnwe",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377543"
+      ],
+      "project_names": [
+        "Collegeville Apartments"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9abzo5000le3n4ajhbf3v3",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326362861"
+      ],
+      "project_names": [
+        "Shank Door Main Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9abzvl000re3n4avgjlqbg",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326327857"
+      ],
+      "project_names": [
+        "Broadcasting District Site"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9abzwk000se3n4a2t8dkkc",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326198850"
+      ],
+      "project_names": [
+        "Shank Door Site"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac031000xe3n4op0rzldo",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326065265"
+      ],
+      "project_names": [
+        "Middletown Area Primary School"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac0ag0013e3n46hcnf8bu",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326278124"
+      ],
+      "project_names": [
+        "Burkholder Tractor"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac0gk0018e3n4y171zjlr",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326376806"
+      ],
+      "project_names": [
+        "Giant #6582"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac0mx001ee3n4sdbrremo",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377527"
+      ],
+      "project_names": [
+        "Chabad House"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac0v1001le3n4acrq19lx",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326241241"
+      ],
+      "project_names": [
+        "FOR_SOP_CREATION"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac0x8001ne3n45bde9yt6",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377381"
+      ],
+      "project_names": [
+        "Broadcasting Village"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac0z5001oe3n46odq8brt",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326435137"
+      ],
+      "project_names": [
+        "Goods Store Quarryville"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac143001se3n4h3f7r4dg",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326198819"
+      ],
+      "project_names": [
+        "Family Treasures Wholesale"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac1eg0021e3n4e9ic3pq8",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326081990"
+      ],
+      "project_names": [
+        "UGI Middletown Warehouse"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac1lo0028e3n40nwb0gy8",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377653"
+      ],
+      "project_names": [
+        "Willow Grove Site"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac27c002oe3n4fa29c7dw",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326371113"
+      ],
+      "project_names": [
+        "Memory Care Meditation Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac2im002we3n4hm2fjmh0",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326306139"
+      ],
+      "project_names": [
+        "Tel Hai Health Center"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac2th0036e3n4azyxuj7f",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326326477"
+      ],
+      "project_names": [
+        "Blue Ridge School"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac35n003he3n4dl2s1x25",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326341276"
+      ],
+      "project_names": [
+        "Stoltzfus Hardwoods- Storage Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac3e8003pe3n4roin2yt3",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326244841"
+      ],
+      "project_names": [
+        "Mechanicsburg Volunteer Fire Department"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac3ph003ye3n42y3yf0oj",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326371116"
+      ],
+      "project_names": [
+        "Kemper Equipment"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac3ui0043e3n46ts8pndm",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326220404"
+      ],
+      "project_names": [
+        "Ducklings Ambassador Circle"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac3xh0046e3n45ov2sk0u",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326378318"
+      ],
+      "project_names": [
+        "Valley View Doors"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac43v004ce3n4y5bz8ayr",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326378317"
+      ],
+      "project_names": [
+        "Veritas Academy"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac48f004ge3n4knvn9rws",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326340929"
+      ],
+      "project_names": [
+        "Memory Care 3A"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac4d3004ke3n4ozsg8cxs",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326464067"
+      ],
+      "project_names": [
+        "Gish Furniture Sitework"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac4e3004le3n43rcbk0jb",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326362845"
+      ],
+      "project_names": [
+        "Sauders Feedmill"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac4ip004pe3n41hk129e9",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326370224"
+      ],
+      "project_names": [
+        "Dutch Cousins Campground"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac4xp0052e3n4z3efslxe",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326304449"
+      ],
+      "project_names": [
+        "Canine Partners for Life"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac55b0059e3n4xe144uox",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326198847"
+      ],
+      "project_names": [
+        "The Learning Experience"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac5bt005fe3n4jq4442up",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326329977"
+      ],
+      "project_names": [
+        "Paneling Sales- Main Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac5dx005he3n4b3rpudso",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377721"
+      ],
+      "project_names": [
+        "Hearthside Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac5f2005ie3n4ej9a6sql",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326200372"
+      ],
+      "project_names": [
+        "Clark Associates Lancaster"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac6300062e3n4x2rmmclh",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326371118"
+      ],
+      "project_names": [
+        "Westminster Presbyterian Addition"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac69x0068e3n4wtovro6e",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326376903"
+      ],
+      "project_names": [
+        "Cozy Cabins Shed"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac6x3006ue3n4kc0klmg7",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326375694"
+      ],
+      "project_names": [
+        "Mine Road Church"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac7k5007he3n4ehrqpgaq",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326326515"
+      ],
+      "project_names": [
+        "Washburn Dam"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac7n4007ke3n4aov1modr",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326244946"
+      ],
+      "project_names": [
+        "Ducklings Ambassador Circle Site"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac7sv007pe3n4b6p291as",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326376765"
+      ],
+      "project_names": [
+        "Butler Annville Pump House"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac88q0085e3n4pbibmkbn",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326325083"
+      ],
+      "project_names": [
+        "Loft Community Partners"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac8bq0088e3n4kxaph0hi",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377781"
+      ],
+      "project_names": [
+        "Landis Homes Healthcare Suite"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac8hf008ee3n40n6f0g7n",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326321491"
+      ],
+      "project_names": [
+        "Guardian Barriers"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac8ok008le3n4e363xleo",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326345778"
+      ],
+      "project_names": [
+        "WVC - Lakes Phase I"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac8pj008me3n4cjcaclif",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326326503"
+      ],
+      "project_names": [
+        "Goods Store - Ephrata State Street"
+      ]
+    },
+    {
+      "linked_project_id": "cmm9ac8t6008qe3n44tgb2zda",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326403662"
+      ],
+      "project_names": [
+        "Providence Park Garage 306"
+      ]
+    },
+    {
+      "linked_project_id": "cmmaqpkr50000e3fs2agaeqdb",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326223307"
+      ],
+      "project_names": [
+        "AB Martin 34 Denver Road"
+      ]
+    },
+    {
+      "linked_project_id": "cmmayxnjk0000e3vgn54ahiy6",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326377122"
+      ],
+      "project_names": [
+        "Stevens Feed Mill Schoeneck"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33cvn00aye3wg4fhpfnw5",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954733105"
+      ],
+      "project_names": [
+        "Greenfield Clubhouse"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33cya00aze3wgtunudarx",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954837967"
+      ],
+      "project_names": [
+        "UGI Middletown Warehouse"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33d0900b0e3wgsn10fh32",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954869395"
+      ],
+      "project_names": [
+        "CONSTRUCT HANGAR AND PARKING LOT - INDIANA COUNTY JIMMY STEWART AIRPORT "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33d1z00b1e3wglh4wxvg1",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954892949"
+      ],
+      "project_names": [
+        "Clark Associates Lancaster"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33d5m00b3e3wgvn53irxe",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954915470"
+      ],
+      "project_names": [
+        "Paneling Sales- Pine Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33d7m00b4e3wgr7szqmgc",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954924487"
+      ],
+      "project_names": [
+        "Paneling Sales- Main Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33d9e00b5e3wg162oibmd",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954929805"
+      ],
+      "project_names": [
+        "Ducklings Ambassador Circle"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dbn00b6e3wgr1i59i1c",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954939847"
+      ],
+      "project_names": [
+        "Middletown Area Primary School"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33ddm00b7e3wgwiwkpcvu",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954960606"
+      ],
+      "project_names": [
+        "Solanco HS Toilet Room Reno"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dfm00b8e3wgt3y1xbp6",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954963443"
+      ],
+      "project_names": [
+        "Shank Door Site"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dhn00b9e3wg4ujvd02s",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954972105"
+      ],
+      "project_names": [
+        "Dublin Village II Apartments "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33djd00bae3wguu84d0wd",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949954972330"
+      ],
+      "project_names": [
+        "Millersville Apartments "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dl300bbe3wgrao3960e",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955004579"
+      ],
+      "project_names": [
+        "Gables 833 Patio "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dmu00bce3wg167cahor",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955014080"
+      ],
+      "project_names": [
+        "The Learning Experience"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dop00bde3wgskd4syoj",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955031707"
+      ],
+      "project_names": [
+        "La Petite Academy"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dqh00bee3wgnn8s7v2u",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955088790"
+      ],
+      "project_names": [
+        "Stoltzfus Hardwoods- Storage Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dsl00bfe3wggw6r38ne",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955091742"
+      ],
+      "project_names": [
+        "Family Treasures Wholesale"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dw700bhe3wgfzzeenui",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955135859"
+      ],
+      "project_names": [
+        "Paneling Sales- North Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33dxy00bie3wgrhzx7e28",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955177687"
+      ],
+      "project_names": [
+        "AB Martin 34 Denver Road"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33e0700bje3wgnbpyd7pq",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955224330"
+      ],
+      "project_names": [
+        "Loft Community Partners"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33e2800bke3wgee9j0f5q",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955239043"
+      ],
+      "project_names": [
+        "FOR_SOP_CREATION"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33e8p00bme3wgndfxo3zl",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955284269"
+      ],
+      "project_names": [
+        "Guardian Barriers"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33ecf00bne3wg7huit7ln",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955307221"
+      ],
+      "project_names": [
+        "Goods Store - Ephrata State Street"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33ee600boe3wg0t2evsql",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955340283"
+      ],
+      "project_names": [
+        "Dutch Cousins Campground"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33efx00bpe3wg6vwzn45l",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955352714"
+      ],
+      "project_names": [
+        "Giant #6582"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33ei200bqe3wgt72h29a2",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955360441"
+      ],
+      "project_names": [
+        "Memory Care 3A"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33ejx00bre3wg3rfan3vv",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955400004"
+      ],
+      "project_names": [
+        "Weavertown Mennonite School"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33elo00bse3wgte9ktc2o",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955460063"
+      ],
+      "project_names": [
+        "Complete Recycling Group "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33enk00bte3wgbp1r113g",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955465664"
+      ],
+      "project_names": [
+        "Mercersburg WWTP"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33epc00bue3wgnssy0vja",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955465674"
+      ],
+      "project_names": [
+        "Providence Park Garage 306"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33er200bve3wg4tvam87t",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955496250"
+      ],
+      "project_names": [
+        "218 East Madison Street"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33est00bwe3wgzuvl9dxa",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955500522"
+      ],
+      "project_names": [
+        "Standard Estimating Template"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33euw00bxe3wg18qlfzfj",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955528004"
+      ],
+      "project_names": [
+        "Sporting Hill Christian School"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33ewn00bye3wgmm9cday3",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955543934"
+      ],
+      "project_names": [
+        "Spring Valley Church of God Interior Balcony"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33eyn00bze3wgac3pf3lw",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955573338"
+      ],
+      "project_names": [
+        "Landis Homes - Facilities Building"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33f1000c0e3wg7bcqy714",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955576722"
+      ],
+      "project_names": [
+        "Rohrers Office Building "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33f3900c1e3wgayjmwc0e",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955586256"
+      ],
+      "project_names": [
+        "Samuel Brothers Retail Center"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33f5800c2e3wgzt7elemw",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955604252"
+      ],
+      "project_names": [
+        "GSV Center For Arts And Culture"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33f7a00c3e3wgauhr9zcg",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955606570"
+      ],
+      "project_names": [
+        "Twin County Business Park"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf33fd400c6e3wghkal4rat",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955619536"
+      ],
+      "project_names": [
+        "Copy of TCC East Cocalico Warehouse "
+      ]
+    },
+    {
+      "linked_project_id": "cmmf747l70001e3w44cuzps5j",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134326500053"
+      ],
+      "project_names": [
+        "Jonas King Sidewalk"
+      ]
+    },
+    {
+      "linked_project_id": "cmmf748kw0003e3w46ivveh6r",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "598134325878057"
+      ],
+      "project_names": [
+        "Standard Project Template"
+      ]
+    },
+    {
+      "linked_project_id": "cmmm512ls001ie3k0kv3o6504",
+      "linked_feed_rows": 1,
+      "distinct_procore_ids": 1,
+      "procore_ids": [
+        "562949955239099"
+      ],
+      "project_names": [
+        "New Project"
+      ]
+    }
+  ],
+  "canonicalConflictsByProcoreId": [],
+  "conflictingProjectRows": []
+}

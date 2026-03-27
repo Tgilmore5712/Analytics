@@ -182,6 +182,7 @@ export default function LongTermSchedulePage() {
 
   // Scope modal state
   const [selectedModalProject, setSelectedModalProject] = useState<ProjectInfo | null>(null);
+  const [selectedModalScopeId, setSelectedModalScopeId] = useState<string | null>(null);
   const [selectedModalScopeTitle, setSelectedModalScopeTitle] = useState<string | null>(null);
   const [scopesByJobKey, setScopesByJobKey] = useState<Record<string, Scope[]>>({});
   const [jobKeyToProjectDocId, setJobKeyToProjectDocId] = useState<Record<string, string>>({});
@@ -736,8 +737,31 @@ export default function LongTermSchedulePage() {
     [foremanRows]
   );
 
-  function openScopeModal(jobKey: string, scopeTitle?: string) {
+  function openScopeModal(jobKey: string, scopeTitle?: string, dateKey?: string) {
     const parts = jobKey.split("~");
+    const normalizedScopeTitle = (scopeTitle || "").trim().toLowerCase();
+    const scopeCandidates = scopesByJobKey[jobKey] || [];
+    const titleMatches = normalizedScopeTitle
+      ? scopeCandidates.filter((scope) => (scope.title || "").trim().toLowerCase() === normalizedScopeTitle)
+      : [];
+
+    const dateScopedMatch = dateKey
+      ? titleMatches.find((scope) => {
+          const scopeStart = (scope.startDate || "").trim();
+          const scopeEnd = (scope.endDate || "").trim();
+          if (!scopeStart && !scopeEnd) return false;
+          const start = scopeStart || dateKey;
+          const end = scopeEnd || dateKey;
+          return dateKey >= start && dateKey <= end;
+        })
+      : null;
+
+    const resolvedScopeId =
+      dateScopedMatch?.id ||
+      (titleMatches.length === 1 ? titleMatches[0].id : null) ||
+      (titleMatches[0]?.id ?? null);
+
+    setSelectedModalScopeId(resolvedScopeId);
     setSelectedModalScopeTitle((scopeTitle || "").trim() || null);
     setSelectedModalProject({
       jobKey,
@@ -816,7 +840,7 @@ export default function LongTermSchedulePage() {
               className="text-[10px] text-blue-600 font-black hover:text-blue-800 mr-1"
               onClick={(e) => {
                 e.stopPropagation();
-                openScopeModal(proj.jobKey, proj.scopeOfWork);
+                openScopeModal(proj.jobKey, proj.scopeOfWork, dragContext?.sourceDateKey);
               }}
               title="Edit scope details"
             >
@@ -1336,10 +1360,11 @@ export default function LongTermSchedulePage() {
           project={selectedModalProject}
           scopes={scopesByJobKey[selectedModalProject.jobKey] || []}
           allScopes={scopesByJobKey}
-          selectedScopeId={null}
+          selectedScopeId={selectedModalScopeId}
           selectedScopeTitle={selectedModalScopeTitle}
           onClose={() => {
             setSelectedModalProject(null);
+            setSelectedModalScopeId(null);
             setSelectedModalScopeTitle(null);
           }}
           onScopesUpdated={(jobKey, updatedScopes) => {

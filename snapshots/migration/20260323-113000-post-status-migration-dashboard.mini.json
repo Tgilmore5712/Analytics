@@ -1,0 +1,287 @@
+{
+  "metadata": {
+    "generatedAt": "2026-03-23T11:30:00.712Z",
+    "label": "post-status-migration-dashboard",
+    "labelSlug": "post-status-migration-dashboard",
+    "schemaVersion": 1
+  },
+  "checksums": {
+    "projectsSha256": "c32a31d0e283f71a5a7b3b530b5619d61d80e24c929b0edd95f12c57c6698e62",
+    "dashboardSummarySha256": "9ad17065c108838b0b76948bb2bd39b29f4cb17c79ad39cfda8670807a5786e7"
+  },
+  "counts": {
+    "projectRows": 584,
+    "hasDashboardSummary": true
+  },
+  "aggregates": {
+    "totals": {
+      "countAll": 584,
+      "countActive": 574,
+      "salesActive": 119174038.81000008,
+      "costActive": 92442629.48000006,
+      "hoursActive": 586383.0099999999,
+      "salesAll": 119280100.76000006,
+      "costAll": 92520162.38000005,
+      "hoursAll": 586951.06
+    },
+    "byStatus": {
+      "Lost": {
+        "count": 75,
+        "sales": 24903218.169999998,
+        "cost": 19198789.219999995,
+        "hours": 103019.86000000002
+      },
+      "Bid Submitted": {
+        "count": 255,
+        "sales": 69975016.34,
+        "cost": 54699955.63,
+        "hours": 341935.73999999993
+      },
+      "Estimating": {
+        "count": 135,
+        "sales": 10980120.669999996,
+        "cost": 8479041.379999999,
+        "hours": 58939.39000000001
+      },
+      "In Progress": {
+        "count": 41,
+        "sales": 7381036.060000001,
+        "cost": 5500689.999999999,
+        "hours": 43913.88999999999
+      },
+      "Complete": {
+        "count": 39,
+        "sales": 1375705.67,
+        "cost": 1054216.06,
+        "hours": 10887.149999999998
+      },
+      "Accepted": {
+        "count": 8,
+        "sales": 2331270.53,
+        "cost": 1805741.63,
+        "hours": 14900
+      },
+      "Delayed": {
+        "count": 7,
+        "sales": 546596.5499999998,
+        "cost": 414411.71,
+        "hours": 3070.1
+      },
+      "Post-Construction": {
+        "count": 3,
+        "sales": 646391.6800000002,
+        "cost": 491393.8200000001,
+        "hours": 2679.49
+      },
+      "Invitations": {
+        "count": 6,
+        "sales": 0,
+        "cost": 0,
+        "hours": 0
+      },
+      "Course of Construction": {
+        "count": 3,
+        "sales": 819539.1399999999,
+        "cost": 621504.3599999999,
+        "hours": 6603.389999999999
+      },
+      "To Do": {
+        "count": 2,
+        "sales": 215144,
+        "cost": 176885.67,
+        "hours": 434
+      }
+    },
+    "topCustomers": [
+      {
+        "customer": "Hoover Building Specialists, Inc.",
+        "count": 97,
+        "sales": 14971874.969999993,
+        "cost": 11322296.470000004,
+        "hours": 70547.71
+      },
+      {
+        "customer": "Warfel Construction",
+        "count": 32,
+        "sales": 13416975.640000004,
+        "cost": 10914974.430000009,
+        "hours": 51669.84
+      },
+      {
+        "customer": "CBG Building Company",
+        "count": 11,
+        "sales": 6855769.57,
+        "cost": 5293483.499999999,
+        "hours": 38944.880000000005
+      },
+      {
+        "customer": "UNKNOWN",
+        "count": 67,
+        "sales": 6512550.080000001,
+        "cost": 4853225.919999999,
+        "hours": 36881.28
+      },
+      {
+        "customer": "Wohlsen Construction Company",
+        "count": 3,
+        "sales": 5872308.730000005,
+        "cost": 4463398.249999999,
+        "hours": 11130.53
+      },
+      {
+        "customer": "Benchmark Construction Co., Inc.",
+        "count": 19,
+        "sales": 5605823.370000001,
+        "cost": 4320400.869999999,
+        "hours": 35859.490000000005
+      },
+      {
+        "customer": "IMC Construction",
+        "count": 6,
+        "sales": 5576759.570000002,
+        "cost": 4504879.479999998,
+        "hours": 16980.5
+      },
+      {
+        "customer": "Brecknock Builders LLC",
+        "count": 20,
+        "sales": 4693085.3,
+        "cost": 3605334.3199999984,
+        "hours": 20538.24
+      },
+      {
+        "customer": "High Construction Company",
+        "count": 8,
+        "sales": 4683479.600000001,
+        "cost": 3646303.4700000016,
+        "hours": 21560.7
+      },
+      {
+        "customer": "CH+N Site",
+        "count": 8,
+        "sales": 4001567.2399999984,
+        "cost": 3021540.539999999,
+        "hours": 29072.440000000002
+      },
+      {
+        "customer": "Centurion Construction Group, LLC",
+        "count": 27,
+        "sales": 3898547.1599999997,
+        "cost": 2938516.380000001,
+        "hours": 23452.240000000005
+      },
+      {
+        "customer": "Heck Construction",
+        "count": 35,
+        "sales": 3339361.970000001,
+        "cost": 2670159.379999999,
+        "hours": 19988.260000000002
+      },
+      {
+        "customer": "CCS Building Group",
+        "count": 21,
+        "sales": 2913218.2600000026,
+        "cost": 2365012.94,
+        "hours": 10111.900000000001
+      },
+      {
+        "customer": "Scenic Ridge Construction",
+        "count": 11,
+        "sales": 2565282.7299999995,
+        "cost": 1926891.46,
+        "hours": 10382.84
+      },
+      {
+        "customer": "Horst Excavating",
+        "count": 4,
+        "sales": 2476293.039999999,
+        "cost": 1933845.0899999999,
+        "hours": 9577.1
+      },
+      {
+        "customer": "Speedwell Construction Inc.",
+        "count": 10,
+        "sales": 2261230.1999999997,
+        "cost": 1684826.1400000004,
+        "hours": 13706.220000000003
+      },
+      {
+        "customer": "Ames Construction, Inc.",
+        "count": 10,
+        "sales": 2121100.6400000006,
+        "cost": 1696814.9100000006,
+        "hours": 12350.220000000001
+      },
+      {
+        "customer": "Milex Construction, LLC",
+        "count": 9,
+        "sales": 1793792.99,
+        "cost": 1465689.66,
+        "hours": 7534.5
+      },
+      {
+        "customer": "J.E. Horst Building and Remodeling",
+        "count": 16,
+        "sales": 1732379.2700000007,
+        "cost": 1304460.4999999998,
+        "hours": 8983.279999999999
+      },
+      {
+        "customer": "A & E Construction, Inc.",
+        "count": 3,
+        "sales": 1623420.2100000007,
+        "cost": 1350739.0499999998,
+        "hours": 9613.5
+      },
+      {
+        "customer": "Buch Construction",
+        "count": 2,
+        "sales": 1459333.640000001,
+        "cost": 1154223.750000002,
+        "hours": 8655.5
+      },
+      {
+        "customer": "Funk Construction",
+        "count": 10,
+        "sales": 1285302.4200000002,
+        "cost": 1000829.3799999998,
+        "hours": 6862.020000000001
+      },
+      {
+        "customer": "Lynmar Builders",
+        "count": 3,
+        "sales": 1236275.4200000004,
+        "cost": 1033602.2500000002,
+        "hours": 6603
+      },
+      {
+        "customer": "B.R. Kreider & Son, Inc.",
+        "count": 14,
+        "sales": 1233395.7999999998,
+        "cost": 908607.15,
+        "hours": 9628.81
+      },
+      {
+        "customer": "Paul Risk Construction",
+        "count": 8,
+        "sales": 1216676.0999999996,
+        "cost": 907060.48,
+        "hours": 8179.520000000002
+      }
+    ]
+  },
+  "dashboardSummary": {
+    "totalSales": 84024331.64999998,
+    "totalCost": 64990354.67000002,
+    "totalHours": 422232.14,
+    "lastUpdated": "2026-03-11T12:58:52.846Z"
+  },
+  "procoreFeedSummary": {
+    "available": true,
+    "totalRows": 107,
+    "linkedRows": 92,
+    "softDeletedRows": 0,
+    "vendorRows": 280,
+    "vendorSoftDeletedRows": 0
+  }
+}

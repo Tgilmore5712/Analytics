@@ -65,6 +65,7 @@ export default function ProjectSchedulePage() {
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"day" | "week" | "month">("month");
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
+  const [expandedScopes, setExpandedScopes] = useState<Set<string>>(new Set());
 
   const [newProject, setNewProject] = useState({
     projectName: "",
@@ -81,6 +82,31 @@ export default function ProjectSchedulePage() {
       newCollapsed.add(projectId);
     }
     setCollapsedProjects(newCollapsed);
+  };
+
+  const toggleScopeExpand = (scopeId: string) => {
+    const newExpanded = new Set(expandedScopes);
+    if (newExpanded.has(scopeId)) {
+      newExpanded.delete(scopeId);
+    } else {
+      newExpanded.add(scopeId);
+    }
+    setExpandedScopes(newExpanded);
+  };
+
+  const parseTaskMetadata = (taskString: string) => {
+    // Extract metadata from format: "[YYYY-MM-DD | Nd] Task Name"
+    const match = taskString.match(/^\[([^\]]+)\]\s*(.+)$/);
+    if (!match) {
+      return { taskName: taskString, startDate: null, days: 0 };
+    }
+    const metadata = match[1];
+    const taskName = match[2];
+    const parts = metadata.split('|').map(p => p.trim());
+    const startDate = parts[0] || null;
+    const daysMatch = parts[1]?.match(/^(\d+)d?$/);
+    const days = daysMatch ? parseInt(daysMatch[1]) : 0;
+    return { taskName, startDate, days };
   };
 
   // Generate timeline based on view mode
@@ -543,22 +569,49 @@ export default function ProjectSchedulePage() {
                           const projectHours = projectTotalHours || 0;
 
                           return (
-                            <div key={scope.id} className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
-                              <div className="sticky left-0 bg-white border-r border-gray-200 px-3 py-2 ml-6">
-                                <div
-                                  onClick={() => {
-                                    setSelectedScopeId(scope.id);
-                                    setSelectedProject(project);
-                                  }}
-                                  className="text-xs font-medium text-gray-700 truncate cursor-pointer hover:text-blue-700"
-                                >
-                                  {scope.title}
+                            <>
+                              <div key={scope.id} className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
+                                <div className="sticky left-0 bg-white border-r border-gray-200 px-3 py-2 ml-6">
+                                  <div className="flex items-start gap-2">
+                                    {scope.tasks && scope.tasks.length > 0 && (
+                                      <button
+                                        onClick={() => toggleScopeExpand(scope.id)}
+                                        className="text-gray-600 hover:text-gray-800 p-0.5 -ml-1 flex-shrink-0 mt-0.5"
+                                        title={expandedScopes.has(scope.id) ? "Collapse tasks" : "Expand tasks"}
+                                      >
+                                        <svg
+                                          className={`w-3.5 h-3.5 transition-transform ${expandedScopes.has(scope.id) ? "rotate-90" : ""}`}
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M9 5l7 7-7 7"
+                                          />
+                                        </svg>
+                                      </button>
+                                    )}
+                                    {!scope.tasks || scope.tasks.length === 0 ? <div className="w-3.5" /> : null}
+                                    <div className="flex-1">
+                                      <div
+                                        onClick={() => {
+                                          setSelectedScopeId(scope.id);
+                                          setSelectedProject(project);
+                                        }}
+                                        className="text-xs font-medium text-gray-700 truncate cursor-pointer hover:text-blue-700"
+                                      >
+                                        {scope.title}
+                                      </div>
+                                      <div className="text-[11px] text-gray-500 mt-0.5">
+                                        {scope.totalHours.toFixed(1)}h
+                                        {scope.scheduledHours > 0 && ` \u2022 ${scope.scheduledHours.toFixed(1)} scheduled`}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="text-[11px] text-gray-500 mt-0.5">
-                                  {scope.totalHours.toFixed(1)}h
-                                  {scope.scheduledHours > 0 && ` \u2022 ${scope.scheduledHours.toFixed(1)} scheduled`}
-                                </div>
-                              </div>
 
                               <div className="col-span-full relative" style={{ gridColumn: `2 / span ${timeline.length}` }}>
                                 <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timeline.length}, ${getColumnWidth()})` }}>
@@ -617,8 +670,67 @@ export default function ProjectSchedulePage() {
                                 <div className="h-8" />
                               </div>
                             </div>
-                          );
-                        })
+
+                            {/* Task rows - shown when scope is expanded */}
+                            {expandedScopes.has(scope.id) && scope.tasks && scope.tasks.length > 0 && (
+                              <>
+                                {scope.tasks.map((taskString, taskIdx) => {
+                                  const { taskName, startDate, days } = parseTaskMetadata(taskString);
+                                  const taskStart = asDate(startDate);
+                                  const taskEnd = taskStart && days > 0
+                                    ? new Date(taskStart.getTime() + (days - 1) * 24 * 60 * 60 * 1000)
+                                    : taskStart;
+                                  const { startIdx: taskStartIdx, endIdx: taskEndIdx } = getPositionAndWidth(taskStart, taskEnd);
+                                  const taskHasBar = taskStartIdx >= 0 && taskEndIdx >= 0 && taskEndIdx >= taskStartIdx;
+
+                                  return (
+                                    <div key={`${scope.id}-task-${taskIdx}`} className="grid border-t border-gray-200" style={{ gridTemplateColumns: `320px repeat(${timeline.length}, ${getColumnWidth()})` }}>
+                                      <div className="sticky left-0 bg-gray-50 border-r border-gray-200 px-3 py-2 ml-12">
+                                        <div className="text-xs text-gray-600 truncate">
+                                          {taskName}
+                                        </div>
+                                        {startDate && days > 0 && (
+                                          <div className="text-[10px] text-gray-500 mt-0.5">
+                                            {startDate} • {days}d
+                                          </div>
+                                        )}
+                                        {startDate && !days && (
+                                          <div className="text-[10px] text-gray-500 mt-0.5">
+                                            {startDate}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="col-span-full relative" style={{ gridColumn: `2 / span ${timeline.length}` }}>
+                                        <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timeline.length}, ${getColumnWidth()})` }}>
+                                          {timeline.map((t) => (
+                                            <div key={`${scope.id}-task-${taskIdx}-${t.toISOString()}`} className="border-r border-gray-200" />
+                                          ))}
+                                        </div>
+
+                                        {taskHasBar && taskStart && (
+                                          <div
+                                            className="absolute top-1.5 h-5 rounded bg-purple-500 text-white text-[10px] font-semibold px-1.5 flex items-center hover:bg-purple-600"
+                                            style={{
+                                              left: `calc(${(taskStartIdx / timeline.length) * 100}% + 4px)`,
+                                              width: `calc(${((taskEndIdx - taskStartIdx + 1) / timeline.length) * 100}% - 8px)`,
+                                            }}
+                                            title={`${taskName} - ${startDate} (${days}d)`}
+                                          >
+                                            {days > 0 ? `${days}d` : startDate?.slice(5)}
+                                          </div>
+                                        )}
+
+                                        <div className="h-6" />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </>
+                        );
+                      })
                       )}
                     </>
                   )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import { ProjectInfo, Scope } from "@/types";
 
@@ -132,9 +132,14 @@ export function ProjectScopesModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [newTask, setNewTask] = useState("");
+  const [newTaskDate, setNewTaskDate] = useState("");
+  const [newTaskDays, setNewTaskDays] = useState("");
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
   const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
+  const formSectionRef = useRef<HTMLDivElement | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const previousActiveScopeIdRef = useRef<string | null>(selectedScopeId);
 
   const emptyScopeDetail: Partial<Scope> = {
     title: "",
@@ -198,9 +203,41 @@ export function ProjectScopesModal({
     return `${customer}~${projectNumber}~${projectName}`;
   }, [project.customer, project.jobKey, project.projectName, project.projectNumber]);
 
+  const dateKey = (value: unknown) => String(value || "").trim();
+  const scopeMatchKey = (title: unknown, startDate: unknown, endDate: unknown) =>
+    `${normalize(String(title || ""))}|${dateKey(startDate)}|${dateKey(endDate)}`;
+
   // Never let a failed canonical lookup hide already-known scopes from the grid.
   const effectiveScopes =
     canonicalScopes && canonicalScopes.length > 0 ? canonicalScopes : identityFallbackScopes;
+
+  const visibleScopes = useMemo(() => {
+    const baseScopes = effectiveScopes.filter(
+      (scope) =>
+        !scope.id?.startsWith('fallback-') &&
+        !scope.id?.startsWith('virtual-') &&
+        !scope.id?.startsWith('generated-')
+    );
+
+    if (!isCreatingNewScope) return baseScopes;
+
+    return [
+      {
+        id: NEW_SCOPE_ID,
+        jobKey: resolvedJobKey || project.jobKey,
+        title: scopeDetail.title?.trim() || 'New Scope',
+        startDate: scopeDetail.startDate || '',
+        endDate: scopeDetail.endDate || '',
+        manpower: scopeDetail.manpower,
+        hours: computeScopeHours(scopeDetail),
+        description: scopeDetail.description || '',
+        tasks: Array.isArray(scopeDetail.tasks) ? scopeDetail.tasks : [],
+        schedulingMode: scopeDetail.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous',
+        selectedDays: Array.isArray(scopeDetail.selectedDays) ? scopeDetail.selectedDays : [],
+      } as Scope,
+      ...baseScopes,
+    ];
+  }, [effectiveScopes, isCreatingNewScope, project.jobKey, resolvedJobKey, scopeDetail]);
 
   const getEffectiveScopeHours = (scope: Partial<Scope>) => {
     const scopeHours = computeScopeHours(scope);
@@ -290,14 +327,28 @@ export function ProjectScopesModal({
             }
           }
 
-          const persistedByTitle = new Map<string, Scope>();
+          const persistedByComposite = new Map<string, Scope[]>();
+          const persistedByTitle = new Map<string, Scope[]>();
           persistedScopes.forEach((scope) => {
-            const key = normalize(scope?.title || '');
-            if (key) persistedByTitle.set(key, scope);
+            const titleKey = normalize(scope?.title || '');
+            if (!titleKey) return;
+
+            const compositeKey = scopeMatchKey(scope.title, scope.startDate, scope.endDate);
+            const compositeBucket = persistedByComposite.get(compositeKey) || [];
+            compositeBucket.push(scope);
+            persistedByComposite.set(compositeKey, compositeBucket);
+
+            const titleBucket = persistedByTitle.get(titleKey) || [];
+            titleBucket.push(scope);
+            persistedByTitle.set(titleKey, titleBucket);
           });
 
           mappedScopes = mappedScopes.map((scope) => {
-            const persisted = persistedByTitle.get(normalize(scope.title || ''));
+            const compositeMatches = persistedByComposite.get(scopeMatchKey(scope.title, scope.startDate, scope.endDate)) || [];
+            const titleMatches = persistedByTitle.get(normalize(scope.title || '')) || [];
+            const persisted =
+              compositeMatches[0] ||
+              (titleMatches.length === 1 ? titleMatches[0] : undefined);
             if (!persisted) return scope;
             return {
               ...scope,
@@ -318,7 +369,10 @@ export function ProjectScopesModal({
     return mappedScopes;
   };
 
-  const upsertProjectScopeMetadata = async (payload: Record<string, any>) => {
+  const upsertProjectScopeMetadata = async (
+    payload: Record<string, any>,
+    options?: { activeScope?: Scope | null }
+  ) => {
     const titleKey = normalize(payload?.title || '');
     if (!titleKey) return;
 
@@ -330,7 +384,39 @@ export function ProjectScopesModal({
       ? result.data
       : (Array.isArray(result?.scopes) ? result.scopes : []);
 
-    const existing = projectScopes.find((scope) => normalize(scope?.title || '') === titleKey);
+    const activeScope = options?.activeScope || null;
+    const payloadStartDate = dateKey(payload?.startDate);
+    const payloadEndDate = dateKey(payload?.endDate);
+    const activeStartDate = dateKey(activeScope?.startDate);
+    const activeEndDate = dateKey(activeScope?.endDate);
+
+    const titleMatches = projectScopes.filter((scope) => normalize(scope?.title || '') === titleKey);
+
+    let existing: Scope | undefined;
+
+    if (activeScope?.id) {
+      existing = projectScopes.find((scope) => scope.id === activeScope.id);
+    }
+
+    if (!existing && activeScope) {
+      existing = titleMatches.find(
+        (scope) =>
+          dateKey(scope.startDate) === activeStartDate &&
+          dateKey(scope.endDate) === activeEndDate
+      );
+    }
+
+    if (!existing && (payloadStartDate || payloadEndDate)) {
+      existing = titleMatches.find(
+        (scope) =>
+          dateKey(scope.startDate) === payloadStartDate &&
+          dateKey(scope.endDate) === payloadEndDate
+      );
+    }
+
+    if (!existing && titleMatches.length === 1) {
+      existing = titleMatches[0];
+    }
 
     if (existing?.id) {
       const updateRes = await fetch('/api/project-scopes', {
@@ -498,8 +584,16 @@ export function ProjectScopesModal({
   // Initialize blank form once when entering explicit create mode.
   useEffect(() => {
     if (!isCreatingNewScope) return;
-    setScopeDetail(emptyScopeDetail);
-  }, [isCreatingNewScope]);
+    setScopeDetail({
+      ...emptyScopeDetail,
+      startDate: selectedScheduleDate || "",
+      endDate: selectedScheduleDate || "",
+    });
+    window.requestAnimationFrame(() => {
+      formSectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      titleInputRef.current?.focus();
+    });
+  }, [isCreatingNewScope, selectedScheduleDate]);
 
   // Keep form blank when nothing is selected and not in create mode.
   useEffect(() => {
@@ -541,11 +635,19 @@ export function ProjectScopesModal({
   const handleAddTask = () => {
     const trimmed = newTask.trim();
     if (!trimmed) return;
+    const parsedDays = Number(newTaskDays || 0);
+    const hasDays = Number.isFinite(parsedDays) && parsedDays > 0;
+    const daysText = hasDays ? `${Math.round(parsedDays)}d` : "";
+    const dateText = newTaskDate ? newTaskDate : "";
+    const prefix = [dateText, daysText].filter(Boolean).join(" | ");
+    const taskEntry = prefix ? `[${prefix}] ${trimmed}` : trimmed;
     setScopeDetail((prev) => ({
       ...prev,
-      tasks: [...(prev.tasks || []), trimmed],
+      tasks: [...(prev.tasks || []), taskEntry],
     }));
     setNewTask("");
+    setNewTaskDate("");
+    setNewTaskDays("");
   };
 
   const handleRemoveTask = (index: number) => {
@@ -642,6 +744,10 @@ export function ProjectScopesModal({
   const handleSaveScope = async () => {
     setIsSaving(true);
     try {
+      const activeScope = activeScopeId
+        ? (effectiveScopes.find((item) => item.id === activeScopeId) || null)
+        : null;
+
       const effectiveSchedulingMode: 'contiguous' | 'specific-days' =
         scopeDetail.schedulingMode === 'specific-days' && selectedDays.length > 0
           ? 'specific-days'
@@ -664,6 +770,11 @@ export function ProjectScopesModal({
 
       if (dayEditMode && selectedScheduleDate && effectiveSchedulingMode === 'specific-days' && (selectedScopeTitle || scopeDetail.title)) {
         const scopeName = (scopeDetail.title || selectedScopeTitle || '').trim();
+        const resolvedStartDate = (scopeDetail.startDate || selectedScheduleDate || '').trim();
+        const resolvedEndDate = (scopeDetail.endDate || resolvedStartDate || '').trim();
+        if (!resolvedStartDate) {
+          throw new Error('Scope start date is required.');
+        }
         const selectedDayEntry = selectedDays.find((entry) => entry.date === selectedScheduleDate);
         const dayHoursRaw =
           scopeDetail.schedulingMode === 'specific-days'
@@ -701,8 +812,8 @@ export function ProjectScopesModal({
         const metadataPayload: Record<string, any> = {
           jobKey: resolvedJobKey,
           title: scopeName || 'Scope',
-          startDate: scopeDetail.startDate || selectedScheduleDate,
-          endDate: scopeDetail.endDate || selectedScheduleDate,
+          startDate: resolvedStartDate,
+          endDate: resolvedEndDate,
           description: scopeDetail.description || '',
           tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
           schedulingMode: effectiveSchedulingMode,
@@ -710,12 +821,15 @@ export function ProjectScopesModal({
           manpower: scopeDetail.manpower,
           hours: computeScopeHours(scopeDetail),
         };
-        await upsertProjectScopeMetadata(metadataPayload);
+        await upsertProjectScopeMetadata(metadataPayload, { activeScope });
 
         const updatedScopes = effectiveScopes.map((scope) => {
-          if (normalize(scope.title) !== normalize(scopeName)) return scope;
+          if (activeScopeId && scope.id !== activeScopeId) return scope;
+          if (!activeScopeId && normalize(scope.title) !== normalize(scopeName)) return scope;
           return {
             ...scope,
+            startDate: metadataPayload.startDate,
+            endDate: metadataPayload.endDate,
             description: metadataPayload.description,
             tasks: metadataPayload.tasks,
             schedulingMode: metadataPayload.schedulingMode,
@@ -743,6 +857,13 @@ export function ProjectScopesModal({
         selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
       };
 
+      payload.startDate = dateKey(payload.startDate);
+      payload.endDate = dateKey(payload.endDate) || payload.startDate;
+
+      if (!payload.startDate) {
+        throw new Error('Scope start date is required.');
+      }
+
       // Only include manpower and hours if they have valid values
       if (scopeDetail.manpower !== undefined && scopeDetail.manpower !== null) {
         payload.manpower = scopeDetail.manpower;
@@ -763,7 +884,7 @@ export function ProjectScopesModal({
       let savedScope;
       if (ganttProjectId) {
         // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
-        await upsertProjectScopeMetadata(payload);
+        await upsertProjectScopeMetadata(payload, { activeScope });
 
         const ganttPayload = {
           title: payload.title,
@@ -864,6 +985,13 @@ export function ProjectScopesModal({
     // - POST /api/scope-tracking/recalculate
   };
 
+  const handleStartCreateScope = () => {
+    previousActiveScopeIdRef.current =
+      activeScopeId && activeScopeId !== NEW_SCOPE_ID ? activeScopeId : null;
+    setIsCreatingNewScope(true);
+    setActiveScopeId(NEW_SCOPE_ID);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900">
@@ -901,11 +1029,12 @@ export function ProjectScopesModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsCreatingNewScope(true);
-                    setActiveScopeId(NEW_SCOPE_ID);
-                  }}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-md border border-orange-300 text-orange-700 hover:bg-orange-50"
+                  onClick={handleStartCreateScope}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-md border ${
+                    isCreatingNewScope
+                      ? 'border-orange-500 bg-orange-50 text-orange-700'
+                      : 'border-orange-300 text-orange-700 hover:bg-orange-50'
+                  }`}
                 >
                   + Add Scope
                 </button>
@@ -919,12 +1048,10 @@ export function ProjectScopesModal({
               </div>
             )}
             <div className="grid gap-2 max-h-40 overflow-y-auto">
-              {effectiveScopes.filter(s => !s.id?.startsWith('fallback-') && !s.id?.startsWith('virtual-') && !s.id?.startsWith('generated-')).length === 0 ? (
+              {visibleScopes.length === 0 ? (
                 <div className="text-sm text-gray-500">No scopes yet.</div>
               ) : (
-                effectiveScopes
-                  .filter(s => !s.id?.startsWith('fallback-') && !s.id?.startsWith('virtual-') && !s.id?.startsWith('generated-'))
-                  .map((scope) => {
+                visibleScopes.map((scope) => {
                   const scopeHours = getEffectiveScopeHours(scope);
                   const scheduledHours = getScheduledHoursForScope(scope);
                   const unscheduledHours = Math.max(scopeHours - scheduledHours, 0);
@@ -942,7 +1069,9 @@ export function ProjectScopesModal({
                   >
                     <div className={scheduledHoursByJobKeyDate ? "grid grid-cols-[1fr_auto_auto] items-center gap-3" : "flex justify-between items-center"}>
                       <div>
-                        <div className="text-sm font-semibold">{scope.title || "Scope"}</div>
+                        <div className="text-sm font-semibold">
+                          {scope.id === NEW_SCOPE_ID ? `${scope.title || "New Scope"} (draft)` : (scope.title || "Scope")}
+                        </div>
                         <div className="text-xs text-gray-500">
                           {scope.startDate || "No start"} - {scope.endDate || "No end"}
                         </div>
@@ -971,10 +1100,32 @@ export function ProjectScopesModal({
             </div>
           </div>
 
-          <div className="border-t pt-4">
+          <div ref={formSectionRef} className="border-t pt-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">
+                  {isCreatingNewScope ? "New Scope" : "Edit Scope"}
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {isCreatingNewScope ? "Fill out the details below, then save the new scope." : "Update the selected scope details below."}
+                </p>
+              </div>
+              {isCreatingNewScope && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingNewScope(false);
+                    setActiveScopeId(previousActiveScopeIdRef.current || selectedScopeId || null);
+                  }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel New
+                </button>
+              )}
+            </div>
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-1">Scope Title</label>
-              <input type="text" value={scopeDetail.title || ""} onChange={(e) => setScopeDetail(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-orange-500" />
+              <input ref={titleInputRef} type="text" value={scopeDetail.title || ""} onChange={(e) => setScopeDetail(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-orange-500" />
             </div>
 
             <div className="mb-4">
@@ -1157,9 +1308,22 @@ export function ProjectScopesModal({
             </div>
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-2">Tasks</label>
-              <div className="flex gap-2 mb-3">
-                <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddTask()} className="flex-1 px-3 py-2 border rounded-md text-sm" />
-                <button type="button" onClick={handleAddTask} className="px-4 py-2 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300">Add</button>
+              <div className="grid grid-cols-[1fr_160px_90px_auto] gap-2 mb-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-700">Task Name</label>
+                  <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddTask()} className="w-full px-3 py-2 border rounded-md text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-700">Start Date</label>
+                  <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1 text-gray-700"># of Days</label>
+                  <input type="number" min="1" step="1" value={newTaskDays} onChange={(e) => setNewTaskDays(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
+                </div>
+                <div className="flex items-end">
+                  <button type="button" onClick={handleAddTask} className="w-full px-4 py-2 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300">Add</button>
+                </div>
               </div>
               {scopeDetail.tasks && scopeDetail.tasks.length > 0 && (
                 <div className="space-y-2 bg-gray-50 p-3 rounded">

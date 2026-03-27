@@ -1,0 +1,1296 @@
+﻿{
+  "file": "C:\\Users\\ToddGilmore\\Downloads\\combined_OAS.json",
+  "totalMatches": 19339,
+  "uniqueKeys": 135,
+  "keys": [
+    {
+      "key": "/rest/v1.0/companies/{company_id}/filters/{name}",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/filters/{name}"
+      ]
+    },
+    {
+      "key": "/rest/v1.0/companies/{company_id}/users/{user_id}/project_assignments/filter_options/names",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/users/{user_id}/project_assignments/filter_options/names"
+      ]
+    },
+    {
+      "key": "/rest/v1.0/projects/{id}/filters/{filter_name}",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{id}/filters/{filter_name}"
+      ]
+    },
+    {
+      "key": "/rest/v1.0/projects/{project_id}/custom_fields/{tool_name}/user_options",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/custom_fields/{tool_name}/user_options"
+      ]
+    },
+    {
+      "key": "abbreviated_name",
+      "count": 52,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.get.responses.200.content.application/json.schema.items.oneOf[1].allOf[1].properties.abbreviated_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.get.responses.200.content.application/json.schema.items.oneOf[5].properties.abbreviated_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.post.requestBody.content.application/json.schema.properties.vendor.properties.abbreviated_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.post.responses.201.content.application/json.schema.oneOf[0].properties.abbreviated_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.post.responses.201.content.application/json.schema.oneOf[1].allOf[1].properties.abbreviated_name"
+      ]
+    },
+    {
+      "key": "action_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/settings/permissions.get.responses.200.content.application/json.schema.properties.tools.items.properties.permitted_actions.items.properties.action_name",
+        "$.paths./rest/v1.0/projects/{project_id}/correspondence_types/permissions.get.responses.200.content.application/json.schema.items.properties.permitted_actions.items.properties.action_name"
+      ]
+    },
+    {
+      "key": "activity_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/activities.get.responses.200.content.application/json.schema.properties.data.items.properties.activity_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/activities/{activity_id}.get.responses.200.content.application/json.schema.properties.data.properties.activity_name"
+      ]
+    },
+    {
+      "key": "attribute_1_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.schema.properties.data.items.properties.attribute_1_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.examples.response.value.data[0].attribute_1_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.examples.response.value.data[1].attribute_1_name"
+      ]
+    },
+    {
+      "key": "attribute_2_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.schema.properties.data.items.properties.attribute_2_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.examples.response.value.data[0].attribute_2_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.examples.response.value.data[1].attribute_2_name"
+      ]
+    },
+    {
+      "key": "attribute_3_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.schema.properties.data.items.properties.attribute_3_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.examples.response.value.data[0].attribute_3_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/wbs/codes.get.responses.200.content.application/json.examples.response.value.data[1].attribute_3_name"
+      ]
+    },
+    {
+      "key": "authorizedByPaymentsUserName",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.authorizedByPaymentsUserName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.authorizedByPaymentsUserName"
+      ]
+    },
+    {
+      "key": "bankName",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/payee_bank_details.post.responses.200.content.application/json.schema.properties.payeeBankDetails.example[0].123.bankName"
+      ]
+    },
+    {
+      "key": "bim_model_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.0/observations/items.get.responses.200.content.application/json.schema.items.properties.origin.properties.payload.properties.bim_model_name",
+        "$.paths./rest/v1.0/observations/items.post.responses.201.content.application/json.schema.properties.origin.properties.payload.properties.bim_model_name",
+        "$.paths./rest/v1.0/observations/items/send_unsent.post.responses.200.content.application/json.schema.items.properties.origin.properties.payload.properties.bim_model_name",
+        "$.paths./rest/v1.0/observations/items/{id}.get.responses.200.content.application/json.schema.properties.origin.properties.payload.properties.bim_model_name",
+        "$.paths./rest/v1.0/observations/items/{id}.patch.responses.200.content.application/json.schema.properties.origin.properties.payload.properties.bim_model_name"
+      ]
+    },
+    {
+      "key": "budget_change_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/budget_changes/adjustment_line_items.get.responses.200.content.application/json.schema.properties.data.items.properties.budget_change_name"
+      ]
+    },
+    {
+      "key": "businessAsName",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/payee_bank_details.post.responses.200.content.application/json.schema.properties.payeeBankDetails.example[0].123.vendorBusinessInfo.businessAsName"
+      ]
+    },
+    {
+      "key": "businessName",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/payee_bank_details.post.responses.200.content.application/json.schema.properties.payeeBankDetails.example[0].123.vendorBusinessInfo.businessName"
+      ]
+    },
+    {
+      "key": "cancelledByUserName",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.cancelledByUserName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.cancelledByUserName"
+      ]
+    },
+    {
+      "key": "category_name",
+      "count": 5,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.assignments.items.properties.category_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments/current.get.responses.200.content.application/json.schema.items.properties.data.items.properties.assignments.items.properties.category_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.assignments.items.properties.category_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.category_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.category_name"
+      ]
+    },
+    {
+      "key": "class_name",
+      "count": 13,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries/configurable_field_sets.get.responses.200.content.application/json.schema.items.properties.class_name",
+        "$.paths./rest/v1.0/observations/category_configurable_field_sets.get.responses.200.content.application/json.schema.items.properties.configurable_field_set.properties.class_name",
+        "$.paths./rest/v1.0/workflow_instances.get.responses.200.content.application/json.schema.items.properties.workflow.properties.class_name",
+        "$.paths./rest/v1.0/workflow_instances/{id}.get.responses.200.content.application/json.schema.properties.workflow.properties.class_name",
+        "$.paths./rest/v1.0/companies/{company_id}/custom_field_definitions/{custom_field_definition_id}/configurable_field_sets.get.responses.200.content.application/json.schema.items.properties.class_name"
+      ]
+    },
+    {
+      "key": "classification_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages.post.requestBody.content.application/json.schema.properties.bid_package.properties.business_classifications.items.properties.classification_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages.post.responses.201.content.application/json.schema.properties.business_classifications.items.properties.classification_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.get.responses.200.content.application/json.schema.properties.business_classifications.items.properties.classification_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.patch.requestBody.content.application/json.schema.properties.bid_package.properties.business_classifications.items.properties.classification_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.patch.responses.200.content.application/json.schema.properties.business_classifications.items.properties.classification_name"
+      ]
+    },
+    {
+      "key": "company_configurable_field_set_default_column_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/configurable_field_sets.post.requestBody.content.application/json.schema.properties.configurable_field_set.properties.company_configurable_field_set_default_column_name"
+      ]
+    },
+    {
+      "key": "company_name",
+      "count": 315,
+      "samplePaths": [
+        "$.paths./rest/v2.1/companies/{company_id}/projects/{project_id}/specification_configuration.get.responses.200.content.application/json.schema.properties.data.properties.specification_subscribers.properties.users.items.properties.company_name",
+        "$.paths./rest/v2.1/companies/{company_id}/projects/{project_id}/specification_configuration.patch.responses.200.content.application/json.schema.properties.data.properties.specification_subscribers.properties.users.items.properties.company_name",
+        "$.paths./rest/v2.1/companies/{company_id}/projects/{project_id}/specification_configuration/potential_distribution_members.get.responses.200.content.application/json.schema.properties.data.items.properties.company_name",
+        "$.paths./rest/v2.1/companies/{company_id}/projects/{project_id}/specification_configuration/distribution_groups.get.responses.200.content.application/json.schema.properties.data.items.properties.users.items.properties.company_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/punch_list/assignees.get.responses.200.content.application/json.schema.properties.data.items.properties.company_name"
+      ]
+    },
+    {
+      "key": "configurable_field_set_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/configurable_field_sets/{id}/project_options.get.responses.200.content.application/json.schema.items.allOf[1].properties.configurable_field_set_name"
+      ]
+    },
+    {
+      "key": "contact_name",
+      "count": 5,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups.get.responses.200.content.application/json.schema.items.properties.contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups.post.requestBody.content.application/json.schema.properties.contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}.get.responses.200.content.application/json.schema.properties.contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}.post.requestBody.content.application/json.schema.properties.contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}.post.responses.200.content.application/json.schema.properties.contact_name"
+      ]
+    },
+    {
+      "key": "contract_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.1/requisitions.get.responses.200.content.application/json.schema.items.properties.contract_name",
+        "$.paths./rest/v1.1/requisitions.post.responses.201.content.application/json.schema.properties.contract_name",
+        "$.paths./rest/v1.1/requisitions/{id}.get.responses.200.content.application/json.schema.properties.contract_name",
+        "$.paths./rest/v1.1/requisitions/{id}.patch.responses.200.content.application/json.schema.properties.contract_name",
+        "$.paths./rest/v1.0/requisitions.get.responses.200.content.application/json.schema.items.properties.contract_name"
+      ]
+    },
+    {
+      "key": "cost_code_biller_name",
+      "count": 7,
+      "samplePaths": [
+        "$.paths./rest/v1.0/rfqs.get.responses.200.content.application/json.schema.items.properties.change_event.properties.change_event_line_items.items.properties.cost_code_biller_name",
+        "$.paths./rest/v1.0/rfqs/{id}.get.responses.200.content.application/json.schema.properties.change_event.properties.change_event_line_items.items.properties.cost_code_biller_name",
+        "$.paths./rest/v1.0/rfqs/{id}.patch.responses.200.content.application/json.schema.properties.change_event.properties.change_event_line_items.items.properties.cost_code_biller_name",
+        "$.paths./rest/v1.0/change_events.get.responses.200.content.application/json.schema.items.properties.change_event_line_items.items.properties.cost_code_biller_name",
+        "$.paths./rest/v1.0/change_events.post.responses.201.content.application/json.schema.properties.change_event_line_items.items.properties.cost_code_biller_name"
+      ]
+    },
+    {
+      "key": "cost_code_name",
+      "count": 9,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.cost_code_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.cost_code_name",
+        "$.paths./rest/v1.1/projects/{project_id}/bid_packages/{bid_package_id}/bids/{id}.patch.responses.200.content.application/json.schema.properties.bid_items.items.properties.cost_code_name",
+        "$.paths./rest/v1.0/companies/{company_id}/bids/{id}.get.responses.200.content.application/json.schema.properties.bid_items.items.properties.cost_code_name",
+        "$.paths./rest/v1.0/companies/{company_id}/bids/{id}.patch.responses.200.content.application/json.schema.properties.bid_items.items.properties.cost_code_name"
+      ]
+    },
+    {
+      "key": "cost_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.cost_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.sub_items.items.properties.cost_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.get.responses.200.content.application/json.schema.properties.data.properties.cost_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.get.responses.200.content.application/json.schema.properties.data.properties.sub_items.items.properties.cost_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.put.responses.200.content.application/json.schema.properties.data.properties.cost_name"
+      ]
+    },
+    {
+      "key": "cost_type_name",
+      "count": 12,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.cost_type_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.sub_items.items.properties.cost_type_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.get.responses.200.content.application/json.schema.properties.data.properties.cost_type_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.get.responses.200.content.application/json.schema.properties.data.properties.sub_items.items.properties.cost_type_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.put.requestBody.content.application/json.schema.properties.cost_type_name"
+      ]
+    },
+    {
+      "key": "country_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/schedule.get.responses.200.content.application/json.schema.properties.project.properties.country_name",
+        "$.paths./rest/v1.0/projects/{project_id}/schedule.patch.responses.200.content.application/json.schema.properties.project.properties.country_name",
+        "$.paths./rest/v1.0/vendors/{id}.get.responses.200.content.application/json.schema.oneOf[4].allOf[2].properties.country_name"
+      ]
+    },
+    {
+      "key": "created_by_name",
+      "count": 10,
+      "samplePaths": [
+        "$.paths./rest/v1.0/observations/items/{item_id}/response_logs.get.responses.200.content.application/json.schema.items.properties.created_by_name",
+        "$.paths./rest/v1.0/observations/items/{item_id}/response_logs.post.responses.201.content.application/json.schema.properties.created_by_name",
+        "$.paths./rest/v1.0/projects/{project_id}/observations/response_logs.get.responses.200.content.application/json.schema.items.properties.created_by_name",
+        "$.paths./rest/v1.1/companies/{company_id}/projects/{project_id}/viewer_documents.post.responses.200.content.application/json.schema.properties.markups.items.properties.created_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.delete.responses.200.content.*/*.schema.properties.markups.items.properties.created_by_name"
+      ]
+    },
+    {
+      "key": "created_by_vendor_name",
+      "count": 7,
+      "samplePaths": [
+        "$.paths./rest/v1.1/companies/{company_id}/projects/{project_id}/viewer_documents.post.responses.200.content.application/json.schema.properties.markups.items.properties.created_by_vendor_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.delete.responses.200.content.*/*.schema.properties.markups.items.properties.created_by_vendor_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.post.responses.200.content.*/*.schema.properties.markups.items.properties.created_by_vendor_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.put.responses.200.content.*/*.schema.properties.markups.items.properties.created_by_vendor_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents.post.responses.200.content.application/json.schema.properties.markups.items.properties.created_by_vendor_name"
+      ]
+    },
+    {
+      "key": "createdByName",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/payee_bank_details.post.responses.200.content.application/json.schema.properties.payeeBankDetails.example[0].123.createdByName"
+      ]
+    },
+    {
+      "key": "customer_name",
+      "count": 5,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects.get.responses.200.content.application/json.schema.items.properties.customer_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects.post.requestBody.content.application/json.schema.properties.customer_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}.get.responses.200.content.application/json.schema.properties.customer_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}.post.responses.200.content.application/json.schema.properties.customer_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/projects.get.responses.200.content.application/json.schema.items.properties.customer_name"
+      ]
+    },
+    {
+      "key": "deactivatedByName",
+      "count": 5,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/early_pay_programs.get.responses.200.content.application/json.schema.items.properties.deactivatedByName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/early_pay_programs.post.responses.200.content.application/json.schema.properties.deactivatedByName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/early_pay_programs/{early_pay_program_id}.get.responses.200.content.application/json.schema.properties.deactivatedByName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/early_pay_programs/{early_pay_program_id}.patch.responses.200.content.application/json.schema.properties.deactivatedByName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/early_pay_programs/{early_pay_program_id}/deactivate.patch.responses.200.content.application/json.schema.properties.deactivatedByName"
+      ]
+    },
+    {
+      "key": "display_name",
+      "count": 20,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects.get.responses.200.content.application/json.schema.items.oneOf[0].properties.display_name",
+        "$.paths./rest/v1.1/projects.get.responses.200.content.application/json.schema.items.oneOf[2].properties.display_name",
+        "$.paths./rest/v1.0/projects.get.responses.200.content.application/json.schema.items.properties.display_name",
+        "$.paths./rest/v1.0/projects.post.responses.201.content.application/json.schema.properties.display_name",
+        "$.paths./rest/v1.0/projects/sync.patch.responses.200.content.application/json.schema.properties.entities.items.properties.display_name"
+      ]
+    },
+    {
+      "key": "display_project_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages.post.requestBody.content.application/json.schema.properties.bid_package.properties.display_project_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages.post.responses.201.content.application/json.schema.properties.display_project_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.get.responses.200.content.application/json.schema.properties.display_project_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.patch.requestBody.content.application/json.schema.properties.bid_package.properties.display_project_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.patch.responses.200.content.application/json.schema.properties.display_project_name"
+      ]
+    },
+    {
+      "key": "display_task_names_with_full_outline_path",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/schedule/settings.get.responses.200.content.application/json.schema.properties.display_task_names_with_full_outline_path"
+      ]
+    },
+    {
+      "key": "document_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/coordination_issues/workflow_issues.get.responses.200.content.application/json.schema.properties.data.items.properties.document_container_metadata.properties.document_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/coordination_issues/workflow_issues/{id}.get.responses.200.content.application/json.schema.properties.data.properties.document_container_metadata.properties.document_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/coordination_issues/workflow_issues/{id}.patch.responses.200.content.application/json.schema.properties.data.properties.document_container_metadata.properties.document_name",
+        "$.paths./rest/v1.0/projects/{project_id}/action_plans/plan_template_references.get.responses.200.content.application/json.schema.items.properties.payload.properties.document_management_document_reference.properties.document_name",
+        "$.paths./rest/v1.0/projects/{project_id}/action_plans/plan_template_references.post.responses.201.content.application/json.schema.properties.payload.properties.document_management_document_reference.properties.document_name"
+      ]
+    },
+    {
+      "key": "emergency_contact_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people.get.responses.200.content.application/json.schema.items.properties.emergency_contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people.post.requestBody.content.application/json.schema.properties.emergency_contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}.get.responses.200.content.application/json.schema.properties.emergency_contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}.post.requestBody.content.application/json.schema.properties.emergency_contact_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}.post.responses.200.content.application/json.schema.properties.emergency_contact_name"
+      ]
+    },
+    {
+      "key": "engine_name",
+      "count": 11,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/tools.get.responses.200.content.application/json.schema.items.properties.engine_name",
+        "$.paths./rest/v1.0/projects/{project_id}/tools.get.responses.200.content.application/json.examples.response.value[0].engine_name",
+        "$.paths./rest/v1.0/projects/{project_id}/tools.get.responses.200.content.application/json.examples.response.value[1].engine_name",
+        "$.paths./rest/v1.0/projects/{project_id}/tools.get.responses.200.content.application/json.examples.response.value[2].engine_name",
+        "$.paths./rest/v1.0/projects/{project_id}/tools.patch.responses.200.content.application/json.schema.items.properties.engine_name"
+      ]
+    },
+    {
+      "key": "equipment_name",
+      "count": 40,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries/create_equipment.post.requestBody.content.application/json.schema.properties.time_and_material_entry.properties.equipment_name",
+        "$.paths./rest/v1.0/projects/{project_id}/equipment_logs.post.requestBody.content.application/json.schema.properties.equipment_log.properties.equipment_name",
+        "$.paths./rest/v1.0/projects/{project_id}/equipment_logs.post.requestBody.content.application/json.schema.example.equipment_log.equipment_name",
+        "$.paths./rest/v1.0/projects/{project_id}/equipment_logs.post.requestBody.content.multipart/form-data.schema.properties.equipment_log.properties.equipment_name",
+        "$.paths./rest/v1.0/projects/{project_id}/equipment_logs.post.requestBody.content.multipart/form-data.schema.example.equipment_log.equipment_name"
+      ]
+    },
+    {
+      "key": "erp_integration_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/uoms/configuration.get.responses.200.content.application/json.schema.properties.data.properties.erp_integration_name"
+      ]
+    },
+    {
+      "key": "field_name",
+      "count": 42,
+      "samplePaths": [
+        "$.paths./rest/v1.0/work_order_contracts/{work_order_contract_id}/line_items/sync.patch.responses.200.content.application/json.schema.properties.errors.items.allOf[1].properties.errors.properties.field_name",
+        "$.paths./rest/v1.0/companies/{company_id}/uoms/sync.patch.responses.200.content.application/json.schema.properties.errors.items.allOf[1].properties.errors.properties.field_name",
+        "$.paths./rest/v1.0/todos/sync.patch.responses.200.content.application/json.schema.properties.errors.items.allOf[1].properties.errors.properties.field_name",
+        "$.paths./rest/v1.0/tax_types.post.responses.400.content.application/json.schema.properties.errors.properties.field_name",
+        "$.paths./rest/v1.0/tax_types/{id}.patch.responses.400.content.application/json.schema.properties.errors.properties.field_name"
+      ]
+    },
+    {
+      "key": "file_name",
+      "count": 53,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/documents/{document_id}/revisions.get.responses.200.content.application/json.schema.properties.data.items.properties.file_name",
+        "$.paths./rest/v2.0/projects/{project_id}/documents/{document_id}/revisions.get.responses.200.content.application/json.schema.properties.data.items.properties.file_name",
+        "$.paths./rest/v1.0/companies/{company_id}/timesheets/signatures.post.responses.201.content.application/json.schema.properties.file_name",
+        "$.paths./rest/v1.0/companies/{company_id}/timesheets/signatures/{id}.delete.responses.200.content.application/json.schema.properties.file_name",
+        "$.paths./rest/v1.0/companies/{company_id}/timesheets/signatures/{id}.get.responses.200.content.application/json.schema.properties.file_name"
+      ]
+    },
+    {
+      "key": "filename",
+      "count": 525,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/inspections/{inspection_id}/reinspections.post.responses.200.content.application/json.schema.properties.data.properties.attachments.items.properties.filename",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/inspections/{inspection_id}/active_reinspection.get.responses.200.content.application/json.schema.properties.data.properties.attachments.items.properties.filename",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/inspection_items/{item_id}/signature_requests/{id}/signature.post.responses.201.content.application/json.schema.properties.data.properties.attachment.properties.filename",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/inspection_items/{item_id}/signature_requests.get.responses.200.content.application/json.schema.properties.data.items.properties.signature.properties.attachment.properties.filename",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/inspection_items/{item_id}/signature_requests.post.responses.201.content.application/json.schema.properties.data.properties.signature.properties.attachment.properties.filename"
+      ]
+    },
+    {
+      "key": "first_name",
+      "count": 321,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.get.responses.200.content.application/json.schema.items.properties.company_signee_party.properties.first_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.get.responses.200.content.application/json.schema.items.properties.customer_signee_party.properties.first_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.post.responses.201.content.application/json.schema.properties.company_signee_party.properties.first_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.post.responses.201.content.application/json.schema.properties.customer_signee_party.properties.first_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries/bulk_update.patch.responses.200.content.application/json.schema.items.properties.company_signee_party.properties.first_name"
+      ]
+    },
+    {
+      "key": "flat_name",
+      "count": 5,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/task_codes.get.responses.200.content.application/json.schema.items.properties.flat_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_breakdown_structure/wbs_codes.get.responses.200.content.application/json.schema.items.properties.flat_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_breakdown_structure/wbs_codes.post.responses.201.content.application/json.schema.properties.flat_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_breakdown_structure/wbs_codes/bulk_create.patch.responses.201.content.application/json.schema.properties.entities.items.properties.flat_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_breakdown_structure/wbs_codes/{id}.patch.responses.200.content.application/json.schema.properties.flat_name"
+      ]
+    },
+    {
+      "key": "form_template_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/forms.get.responses.200.content.application/json.schema.items.properties.form_template_name",
+        "$.paths./rest/v1.0/projects/{project_id}/forms.get.responses.200.content.application/json.schema.items.properties.form_template_name",
+        "$.paths./rest/v1.0/projects/{project_id}/forms.post.responses.201.content.application/json.schema.properties.form_template_name",
+        "$.paths./rest/v1.0/projects/{project_id}/forms/{id}.get.responses.200.content.application/json.schema.properties.form_template_name",
+        "$.paths./rest/v1.0/projects/{project_id}/forms/{id}.patch.responses.200.content.application/json.schema.properties.form_template_name"
+      ]
+    },
+    {
+      "key": "formatted_name",
+      "count": 12,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/submittals.get.responses.200.content.application/json.schema.items.properties.scheduled_task.properties.formatted_name",
+        "$.paths./rest/v1.1/projects/{project_id}/submittals/recycle_bin.get.responses.200.content.application/json.schema.items.allOf[0].properties.scheduled_task.properties.formatted_name",
+        "$.paths./rest/v1.1/projects/{project_id}/submittals/{id}/revisions.get.responses.200.content.application/json.schema.items.allOf[0].properties.scheduled_task.properties.formatted_name",
+        "$.paths./rest/v1.0/projects/{project_id}/submittals.get.responses.200.content.application/json.schema.items.allOf[0].properties.scheduled_task.properties.formatted_name",
+        "$.paths./rest/v1.0/projects/{project_id}/submittals/recycle_bin.get.responses.200.content.application/json.schema.items.allOf[0].properties.scheduled_task.properties.formatted_name"
+      ]
+    },
+    {
+      "key": "formatted_parent_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/rfis/{id}/advance_ball_in_court.patch.responses.200.content.application/json.schema.allOf[1].properties.project_stage.properties.formatted_parent_name",
+        "$.paths./rest/v1.1/projects/{project_id}/rfis/{id}/forward_for_review.patch.responses.200.content.application/json.schema.allOf[1].properties.project_stage.properties.formatted_parent_name",
+        "$.paths./rest/v1.0/projects/{project_id}/rfis.get.responses.200.content.application/json.schema.items.allOf[1].properties.project_stage.properties.formatted_parent_name",
+        "$.paths./rest/v1.0/projects/{project_id}/rfis/recycle_bin.get.responses.200.content.application/json.schema.items.allOf[1].properties.project_stage.properties.formatted_parent_name",
+        "$.paths./rest/v1.0/projects/{project_id}/rfis/{id}/advance_ball_in_court.patch.responses.200.content.application/json.schema.allOf[1].properties.project_stage.properties.formatted_parent_name"
+      ]
+    },
+    {
+      "key": "friendly_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/settings/permissions.get.responses.200.content.application/json.schema.properties.tools.items.properties.friendly_name",
+        "$.paths./rest/v1.0/projects/{project_id}/correspondence_types/permissions.get.responses.200.content.application/json.schema.items.properties.friendly_name"
+      ]
+    },
+    {
+      "key": "from_budget_line_item_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/change_events.get.responses.200.content.application/json.schema.items.properties.change_event_line_items.items.properties.budget_mod.properties.from_budget_line_item_name",
+        "$.paths./rest/v1.0/change_events.post.responses.201.content.application/json.schema.properties.change_event_line_items.items.properties.budget_mod.properties.from_budget_line_item_name",
+        "$.paths./rest/v1.0/change_events/{id}.get.responses.200.content.application/json.schema.properties.change_event_line_items.items.properties.budget_mod.properties.from_budget_line_item_name",
+        "$.paths./rest/v1.0/change_events/{id}.patch.responses.200.content.application/json.schema.properties.change_event_line_items.items.properties.budget_mod.properties.from_budget_line_item_name"
+      ]
+    },
+    {
+      "key": "get_info_from_filename",
+      "count": 9,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/drawing_uploads.get.responses.200.content.application/json.schema.items.properties.get_info_from_filename",
+        "$.paths./rest/v1.1/projects/{project_id}/drawing_uploads.post.requestBody.content.multipart/form-data.schema.properties.drawing_upload.properties.get_info_from_filename",
+        "$.paths./rest/v1.1/projects/{project_id}/drawing_uploads.post.responses.200.content.application/json.schema.properties.get_info_from_filename",
+        "$.paths./rest/v1.1/projects/{project_id}/drawing_uploads.post.responses.201.content.application/json.schema.properties.get_info_from_filename",
+        "$.paths./rest/v1.1/projects/{project_id}/drawing_uploads/{id}.get.responses.200.content.application/json.schema.properties.get_info_from_filename"
+      ]
+    },
+    {
+      "key": "hired_by_subtier_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/payments/commitments/{commitment_id}/subtiers.get.responses.200.content.application/json.schema.items.properties.hired_by_subtier_name"
+      ]
+    },
+    {
+      "key": "image_category_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.0/images.get.responses.200.content.application/json.schema.items.properties.image_category_name",
+        "$.paths./rest/v1.0/images.get.responses.200.content.application/json.schema.items.example.image_category_name",
+        "$.paths./rest/v1.0/images.post.responses.201.content.application/json.schema.properties.image_category_name",
+        "$.paths./rest/v1.0/images.post.responses.201.content.application/json.schema.example.image_category_name",
+        "$.paths./rest/v1.0/images/{id}.get.responses.200.content.application/json.schema.allOf[0].properties.image_category_name"
+      ]
+    },
+    {
+      "key": "image_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/images.post.requestBody.content.application/json.schema.properties.image_name",
+        "$.paths./rest/v1.0/images.post.requestBody.content.multipart/form-data.schema.properties.image_name"
+      ]
+    },
+    {
+      "key": "inspector_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/inspection_logs.get.responses.200.content.application/json.schema.items.properties.inspector_name",
+        "$.paths./rest/v1.0/projects/{project_id}/inspection_logs.post.requestBody.content.application/json.schema.properties.inspection_log.allOf[0].properties.inspector_name",
+        "$.paths./rest/v1.0/projects/{project_id}/inspection_logs.post.requestBody.content.multipart/form-data.schema.properties.inspection_log.properties.inspector_name",
+        "$.paths./rest/v1.0/projects/{project_id}/inspection_logs.post.responses.201.content.application/json.schema.properties.inspector_name",
+        "$.paths./rest/v1.0/projects/{project_id}/inspection_logs/{id}.get.responses.200.content.application/json.schema.properties.inspector_name"
+      ]
+    },
+    {
+      "key": "internal_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/app_installations.get.responses.200.content.application/json.schema.items.allOf[0].properties.developer_app.properties.internal_name",
+        "$.paths./rest/v1.0/app_installations/{id}.patch.responses.200.content.application/json.schema.allOf[0].properties.developer_app.properties.internal_name"
+      ]
+    },
+    {
+      "key": "involved_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/accident_logs.get.responses.200.content.application/json.schema.items.properties.involved_name",
+        "$.paths./rest/v1.0/projects/{project_id}/accident_logs.post.requestBody.content.application/json.schema.properties.accident_log.allOf[0].properties.involved_name",
+        "$.paths./rest/v1.0/projects/{project_id}/accident_logs.post.requestBody.content.multipart/form-data.schema.properties.accident_log.properties.involved_name",
+        "$.paths./rest/v1.0/projects/{project_id}/accident_logs.post.responses.201.content.application/json.schema.properties.involved_name",
+        "$.paths./rest/v1.0/projects/{project_id}/accident_logs/{id}.get.responses.200.content.application/json.schema.properties.involved_name"
+      ]
+    },
+    {
+      "key": "job_title_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/reports/look-ahead.get.responses.200.content.application/json.schema.items.properties.job_title_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.job_title_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments/current.get.responses.200.content.application/json.schema.items.properties.data.items.properties.job_title_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.job_title_name"
+      ]
+    },
+    {
+      "key": "label_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.label_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.label_name"
+      ]
+    },
+    {
+      "key": "last_name",
+      "count": 321,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.get.responses.200.content.application/json.schema.items.properties.company_signee_party.properties.last_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.get.responses.200.content.application/json.schema.items.properties.customer_signee_party.properties.last_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.post.responses.201.content.application/json.schema.properties.company_signee_party.properties.last_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries.post.responses.201.content.application/json.schema.properties.customer_signee_party.properties.last_name",
+        "$.paths./rest/v1.0/projects/{project_id}/time_and_material_entries/bulk_update.patch.responses.200.content.application/json.schema.items.properties.company_signee_party.properties.last_name"
+      ]
+    },
+    {
+      "key": "legal_name",
+      "count": 34,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.get.responses.200.content.application/json.schema.items.oneOf[1].allOf[0].properties.legal_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.post.responses.201.content.application/json.schema.oneOf[1].allOf[0].properties.legal_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors/{id}.get.responses.200.content.application/json.schema.oneOf[1].allOf[0].properties.legal_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors/{id}.patch.responses.200.content.application/json.schema.oneOf[1].allOf[0].properties.legal_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors/{id}/actions/add.post.responses.201.content.application/json.schema.oneOf[1].allOf[0].properties.legal_name"
+      ]
+    },
+    {
+      "key": "list_template_name",
+      "count": 14,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/checklist/lists.post.responses.201.content.application/json.schema.properties.list_template_name",
+        "$.paths./rest/v1.1/projects/{project_id}/checklist/lists/{id}.patch.responses.200.content.application/json.schema.properties.list_template_name",
+        "$.paths./rest/v1.0/checklist/lists.get.responses.200.content.application/json.schema.items.properties.lists.items.properties.list_template_name",
+        "$.paths./rest/v1.0/checklist/lists.post.responses.201.content.application/json.schema.properties.list_template_name",
+        "$.paths./rest/v1.0/checklist/lists/{id}.get.responses.200.content.application/json.schema.properties.list_template_name"
+      ]
+    },
+    {
+      "key": "localized_name",
+      "count": 15,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/observation_types.get.responses.200.content.application/json.schema.items.properties.localized_name",
+        "$.paths./rest/v1.0/projects/{project_id}/observation_types.post.responses.201.content.application/json.schema.properties.localized_name",
+        "$.paths./rest/v1.0/projects/{project_id}/observation_types/{id}.patch.responses.200.content.application/json.schema.properties.localized_name",
+        "$.paths./rest/v1.0/projects/{project_id}/observation_templates/bulk_update.patch.responses.200.content.application/json.schema.items.properties.observation_type.properties.localized_name",
+        "$.paths./rest/v1.0/observations/items.get.responses.200.content.application/json.schema.items.properties.type.properties.localized_name"
+      ]
+    },
+    {
+      "key": "login_information_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.1/punch_items.get.responses.200.content.application/json.schema.items.properties.assignments.items.properties.login_information_name",
+        "$.paths./rest/v1.1/punch_items/recycle_bin.get.responses.200.content.application/json.schema.properties.assignments.items.properties.login_information_name",
+        "$.paths./rest/v1.0/punch_items.get.responses.200.content.application/json.schema.items.properties.assignments.items.properties.login_information_name",
+        "$.paths./rest/v1.0/punch_items/recycle_bin.get.responses.200.content.application/json.schema.properties.assignments.items.properties.login_information_name",
+        "$.paths./rest/v1.0/projects/{project_id}/punch_item_assignments/{id}.get.responses.200.content.application/json.schema.properties.login_information_name"
+      ]
+    },
+    {
+      "key": "model_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/change_events.get.responses.200.content.application/json.schema.items.properties.change_event_line_items.items.properties.biller.properties.model_name",
+        "$.paths./rest/v1.0/change_events.post.responses.201.content.application/json.schema.properties.change_event_line_items.items.properties.biller.properties.model_name",
+        "$.paths./rest/v1.0/change_events/{id}.get.responses.200.content.application/json.schema.properties.change_event_line_items.items.properties.biller.properties.model_name",
+        "$.paths./rest/v1.0/change_events/{id}.patch.responses.200.content.application/json.schema.properties.change_event_line_items.items.properties.biller.properties.model_name"
+      ]
+    },
+    {
+      "key": "module_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/daily_logs/count.get.responses.200.content.application/json.schema.items.properties.module_name",
+        "$.paths./rest/v1.1/projects/{project_id}/daily_logs/counts.get.responses.200.content.application/json.schema.items.properties.module_name"
+      ]
+    },
+    {
+      "key": "name",
+      "count": 16551,
+      "samplePaths": [
+        "$.info.contact.name",
+        "$.paths./rest/v2.0/companies/{company_id}/workflows/tools.parameters[0].name",
+        "$.paths./rest/v2.0/companies/{company_id}/workflows/tools.parameters[1].name",
+        "$.paths./rest/v2.0/companies/{company_id}/workflows/tools.get.responses.200.content.application/json.schema.properties.data.items.properties.name",
+        "$.paths./rest/v2.0/companies/{company_id}/workflows/templates.parameters[0].name"
+      ]
+    },
+    {
+      "key": "name_translations",
+      "count": 15,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/observation_types.get.responses.200.content.application/json.schema.items.properties.name_translations",
+        "$.paths./rest/v1.0/projects/{project_id}/observation_types.post.responses.201.content.application/json.schema.properties.name_translations",
+        "$.paths./rest/v1.0/projects/{project_id}/observation_types/{id}.patch.responses.200.content.application/json.schema.properties.name_translations",
+        "$.paths./rest/v1.0/projects/{project_id}/observation_templates/bulk_update.patch.responses.200.content.application/json.schema.items.properties.observation_type.properties.name_translations",
+        "$.paths./rest/v1.0/observations/items.get.responses.200.content.application/json.schema.items.properties.type.properties.name_translations"
+      ]
+    },
+    {
+      "key": "name_with_path",
+      "count": 32,
+      "samplePaths": [
+        "$.paths./rest/v1.0/files.post.responses.201.content.application/json.schema.properties.name_with_path",
+        "$.paths./rest/v1.0/files/{id}.get.responses.200.content.application/json.schema.properties.name_with_path",
+        "$.paths./rest/v1.0/files/{id}.patch.responses.200.content.application/json.schema.properties.name_with_path",
+        "$.paths./rest/v1.0/files/{id}.patch.responses.409.content.application/json.schema.properties.file.properties.name_with_path",
+        "$.paths./rest/v1.0/folders.get.responses.200.content.application/json.schema.properties.name_with_path"
+      ]
+    },
+    {
+      "key": "name_with_vendor",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/checklist/potential_points_of_contact.get.responses.200.content.application/json.schema.items.properties.name_with_vendor"
+      ]
+    },
+    {
+      "key": "namespace",
+      "count": 19,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/webhooks/hooks.get.responses.200.content.application/json.schema.properties.data.items.properties.namespace",
+        "$.paths./rest/v2.0/companies/{company_id}/webhooks/hooks.post.requestBody.content.application/json.schema.properties.namespace",
+        "$.paths./rest/v2.0/companies/{company_id}/webhooks/hooks.post.responses.201.content.application/json.schema.properties.data.properties.namespace",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/webhooks/hooks.get.responses.200.content.application/json.schema.properties.data.items.properties.namespace",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/webhooks/hooks.post.requestBody.content.application/json.schema.properties.namespace"
+      ]
+    },
+    {
+      "key": "node_name",
+      "count": 231,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs.get.responses.200.content.application/json.schema.items.properties.location.properties.node_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs.post.responses.201.content.application/json.schema.properties.location.properties.node_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs/{id}.get.responses.200.content.application/json.schema.properties.location.properties.node_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs/{id}.patch.responses.200.content.application/json.schema.properties.location.properties.node_name",
+        "$.paths./rest/v1.1/projects/{project_id}/daily_logs/weather_logs.get.responses.200.content.application/json.schema.items.properties.location.properties.node_name"
+      ]
+    },
+    {
+      "key": "oem_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/telematics/stats.post.requestBody.content.application/json.schema.properties.header.properties.oem_name"
+      ]
+    },
+    {
+      "key": "OEMName",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v2.1/companies/{company_id}/telematics/aemp.post.requestBody.content.application/json.schema.example.Fleet.Equipment[0].EquipmentHeader.OEMName",
+        "$.paths./rest/v2.1/companies/{company_id}/telematics/aemp.post.requestBody.content.application/json.schema.properties.Equipment.items.properties.EquipmentHeader.properties.OEMName",
+        "$.paths./rest/v2.0/companies/{company_id}/telematics/aemp.post.requestBody.content.application/json.schema.example.Fleet.Equipment[0].EquipmentHeader.OEMName",
+        "$.paths./rest/v2.0/companies/{company_id}/telematics/aemp.post.requestBody.content.application/json.schema.properties.Equipment.items.properties.EquipmentHeader.properties.OEMName"
+      ]
+    },
+    {
+      "key": "original_file_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/app_installations.get.responses.200.content.application/json.schema.items.allOf[0].properties.developer_app.properties.marketplace_app.properties.pictures.items.properties.original_file_name",
+        "$.paths./rest/v1.0/app_installations/{id}.patch.responses.200.content.application/json.schema.allOf[0].properties.developer_app.properties.marketplace_app.properties.pictures.items.properties.original_file_name"
+      ]
+    },
+    {
+      "key": "original_filename",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/planroom/bid_packages/{bid_package_id}/documents.get.responses.200.content.application/json.schema.properties.files.items.properties.pdm.properties.document_revision.properties.original_filename",
+        "$.paths./rest/v1.0/app_installations.get.responses.200.content.application/json.schema.items.allOf[0].properties.developer_app.properties.marketplace_app.properties.videos.items.properties.original_filename",
+        "$.paths./rest/v1.0/app_installations/{id}.patch.responses.200.content.application/json.schema.allOf[0].properties.developer_app.properties.marketplace_app.properties.videos.items.properties.original_filename"
+      ]
+    },
+    {
+      "key": "partialPaymentSetByUsername",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.partialPaymentSetByUsername",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.partialPaymentSetByUsername"
+      ]
+    },
+    {
+      "key": "path_names",
+      "count": 40,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/task_codes.get.responses.200.content.application/json.schema.items.properties.segment_items.items.properties.path_names",
+        "$.paths./rest/v1.0/companies/{company_id}/work_breakdown_structure/segments/{segment_id}/segment_items.get.responses.200.content.application/json.schema.items.properties.path_names",
+        "$.paths./rest/v1.0/companies/{company_id}/work_breakdown_structure/segments/{segment_id}/segment_items.post.responses.201.content.application/json.schema.properties.path_names",
+        "$.paths./rest/v1.0/companies/{company_id}/work_breakdown_structure/segments/{segment_id}/segment_items/{id}.get.responses.200.content.application/json.schema.properties.path_names",
+        "$.paths./rest/v1.0/companies/{company_id}/work_breakdown_structure/segments/{segment_id}/segment_items/{id}.patch.responses.200.content.application/json.schema.properties.path_names"
+      ]
+    },
+    {
+      "key": "paymentsUserName",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.paymentsUserName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.paymentsUserName"
+      ]
+    },
+    {
+      "key": "pdf_filename",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/meetings/ecrion_pdf_generation_data.get.responses.200.content.application/json.schema.properties.pdf_template.properties.pdf_filename",
+        "$.paths./rest/v1.0/meetings/ecrion_pdf_generation_data.get.responses.200.content.application/json.schema.properties.pdf_template.properties.pdf_filename"
+      ]
+    },
+    {
+      "key": "performed_by_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workflow_activity_histories.get.responses.200.content.application/json.schema.items.properties.performed_by_name",
+        "$.paths./rest/v1.0/workflow_activity_histories.post.responses.201.content.application/json.schema.properties.performed_by_name",
+        "$.paths./rest/v1.0/workflow_activity_histories/{id}.get.responses.200.content.application/json.schema.properties.performed_by_name"
+      ]
+    },
+    {
+      "key": "permission_template_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/users/{user_id}/project_assignments.get.responses.200.content.application/json.schema.items.properties.permission_template_name"
+      ]
+    },
+    {
+      "key": "person_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.person_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.person_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/reports/tag-action.get.responses.200.content.application/json.schema.items.properties.person_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.person_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments/current.get.responses.200.content.application/json.schema.items.properties.data.items.properties.person_name"
+      ]
+    },
+    {
+      "key": "procore_default_name",
+      "count": 10,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/incidents/severity_levels.get.responses.200.content.application/json.schema.items.properties.procore_default_name",
+        "$.paths./rest/v1.0/companies/{company_id}/incidents/severity_levels/{id}.get.responses.200.content.application/json.schema.properties.procore_default_name",
+        "$.paths./rest/v1.0/companies/{company_id}/incidents/severity_levels/{id}.patch.responses.200.content.application/json.schema.properties.procore_default_name",
+        "$.paths./rest/v1.0/companies/{company_id}/incidents/injury_filing_types.get.responses.200.content.application/json.schema.items.properties.severity_level.properties.procore_default_name",
+        "$.paths./rest/v1.0/companies/{company_id}/incidents/injury_filing_types/{id}.get.responses.200.content.application/json.schema.properties.severity_level.properties.procore_default_name"
+      ]
+    },
+    {
+      "key": "project_logo_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages.post.responses.201.content.application/json.schema.properties.project_logo_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.get.responses.200.content.application/json.schema.properties.project_logo_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{id}.patch.responses.200.content.application/json.schema.properties.project_logo_name",
+        "$.paths./rest/v1.0/companies/{company_id}/bid_packages/{id}.get.responses.200.content.application/json.schema.properties.project_logo_name"
+      ]
+    },
+    {
+      "key": "project_name",
+      "count": 21,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/reports/look-ahead.get.responses.200.content.application/json.schema.items.properties.assignments.items.properties.project_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.project_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}/reports/assignment-history.get.responses.200.content.application/json.schema.items.properties.project_name",
+        "$.paths./rest/v1.1/requisitions.get.responses.200.content.application/json.schema.items.properties.summary_text.properties.project_name",
+        "$.paths./rest/v1.1/requisitions.post.responses.201.content.application/json.schema.properties.summary_text.properties.project_name"
+      ]
+    },
+    {
+      "key": "projectName",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.requestBody.content.application/json.schema.properties.payouts.items.properties.metadata.properties.projectName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.metadata.items.properties.projectName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.metadata.items.properties.projectName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/payouts/deleted.get.responses.200.content.application/json.schema.items.properties.projectName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/payouts/{payout_id}.delete.responses.200.content.application/json.schema.properties.projectName"
+      ]
+    },
+    {
+      "key": "public_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/app_installations.get.responses.200.content.application/json.schema.items.allOf[0].properties.developer_app.properties.marketplace_app.properties.public_name",
+        "$.paths./rest/v1.0/app_installations/{id}.patch.responses.200.content.application/json.schema.allOf[0].properties.developer_app.properties.marketplace_app.properties.public_name"
+      ]
+    },
+    {
+      "key": "publisher_name",
+      "count": 15,
+      "samplePaths": [
+        "$.paths./rest/v1.0/bim_models.get.responses.200.content.application/json.schema.items.oneOf[1].properties.current_revision.properties.publisher_name",
+        "$.paths./rest/v1.0/bim_models.post.responses.201.content.application/json.schema.oneOf[1].properties.current_revision.properties.publisher_name",
+        "$.paths./rest/v1.0/bim_models/{id}.get.responses.200.content.application/json.schema.oneOf[1].properties.current_revision.properties.publisher_name",
+        "$.paths./rest/v1.0/bim_models/{id}.patch.responses.200.content.application/json.schema.oneOf[1].properties.current_revision.properties.publisher_name",
+        "$.paths./rest/v1.0/bim_model_revisions.get.responses.200.content.application/json.schema.items.oneOf[0].properties.publisher_name"
+      ]
+    },
+    {
+      "key": "pusher_message_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/document_markup_downloadable_pdfs/find_or_create.post.responses.200.content.application/json.schema.properties.pusher_message_name"
+      ]
+    },
+    {
+      "key": "receivingCompanyName",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/payouts/deleted.get.responses.200.content.application/json.schema.items.properties.receivingCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/payouts/{payout_id}.delete.responses.200.content.application/json.schema.properties.receivingCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/payouts/invoice/{invoice_id}.delete.responses.200.content.application/json.schema.items.properties.receivingCompanyName"
+      ]
+    },
+    {
+      "key": "receivingExternalAccountBankName",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.receivingExternalAccountBankName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.receivingExternalAccountBankName"
+      ]
+    },
+    {
+      "key": "receivingExternalAccountNickname",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.receivingExternalAccountNickname",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.receivingExternalAccountNickname"
+      ]
+    },
+    {
+      "key": "receivingPaymentsCompanyDefaultExternalAccountName",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/beneficiaries.get.responses.200.content.application/json.schema.items.properties.receivingPaymentsCompanyDefaultExternalAccountName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/beneficiaries/{payments_beneficiary_id}/approve.patch.responses.200.content.application/json.schema.properties.receivingPaymentsCompanyDefaultExternalAccountName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/beneficiaries/{payments_beneficiary_id}.get.responses.200.content.application/json.schema.properties.receivingPaymentsCompanyDefaultExternalAccountName"
+      ]
+    },
+    {
+      "key": "receivingPaymentsCompanyName",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/beneficiaries.get.responses.200.content.application/json.schema.items.properties.receivingPaymentsCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/beneficiaries/{payments_beneficiary_id}/approve.patch.responses.200.content.application/json.schema.properties.receivingPaymentsCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/beneficiaries/{payments_beneficiary_id}.get.responses.200.content.application/json.schema.properties.receivingPaymentsCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.requestBody.content.application/json.schema.properties.payouts.items.properties.metadata.properties.receivingPaymentsCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.metadata.items.properties.receivingPaymentsCompanyName"
+      ]
+    },
+    {
+      "key": "resource_name",
+      "count": 43,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/webhooks/hooks/{hook_id}/triggers.get.responses.200.content.application/json.schema.properties.data.items.properties.resource_name",
+        "$.paths./rest/v2.0/companies/{company_id}/webhooks/hooks/{hook_id}/triggers.post.requestBody.content.application/json.schema.properties.resource_name",
+        "$.paths./rest/v2.0/companies/{company_id}/webhooks/hooks/{hook_id}/triggers.post.responses.201.content.application/json.schema.properties.data.properties.resource_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/webhooks/hooks/{hook_id}/triggers.get.responses.200.content.application/json.schema.properties.data.items.properties.resource_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/webhooks/hooks/{hook_id}/triggers.post.requestBody.content.application/json.schema.properties.resource_name"
+      ]
+    },
+    {
+      "key": "response_filename",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.1/companies/{company_id}/uploads.post.requestBody.content.multipart/form-data.schema.properties.response_filename",
+        "$.paths./rest/v1.1/companies/{company_id}/uploads.post.requestBody.content.application/json.schema.properties.response_filename",
+        "$.paths./rest/v1.1/projects/{project_id}/uploads.post.requestBody.content.multipart/form-data.schema.properties.response_filename",
+        "$.paths./rest/v1.1/projects/{project_id}/uploads.post.requestBody.content.application/json.schema.properties.response_filename",
+        "$.paths./rest/v1.0/companies/{company_id}/uploads.post.requestBody.content.multipart/form-data.schema.properties.response_filename"
+      ]
+    },
+    {
+      "key": "response_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/submittal_logs/{id}/close_and_distribute.patch.responses.200.content.application/json.schema.properties.distributed_responses.items.properties.response_name"
+      ]
+    },
+    {
+      "key": "schedule_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules.get.responses.200.content.application/json.schema.properties.data.items.properties.schedule_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}.get.responses.200.content.application/json.schema.properties.data.properties.schedule_name"
+      ]
+    },
+    {
+      "key": "section_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/specification_section_revisions/{id}.get.responses.200.content.application/json.schema.properties.section_name"
+      ]
+    },
+    {
+      "key": "sendingCompanyName",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.requestBody.content.application/json.schema.properties.payouts.items.properties.metadata.properties.sendingCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.metadata.items.properties.sendingCompanyName",
+        "$.paths./rest/v1.0/companies/{company_id}/payments/disbursements/{disbursement_id}/validate.post.responses.200.content.application/json.schema.properties.payouts.items.properties.metadata.items.properties.sendingCompanyName"
+      ]
+    },
+    {
+      "key": "stage_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/projects.get.responses.200.content.application/json.schema.items.properties.stage_name"
+      ]
+    },
+    {
+      "key": "state_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/schedule.get.responses.200.content.application/json.schema.properties.project.properties.state_name",
+        "$.paths./rest/v1.0/projects/{project_id}/schedule.patch.responses.200.content.application/json.schema.properties.project.properties.state_name",
+        "$.paths./rest/v1.0/vendors/{id}.get.responses.200.content.application/json.schema.oneOf[4].allOf[2].properties.state_name"
+      ]
+    },
+    {
+      "key": "status_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/generic_tools/{generic_tool_id}/statuses.get.responses.200.content.application/json.schema.items.properties.status_name",
+        "$.paths./rest/v1.0/companies/{company_id}/generic_tools/{generic_tool_id}/statuses.post.requestBody.content.application/json.schema.properties.generic_tool_status.properties.status_name",
+        "$.paths./rest/v1.0/companies/{company_id}/generic_tools/{generic_tool_id}/statuses.post.responses.201.content.application/json.schema.properties.status_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects.get.responses.200.content.application/json.schema.items.properties.status_name"
+      ]
+    },
+    {
+      "key": "sub_job_name",
+      "count": 9,
+      "samplePaths": [
+        "$.paths./rest/v1.0/field_production_report.get.responses.200.content.application/json.schema.items.properties.sub_job_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.sub_job_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.sub_items.items.properties.sub_job_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.get.responses.200.content.application/json.schema.properties.data.properties.sub_job_name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.get.responses.200.content.application/json.schema.properties.data.properties.sub_items.items.properties.sub_job_name"
+      ]
+    },
+    {
+      "key": "subcategory_name",
+      "count": 5,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.assignments.items.properties.subcategory_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/assignments/current.get.responses.200.content.application/json.schema.items.properties.data.items.properties.assignments.items.properties.subcategory_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/groups/{group_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.assignments.items.properties.subcategory_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/projects/{project_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.subcategory_name",
+        "$.paths./rest/v1.0/workforce-planning/v2/companies/{company_id}/people/{person_id}/assignments.get.responses.200.content.application/json.schema.items.properties.data.items.properties.subcategory_name"
+      ]
+    },
+    {
+      "key": "subcontractor_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.1/requisitions.get.responses.200.content.application/json.schema.items.properties.summary_text.properties.subcontractor_name",
+        "$.paths./rest/v1.1/requisitions.post.responses.201.content.application/json.schema.properties.summary_text.properties.subcontractor_name",
+        "$.paths./rest/v1.1/requisitions/{id}.get.responses.200.content.application/json.schema.properties.summary_text.properties.subcontractor_name",
+        "$.paths./rest/v1.1/requisitions/{id}.patch.responses.200.content.application/json.schema.properties.summary_text.properties.subcontractor_name",
+        "$.paths./rest/v1.0/requisitions.post.responses.201.content.application/json.schema.properties.summary_text.properties.subcontractor_name"
+      ]
+    },
+    {
+      "key": "task_name",
+      "count": 36,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs.get.responses.200.content.application/json.schema.items.properties.scheduled_tasks.items.properties.task_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs.post.responses.201.content.application/json.schema.properties.scheduled_tasks.items.properties.task_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs/{id}.get.responses.200.content.application/json.schema.properties.scheduled_tasks.items.properties.task_name",
+        "$.paths./rest/v1.0/projects/{project_id}/work_logs/{id}.patch.responses.200.content.application/json.schema.properties.scheduled_tasks.items.properties.task_name",
+        "$.paths./rest/v1.0/todos.post.responses.201.content.application/json.schema.properties.task_name"
+      ]
+    },
+    {
+      "key": "tax_code_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v1.1/requisitions.get.responses.200.content.application/json.schema.items.properties.items.items.properties.taxes.items.properties.tax_code_name",
+        "$.paths./rest/v1.1/requisitions.post.responses.201.content.application/json.schema.properties.items.items.properties.taxes.items.properties.tax_code_name",
+        "$.paths./rest/v1.1/requisitions/{id}.get.responses.200.content.application/json.schema.properties.items.items.properties.taxes.items.properties.tax_code_name",
+        "$.paths./rest/v1.1/requisitions/{id}.patch.responses.200.content.application/json.schema.properties.items.items.properties.taxes.items.properties.tax_code_name",
+        "$.paths./rest/v1.0/requisitions.post.responses.201.content.application/json.schema.properties.items.items.properties.taxes.items.properties.tax_code_name"
+      ]
+    },
+    {
+      "key": "template_name",
+      "count": 8,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/pdf_template_configs.get.responses.200.content.application/json.schema.items.properties.template_name",
+        "$.paths./rest/v1.0/companies/{company_id}/pdf_template_configs.post.requestBody.content.application/json.schema.properties.pdf_template_config.properties.template_name",
+        "$.paths./rest/v1.0/companies/{company_id}/pdf_template_configs.post.responses.201.content.application/json.schema.properties.template_name",
+        "$.paths./rest/v1.0/companies/{company_id}/pdf_template_configs/{id}.get.responses.200.content.application/json.schema.properties.template_name",
+        "$.paths./rest/v1.0/companies/{company_id}/pdf_template_configs/{id}.patch.requestBody.content.application/json.schema.properties.pdf_template_config.properties.template_name"
+      ]
+    },
+    {
+      "key": "time_zone_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/projects/{project_id}/schedule.get.responses.200.content.application/json.schema.properties.project.properties.time_zone_name",
+        "$.paths./rest/v1.0/projects/{project_id}/schedule.patch.responses.200.content.application/json.schema.properties.project.properties.time_zone_name"
+      ]
+    },
+    {
+      "key": "timeline_event_name",
+      "count": 6,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/timeline_events.get.responses.200.content.application/json.schema.properties.data.items.properties.timeline_event_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/timeline_events.post.requestBody.content.application/json.schema.properties.timeline_event_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/timeline_events.post.responses.201.content.application/json.schema.properties.data.properties.timeline_event_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/timeline_events/{timeline_event_id}.get.responses.200.content.application/json.schema.properties.data.properties.timeline_event_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/schedules/{schedule_id}/timeline_events/{timeline_event_id}.patch.requestBody.content.application/json.schema.properties.timeline_event_name"
+      ]
+    },
+    {
+      "key": "to_budget_line_item_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/change_events.get.responses.200.content.application/json.schema.items.properties.change_event_line_items.items.properties.budget_mod.properties.to_budget_line_item_name",
+        "$.paths./rest/v1.0/change_events.post.responses.201.content.application/json.schema.properties.change_event_line_items.items.properties.budget_mod.properties.to_budget_line_item_name",
+        "$.paths./rest/v1.0/change_events/{id}.get.responses.200.content.application/json.schema.properties.change_event_line_items.items.properties.budget_mod.properties.to_budget_line_item_name",
+        "$.paths./rest/v1.0/change_events/{id}.patch.responses.200.content.application/json.schema.properties.change_event_line_items.items.properties.budget_mod.properties.to_budget_line_item_name"
+      ]
+    },
+    {
+      "key": "tool_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.0/settings/permissions.get.responses.200.content.application/json.schema.properties.tools.items.properties.permitted_actions.items.properties.tool_name",
+        "$.paths./rest/v1.0/projects/{project_id}/correspondence_types/permissions.get.responses.200.content.application/json.schema.items.properties.permitted_actions.items.properties.tool_name"
+      ]
+    },
+    {
+      "key": "trade_name",
+      "count": 52,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.get.responses.200.content.application/json.schema.items.oneOf[1].allOf[1].properties.trade_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.get.responses.200.content.application/json.schema.items.oneOf[2].allOf[0].properties.trade_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.get.responses.200.content.application/json.schema.items.oneOf[5].properties.trade_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.post.requestBody.content.application/json.schema.properties.vendor.properties.trade_name",
+        "$.paths./rest/v1.1/projects/{project_id}/vendors.post.responses.201.content.application/json.schema.oneOf[0].properties.trade_name"
+      ]
+    },
+    {
+      "key": "translated_name",
+      "count": 2,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/submittals.get.responses.200.content.application/json.schema.items.properties.type.properties.translated_name",
+        "$.paths./rest/v1.0/companies/{company_id}/submittal_types.get.responses.200.content.application/json.schema.items.properties.translated_name"
+      ]
+    },
+    {
+      "key": "type_name",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/projects.get.responses.200.content.application/json.schema.items.properties.type_name"
+      ]
+    },
+    {
+      "key": "tz_name",
+      "count": 7,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects.get.responses.200.content.application/json.schema.items.oneOf[2].properties.tz_name",
+        "$.paths./rest/v1.0/projects.post.responses.201.content.application/json.schema.properties.tz_name",
+        "$.paths./rest/v1.0/projects/sync.patch.responses.200.content.application/json.schema.properties.errors.items.allOf[0].properties.tz_name",
+        "$.paths./rest/v1.0/projects/{id}.get.responses.200.content.application/json.schema.properties.tz_name",
+        "$.paths./rest/v1.0/projects/{id}.patch.responses.200.content.application/json.schema.properties.tz_name"
+      ]
+    },
+    {
+      "key": "unique_name",
+      "count": 4,
+      "samplePaths": [
+        "$.paths./rest/v1.0/files.post.requestBody.content.application/json.schema.properties.file.properties.unique_name",
+        "$.paths./rest/v1.0/files.post.requestBody.content.multipart/form-data.schema.properties.file.properties.unique_name",
+        "$.paths./rest/v1.0/companies/{company_id}/files.post.requestBody.content.multipart/form-data.schema.properties.file.oneOf[0].properties.unique_name",
+        "$.paths./rest/v1.0/companies/{company_id}/files.post.requestBody.content.multipart/form-data.schema.properties.file.oneOf[1].properties.unique_name"
+      ]
+    },
+    {
+      "key": "updated_by_name",
+      "count": 7,
+      "samplePaths": [
+        "$.paths./rest/v1.1/companies/{company_id}/projects/{project_id}/viewer_documents.post.responses.200.content.application/json.schema.properties.markups.items.properties.updated_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.delete.responses.200.content.*/*.schema.properties.markups.items.properties.updated_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.post.responses.200.content.*/*.schema.properties.markups.items.properties.updated_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents/{viewer_doc_id}/markups.put.responses.200.content.*/*.schema.properties.markups.items.properties.updated_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/projects/{project_id}/viewer_documents.post.responses.200.content.application/json.schema.properties.markups.items.properties.updated_by_name"
+      ]
+    },
+    {
+      "key": "user_name",
+      "count": 13,
+      "samplePaths": [
+        "$.paths./rest/v1.1/punch_items.get.responses.200.content.application/json.schema.items.properties.assignments.items.properties.user_name",
+        "$.paths./rest/v1.1/punch_items/recycle_bin.get.responses.200.content.application/json.schema.properties.assignments.items.properties.user_name",
+        "$.paths./rest/v1.0/punch_items.get.responses.200.content.application/json.schema.items.properties.assignments.items.properties.user_name",
+        "$.paths./rest/v1.0/punch_items/recycle_bin.get.responses.200.content.application/json.schema.properties.assignments.items.properties.user_name",
+        "$.paths./rest/v1.0/projects/{project_id}/punch_item_assignments/{id}.get.responses.200.content.application/json.schema.properties.user_name"
+      ]
+    },
+    {
+      "key": "username",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/viewer-proxy/permissions.get.responses.200.content.application/json.schema.properties.username"
+      ]
+    },
+    {
+      "key": "values_converted_by_name",
+      "count": 7,
+      "samplePaths": [
+        "$.paths./rest/v1.1/projects/{project_id}/bid_packages/{bid_package_id}/bids/{id}.patch.responses.200.content.application/json.schema.properties.values_converted_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/bids/{id}.get.responses.200.content.application/json.schema.properties.values_converted_by_name",
+        "$.paths./rest/v1.0/companies/{company_id}/bids/{id}.patch.responses.200.content.application/json.schema.properties.values_converted_by_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{bid_package_id}/bids.post.responses.200.content.application/json.schema.properties.values_converted_by_name",
+        "$.paths./rest/v1.0/projects/{project_id}/bid_packages/{bid_package_id}/bids/{id}.get.responses.200.content.application/json.schema.properties.values_converted_by_name"
+      ]
+    },
+    {
+      "key": "vendor_name",
+      "count": 33,
+      "samplePaths": [
+        "$.paths./rest/v1.0/work_order_contracts.post.responses.201.content.application/json.schema.properties.invoice_contacts.items.properties.vendor_name",
+        "$.paths./rest/v1.0/work_order_contracts/{id}.get.responses.200.content.application/json.schema.properties.invoice_contacts.items.properties.vendor_name",
+        "$.paths./rest/v1.0/work_order_contracts/{id}.patch.responses.200.content.application/json.schema.properties.invoice_contacts.items.properties.vendor_name",
+        "$.paths./rest/v1.1/requisitions.get.responses.200.content.application/json.schema.items.properties.vendor_name",
+        "$.paths./rest/v1.1/requisitions.post.responses.201.content.application/json.schema.properties.vendor_name"
+      ]
+    },
+    {
+      "key": "vendorName",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v1.0/companies/{company_id}/viewer-proxy/permissions.get.responses.200.content.application/json.schema.properties.vendorName"
+      ]
+    },
+    {
+      "key": "workflow_activity_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workflow_activity_histories.get.responses.200.content.application/json.schema.items.properties.workflow_activity_name",
+        "$.paths./rest/v1.0/workflow_activity_histories.post.responses.201.content.application/json.schema.properties.workflow_activity_name",
+        "$.paths./rest/v1.0/workflow_activity_histories/{id}.get.responses.200.content.application/json.schema.properties.workflow_activity_name"
+      ]
+    },
+    {
+      "key": "workflow_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/coordination_issues/workflow_issues.get.responses.200.content.application/json.schema.properties.data.items.properties.document_container_metadata.properties.workflow_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/coordination_issues/workflow_issues/{id}.get.responses.200.content.application/json.schema.properties.data.properties.document_container_metadata.properties.workflow_name",
+        "$.paths./rest/v2.0/companies/{company_id}/projects/{project_id}/coordination_issues/workflow_issues/{id}.patch.responses.200.content.application/json.schema.properties.data.properties.document_container_metadata.properties.workflow_name"
+      ]
+    },
+    {
+      "key": "workflow_state_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workflow_activity_histories.get.responses.200.content.application/json.schema.items.properties.workflow_state_name",
+        "$.paths./rest/v1.0/workflow_activity_histories.post.responses.201.content.application/json.schema.properties.workflow_state_name",
+        "$.paths./rest/v1.0/workflow_activity_histories/{id}.get.responses.200.content.application/json.schema.properties.workflow_state_name"
+      ]
+    },
+    {
+      "key": "workflow_user_role_name",
+      "count": 3,
+      "samplePaths": [
+        "$.paths./rest/v1.0/workflow_activity_histories.get.responses.200.content.application/json.schema.items.properties.workflow_user_role_name",
+        "$.paths./rest/v1.0/workflow_activity_histories.post.responses.201.content.application/json.schema.properties.workflow_user_role_name",
+        "$.paths./rest/v1.0/workflow_activity_histories/{id}.get.responses.200.content.application/json.schema.properties.workflow_user_role_name"
+      ]
+    },
+    {
+      "key": "x-enumNames",
+      "count": 32,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.parameters[3].schema.items.x-enumNames",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.parameters[4].schema.items.x-enumNames",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.type.x-enumNames",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.unit.x-enumNames",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.responses.200.content.application/json.schema.properties.data.items.properties.sub_items.items.properties.type.x-enumNames"
+      ]
+    },
+    {
+      "key": "x-name",
+      "count": 9,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/{item_id}.put.requestBody.x-name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items.post.requestBody.x-name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/items/bulk_destroy.delete.requestBody.x-name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs.post.requestBody.x-name",
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}.patch.requestBody.x-name"
+      ]
+    },
+    {
+      "key": "x-originalName",
+      "count": 1,
+      "samplePaths": [
+        "$.paths./rest/v2.0/companies/{company_id}/estimating/catalogs/{catalog_id}/items.get.parameters[4].x-originalName"
+      ]
+    }
+  ]
+}

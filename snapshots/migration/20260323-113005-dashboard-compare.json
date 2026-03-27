@@ -1,0 +1,325 @@
+{
+  "generatedAt": "2026-03-23T11:30:05.793Z",
+  "scope": "dashboard-only",
+  "inputs": {
+    "before": "snapshots/migration/20260323-111403-pre-migration-dashboard.json",
+    "after": "snapshots/migration/20260323-113000-post-status-migration-dashboard.json",
+    "beforeLabel": "pre-migration-dashboard",
+    "afterLabel": "post-status-migration-dashboard"
+  },
+  "checksums": {
+    "projects": {
+      "before": "aa0e7030303f768cc23955705f7dd47c3c374dfdabb991efdeb80f2708f8edb3",
+      "after": "c32a31d0e283f71a5a7b3b530b5619d61d80e24c929b0edd95f12c57c6698e62",
+      "changed": true
+    },
+    "dashboardSummary": {
+      "before": "9ad17065c108838b0b76948bb2bd39b29f4cb17c79ad39cfda8670807a5786e7",
+      "after": "9ad17065c108838b0b76948bb2bd39b29f4cb17c79ad39cfda8670807a5786e7",
+      "changed": false
+    }
+  },
+  "summary": {
+    "totalFieldChanges": 46,
+    "changedFields": {
+      "status": 46
+    }
+  },
+  "totals": {
+    "countAll": {
+      "before": 584,
+      "after": 584,
+      "delta": 0
+    },
+    "countActive": {
+      "before": 574,
+      "after": 574,
+      "delta": 0
+    },
+    "salesActive": {
+      "before": 119174038.81000008,
+      "after": 119174038.81000008,
+      "delta": 0
+    },
+    "costActive": {
+      "before": 92442629.48000006,
+      "after": 92442629.48000006,
+      "delta": 0
+    },
+    "hoursActive": {
+      "before": 586383.0099999999,
+      "after": 586383.0099999999,
+      "delta": 0
+    },
+    "salesAll": {
+      "before": 119280100.76000006,
+      "after": 119280100.76000006,
+      "delta": 0
+    },
+    "costAll": {
+      "before": 92520162.38000005,
+      "after": 92520162.38000005,
+      "delta": 0
+    },
+    "hoursAll": {
+      "before": 586951.06,
+      "after": 586951.06,
+      "delta": 0
+    }
+  },
+  "dashboardSummary": {
+    "available": true,
+    "changedShape": false,
+    "totals": {
+      "totalSales": {
+        "before": 84024331.64999998,
+        "after": 84024331.64999998,
+        "delta": 0
+      },
+      "totalCost": {
+        "before": 64990354.67000002,
+        "after": 64990354.67000002,
+        "delta": 0
+      },
+      "totalHours": {
+        "before": 422232.14,
+        "after": 422232.14,
+        "delta": 0
+      }
+    },
+    "lastUpdated": {
+      "before": "2026-03-11T12:58:52.846Z",
+      "after": "2026-03-11T12:58:52.846Z"
+    }
+  },
+  "projects": {
+    "rowCounts": {
+      "before": 584,
+      "after": 584,
+      "added": 0,
+      "removed": 0,
+      "common": 584
+    },
+    "fieldChanges": {
+      "customer": {
+        "count": 0,
+        "samples": []
+      },
+      "status": {
+        "count": 46,
+        "samples": [
+          {
+            "id": "cmmaqpkr50000e3fs2agaeqdb",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "AB Martin 34 Denver Road",
+            "projectNameAfter": "AB Martin 34 Denver Road",
+            "customerBefore": "AB Martin",
+            "customerAfter": "AB Martin"
+          },
+          {
+            "id": "cmm9abyuz0001e3n4x0iyymw8",
+            "before": "Estimating",
+            "after": "Bid Submitted",
+            "projectNameBefore": "Audubon Collegeville",
+            "projectNameAfter": "Audubon Collegeville",
+            "customerBefore": "Warfel Construction",
+            "customerAfter": "Warfel Construction"
+          },
+          {
+            "id": "cmm9ac2th0036e3n4azyxuj7f",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Blue Ridge School",
+            "projectNameAfter": "Blue Ridge School",
+            "customerBefore": "J.E. Horst Building and Remodeling",
+            "customerAfter": "J.E. Horst Building and Remodeling"
+          },
+          {
+            "id": "cmm9abzvl000re3n4avgjlqbg",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Broadcasting District Site",
+            "projectNameAfter": "Broadcasting District Site",
+            "customerBefore": "CH+N Site",
+            "customerAfter": "CH+N Site"
+          },
+          {
+            "id": "cmm9ac0ag0013e3n46hcnf8bu",
+            "before": "In Progress",
+            "after": "Post-Construction",
+            "projectNameBefore": "Burkholder Tractor",
+            "projectNameAfter": "Burkholder Tractor",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac7sv007pe3n4b6p291as",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Butler Annville Pump House",
+            "projectNameAfter": "Butler Annville Pump House",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac4xp0052e3n4z3efslxe",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Canine Partners for Life",
+            "projectNameAfter": "Canine Partners for Life",
+            "customerBefore": "C. Raymond Davis & Sons, Inc.",
+            "customerAfter": "C. Raymond Davis & Sons, Inc."
+          },
+          {
+            "id": "cmm9ac5f2005ie3n4ej9a6sql",
+            "before": "Complete",
+            "after": "Estimating",
+            "projectNameBefore": "Clark Associates Lancaster",
+            "projectNameAfter": "Clark Associates Lancaster",
+            "customerBefore": "B.R. Kreider & Son, Inc.",
+            "customerAfter": "B.R. Kreider & Son, Inc."
+          },
+          {
+            "id": "cmm9ac3ui0043e3n46ts8pndm",
+            "before": "In Progress",
+            "after": "Course of Construction",
+            "projectNameBefore": "Ducklings Ambassador Circle",
+            "projectNameAfter": "Ducklings Ambassador Circle",
+            "customerBefore": "Heck Construction",
+            "customerAfter": "Heck Construction"
+          },
+          {
+            "id": "cmm9ac7n4007ke3n4aov1modr",
+            "before": "Complete",
+            "after": "Estimating",
+            "projectNameBefore": "Ducklings Ambassador Circle Site",
+            "projectNameAfter": "Ducklings Ambassador Circle Site",
+            "customerBefore": "BN Excavating Inc.",
+            "customerAfter": "BN Excavating Inc."
+          },
+          {
+            "id": "cmm9ac4ip004pe3n41hk129e9",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Dutch Cousins Campground",
+            "projectNameAfter": "Dutch Cousins Campground",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac0v1001le3n4acrq19lx",
+            "before": "Lost",
+            "after": "Bid Submitted",
+            "projectNameBefore": "FOR_SOP_CREATION",
+            "projectNameAfter": "FOR_SOP_CREATION",
+            "customerBefore": "Warfel Construction",
+            "customerAfter": "Warfel Construction"
+          },
+          {
+            "id": "cmm9ac143001se3n4h3f7r4dg",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Family Treasures Wholesale",
+            "projectNameAfter": "Family Treasures Wholesale",
+            "customerBefore": "Hoover Building Specialists, Inc.",
+            "customerAfter": "Hoover Building Specialists, Inc."
+          },
+          {
+            "id": "cmmf33f5800c2e3wgzt7elemw",
+            "before": "Estimating",
+            "after": "Bid Submitted",
+            "projectNameBefore": "GSV Center For Arts And Culture",
+            "projectNameAfter": "GSV Center For Arts And Culture",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac0gk0018e3n4y171zjlr",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Giant #6582",
+            "projectNameAfter": "Giant #6582",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac4d3004ke3n4ozsg8cxs",
+            "before": "In Progress",
+            "after": "Estimating",
+            "projectNameBefore": "Gish Furniture Sitework",
+            "projectNameAfter": "Gish Furniture Sitework",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac8pj008me3n4cjcaclif",
+            "before": "Complete",
+            "after": "Estimating",
+            "projectNameBefore": "Goods Store - Ephrata State Street",
+            "projectNameAfter": "Goods Store - Ephrata State Street",
+            "customerBefore": "Hoover Building Specialists, Inc.",
+            "customerAfter": "Hoover Building Specialists, Inc."
+          },
+          {
+            "id": "cmm9ac0z5001oe3n46odq8brt",
+            "before": "In Progress",
+            "after": "Bid Submitted",
+            "projectNameBefore": "Goods Store Quarryville",
+            "projectNameAfter": "Goods Store Quarryville",
+            "customerBefore": "UNKNOWN",
+            "customerAfter": "UNKNOWN"
+          },
+          {
+            "id": "cmm9ac8hf008ee3n40n6f0g7n",
+            "before": "Complete",
+            "after": "Estimating",
+            "projectNameBefore": "Guardian Barriers",
+            "projectNameAfter": "Guardian Barriers",
+            "customerBefore": "Heck Construction",
+            "customerAfter": "Heck Construction"
+          },
+          {
+            "id": "cmm9ac5dx005he3n4b3rpudso",
+            "before": "Bid Submitted",
+            "after": "Estimating",
+            "projectNameBefore": "Hearthside Building",
+            "projectNameAfter": "Hearthside Building",
+            "customerBefore": "Double H Construction LLC",
+            "customerAfter": "Double H Construction LLC"
+          }
+        ]
+      },
+      "projectName": {
+        "count": 0,
+        "samples": []
+      },
+      "projectNumber": {
+        "count": 0,
+        "samples": []
+      },
+      "dateCreated": {
+        "count": 0,
+        "samples": []
+      },
+      "dateUpdated": {
+        "count": 0,
+        "samples": []
+      }
+    },
+    "statusTransitions": {
+      "In Progress -> Estimating": 23,
+      "Complete -> Estimating": 6,
+      "Estimating -> Bid Submitted": 3,
+      "In Progress -> Course of Construction": 3,
+      "Bid Submitted -> Estimating": 3,
+      "Lost -> Bid Submitted": 2,
+      "In Progress -> Bid Submitted": 2,
+      "Complete -> Post-Construction": 2,
+      "In Progress -> Post-Construction": 1,
+      "Lost -> Estimating": 1
+    },
+    "addedSamples": [],
+    "removedSamples": []
+  }
+}
