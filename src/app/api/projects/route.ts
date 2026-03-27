@@ -72,6 +72,12 @@ export async function GET(request: NextRequest) {
     }
 
     const queryWhere = Object.keys(where).length > 0 ? where : undefined;
+    const legacyWhere: Prisma.ProjectWhereInput = {};
+    if (statusList.length > 0) legacyWhere.status = { in: statusList };
+    if (customer) legacyWhere.customer = customer;
+    if (projectNumber) legacyWhere.projectNumber = projectNumber;
+    if (projectName) legacyWhere.projectName = projectName;
+    const legacyQueryWhere = Object.keys(legacyWhere).length > 0 ? legacyWhere : undefined;
     const baseFindManyArgs = {
       orderBy: {
         projectName: 'asc' as const, // Reverted from procoreLastSync to ensure it works without a new migration
@@ -82,22 +88,21 @@ export async function GET(request: NextRequest) {
     let total: number | undefined;
     let hasNextPage = false;
     let projects: any[];
+    const summarySelect = {
+      id: true,
+      customer: true,
+      projectNumber: true,
+      projectName: true,
+      projectManager: true,
+    } as const;
 
-    if (summaryOnly) {
-      const summarySelect = {
-        id: true,
-        customer: true,
-        projectNumber: true,
-        projectName: true,
-        projectManager: true,
-      } as const;
-
+    const fetchProjectsSummaryPage = async (whereArg: Prisma.ProjectWhereInput | undefined) => {
       if (includeTotal) {
         const [countValue, rows] = await Promise.all([
-          queryWhere ? prisma.project.count({ where: queryWhere }) : prisma.project.count(),
-          queryWhere
+          whereArg ? prisma.project.count({ where: whereArg }) : prisma.project.count(),
+          whereArg
             ? prisma.project.findMany({
-                where: queryWhere,
+                where: whereArg,
                 ...baseFindManyArgs,
                 take: pageSize,
                 select: summarySelect,
@@ -108,25 +113,47 @@ export async function GET(request: NextRequest) {
                 select: summarySelect,
               }),
         ]);
-        total = countValue;
-        projects = rows;
-        hasNextPage = skip + projects.length < total;
-      } else {
-        const pagePlusOne = queryWhere
-          ? await prisma.project.findMany({
-              where: queryWhere,
-              ...baseFindManyArgs,
-              take: pageSize + 1,
-              select: summarySelect,
-            })
-          : await prisma.project.findMany({
-              ...baseFindManyArgs,
-              take: pageSize + 1,
-              select: summarySelect,
-            });
 
-        hasNextPage = pagePlusOne.length > pageSize;
-        projects = hasNextPage ? pagePlusOne.slice(0, pageSize) : pagePlusOne;
+        return {
+          total: countValue,
+          rows,
+          hasNextPage: skip + rows.length < countValue,
+        };
+      }
+
+      const pagePlusOne = whereArg
+        ? await prisma.project.findMany({
+            where: whereArg,
+            ...baseFindManyArgs,
+            take: pageSize + 1,
+            select: summarySelect,
+          })
+        : await prisma.project.findMany({
+            ...baseFindManyArgs,
+            take: pageSize + 1,
+            select: summarySelect,
+          });
+
+      const next = pagePlusOne.length > pageSize;
+      return {
+        total: undefined,
+        rows: next ? pagePlusOne.slice(0, pageSize) : pagePlusOne,
+        hasNextPage: next,
+      };
+    };
+
+    if (summaryOnly) {
+      try {
+        const result = await fetchProjectsSummaryPage(queryWhere);
+        total = result.total;
+        projects = result.rows;
+        hasNextPage = result.hasNextPage;
+      } catch (queryError) {
+        console.warn('Retrying summary projects query without archived filter:', queryError);
+        const result = await fetchProjectsSummaryPage(legacyQueryWhere);
+        total = result.total;
+        projects = result.rows;
+        hasNextPage = result.hasNextPage;
       }
 
       const totalPages = includeTotal && typeof total === 'number'
@@ -145,13 +172,6 @@ export async function GET(request: NextRequest) {
         data: projects,
       });
     }
-
-    const legacyWhere: Prisma.ProjectWhereInput = {};
-    if (statusList.length > 0) legacyWhere.status = { in: statusList };
-    if (customer) legacyWhere.customer = customer;
-    if (projectNumber) legacyWhere.projectNumber = projectNumber;
-    if (projectName) legacyWhere.projectName = projectName;
-    const legacyQueryWhere = Object.keys(legacyWhere).length > 0 ? legacyWhere : undefined;
 
     const fetchProjectsPage = async (whereArg: Prisma.ProjectWhereInput | undefined) => {
       if (includeTotal) {

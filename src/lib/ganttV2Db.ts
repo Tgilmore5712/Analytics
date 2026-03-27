@@ -218,19 +218,52 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
   const projects = await getGanttV2Projects();
 
   // Legacy source of scopes used by short-term and prior schedule flows.
-  const legacyScopes = await prisma.projectScope.findMany({
-    select: {
-      id: true,
-      jobKey: true,
-      title: true,
-      startDate: true,
-      endDate: true,
-      manpower: true,
-      hours: true,
-      description: true,
-      tasks: true,
-    },
-  });
+  let legacyScopes: Array<{
+    id: string;
+    jobKey: string;
+    title: string;
+    startDate: string | null;
+    endDate: string | null;
+    manpower: number | null;
+    hours: number | null;
+    description: string | null;
+    tasks?: unknown;
+  }> = [];
+
+  try {
+    legacyScopes = await prisma.projectScope.findMany({
+      select: {
+        id: true,
+        jobKey: true,
+        title: true,
+        startDate: true,
+        endDate: true,
+        manpower: true,
+        hours: true,
+        description: true,
+        tasks: true,
+      },
+    });
+  } catch (projectScopeError) {
+    console.warn('Unable to load legacy project scopes with tasks, retrying minimal scope fields:', projectScopeError);
+    try {
+      legacyScopes = await prisma.projectScope.findMany({
+        select: {
+          id: true,
+          jobKey: true,
+          title: true,
+          startDate: true,
+          endDate: true,
+          manpower: true,
+          hours: true,
+          description: true,
+        },
+      });
+    } catch (fallbackProjectScopeError) {
+      console.warn('Skipping legacy project scope hydration:', fallbackProjectScopeError);
+      legacyScopes = [];
+    }
+  }
 
   const legacyScopesByIdentity = new Map<string, typeof legacyScopes>();
   for (const scope of legacyScopes) {
@@ -283,41 +316,6 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
         }
       }
 
-      const normalizeTitle = (value: string | null | undefined) =>
-        normalizeIdentity(value || '');
-
-      const parseLegacyTasks = (value: unknown): string[] => {
-        if (!Array.isArray(value)) return [];
-        return value
-          .map((item) => (typeof item === 'string' ? item.trim() : ''))
-          .filter((item) => item.length > 0);
-      };
-
-      const scopesWithTasks = scopes.map((scope) => {
-        const scopeStart = toSqlDate(scope.startDate);
-        const scopeEnd = toSqlDate(scope.endDate);
-
-        const exactMatch = legacyForProject.find((legacyScope) =>
-          normalizeTitle(legacyScope.title) === normalizeTitle(scope.title) &&
-          toSqlDate(legacyScope.startDate) === scopeStart &&
-          toSqlDate(legacyScope.endDate) === scopeEnd
-        );
-
-        const titleOnlyMatch = !exactMatch
-          ? legacyForProject.find(
-              (legacyScope) => normalizeTitle(legacyScope.title) === normalizeTitle(scope.title)
-            )
-          : null;
-
-        const matchedLegacy = exactMatch || titleOnlyMatch;
-        const tasks = matchedLegacy ? parseLegacyTasks(matchedLegacy.tasks) : [];
-
-        return {
-          ...scope,
-          tasks,
-        };
-      });
-      
       const scheduleOrFilters: Array<{
         projectId?: string;
         projectNumber?: string;
@@ -331,15 +329,50 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
         scheduleOrFilters.push({ projectName: project.projectName });
       }
 
-      const schedules = await prisma.schedule.findMany({
-        where: { OR: scheduleOrFilters },
-        include: {
-          allocationsList: {
-            where: { periodType: 'month' },
-            select: { period: true, hours: true },
+      type ScheduleWithAllocations = {
+        totalHours: number | null;
+        allocationsList: Array<{ period: string; hours: number | null }>;
+      };
+
+      let schedules: ScheduleWithAllocations[] = [];
+      try {
+        schedules = await prisma.schedule.findMany({
+          where: { OR: scheduleOrFilters },
+          include: {
+            allocationsList: {
+              where: { periodType: 'month' },
+              select: { period: true, hours: true },
+            },
           },
-        },
-      });
+        });
+      } catch (scheduleError) {
+        console.warn('Unable to load schedule allocations for Gantt V2 project, retrying without allocations:', {
+          projectId: project.id,
+          projectName: project.projectName,
+          error: scheduleError,
+        });
+
+        try {
+          const fallbackSchedules = await prisma.schedule.findMany({
+            where: { OR: scheduleOrFilters },
+            select: {
+              totalHours: true,
+            },
+          });
+
+          schedules = fallbackSchedules.map((schedule) => ({
+            totalHours: schedule.totalHours,
+            allocationsList: [],
+          }));
+        } catch (fallbackScheduleError) {
+          console.warn('Skipping schedule hydration for Gantt V2 project:', {
+            projectId: project.id,
+            projectName: project.projectName,
+            error: fallbackScheduleError,
+          });
+          schedules = [];
+        }
+      }
 
       const allocationsByPeriod = new Map<string, number>();
       for (const schedule of schedules) {
@@ -410,6 +443,41 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
 
         scopes = await getGanttV2Scopes(project.id);
       }
+
+      const normalizeTitle = (value: string | null | undefined) =>
+        normalizeIdentity(value || '');
+
+      const parseLegacyTasks = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return [];
+        return value
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter((item) => item.length > 0);
+      };
+
+      const scopesWithTasks = scopes.map((scope) => {
+        const scopeStart = toSqlDate(scope.startDate);
+        const scopeEnd = toSqlDate(scope.endDate);
+
+        const exactMatch = legacyForProject.find((legacyScope) =>
+          normalizeTitle(legacyScope.title) === normalizeTitle(scope.title) &&
+          toSqlDate(legacyScope.startDate) === scopeStart &&
+          toSqlDate(legacyScope.endDate) === scopeEnd
+        );
+
+        const titleOnlyMatch = !exactMatch
+          ? legacyForProject.find(
+              (legacyScope) => normalizeTitle(legacyScope.title) === normalizeTitle(scope.title)
+            )
+          : null;
+
+        const matchedLegacy = exactMatch || titleOnlyMatch;
+        const tasks = matchedLegacy ? parseLegacyTasks(matchedLegacy.tasks) : [];
+
+        return {
+          ...scope,
+          tasks,
+        };
+      });
       
       return {
         ...project,
