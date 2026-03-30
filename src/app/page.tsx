@@ -37,6 +37,12 @@ interface WeatherData {
   daily: { date: string; low: number; high: number; icon: string }[];
 }
 
+type ScopeWithTasks = {
+  jobKey: string;
+  title: string;
+  tasks: string[];
+};
+
 type ActiveScheduleEntry = {
   id: string;
   jobKey: string;
@@ -344,6 +350,7 @@ function HomeContent() {
   const [pmAssignments, setPmAssignments] = useState<PMAssignment[]>([]);
   const [crewTemplates, setCrewTemplates] = useState<CrewTemplate[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [scopes, setScopes] = useState<ScopeWithTasks[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCallOffModal, setShowCallOffModal] = useState(false);
   const [showTimeOffModal, setShowTimeOffModal] = useState(false);
@@ -445,7 +452,7 @@ function HomeContent() {
       try {
         setAnnouncements([]);
 
-        const [employeesRes, scheduleRes, timeOffRes, concreteRes, pmRes, crewTemplatesRes, projectsRes] = await Promise.all([
+        const [employeesRes, scheduleRes, timeOffRes, concreteRes, pmRes, crewTemplatesRes, projectsRes, scopesRes] = await Promise.all([
           fetch("/api/employees?isActive=true&page=1&pageSize=500", { cache: "no-store" }),
           fetch(`/api/short-term-schedule?action=active-schedule&startDate=${startDate}&endDate=${endDate}`, {
             cache: "no-store",
@@ -455,9 +462,10 @@ function HomeContent() {
           fetch("/api/long-term-schedule/pm-assignments", { cache: "no-store" }),
           fetch("/api/crew-templates", { cache: "no-store" }),
           fetch("/api/projects?page=1&pageSize=500&summary=true", { cache: "no-store" }),
+          fetch("/api/project-scopes", { cache: "no-store" }),
         ]);
 
-        const [employeesJson, scheduleJson, timeOffJson, concreteJson, pmJson, crewTemplatesJson, projectsJson] = await Promise.all([
+        const [employeesJson, scheduleJson, timeOffJson, concreteJson, pmJson, crewTemplatesJson, projectsJson, scopesJson] = await Promise.all([
           employeesRes.json().catch(() => ({ success: false, data: [] })),
           scheduleRes.json().catch(() => ({ success: false, data: [] })),
           timeOffRes.json().catch(() => ({ success: false, data: [] })),
@@ -465,6 +473,7 @@ function HomeContent() {
           pmRes.json().catch(() => ({ success: false, data: [] })),
           crewTemplatesRes.json().catch(() => ({ success: false, data: [] })),
           projectsRes.json().catch(() => ({ success: false, data: [] })),
+          scopesRes.json().catch(() => ({ success: false, data: [] })),
         ]);
 
         setEmployees(Array.isArray(employeesJson?.data) ? employeesJson.data : []);
@@ -474,6 +483,14 @@ function HomeContent() {
         setPmAssignments(Array.isArray(pmJson?.data) ? pmJson.data : []);
         setCrewTemplates(Array.isArray(crewTemplatesJson?.data) ? crewTemplatesJson.data : []);
         setProjects(Array.isArray(projectsJson?.data) ? projectsJson.data : []);
+        
+        const scopesData = Array.isArray(scopesJson?.data) ? scopesJson.data : [];
+        const parsedScopes = scopesData.map((scope: any) => ({
+          jobKey: scope.jobKey,
+          title: scope.title,
+          tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
+        }));
+        setScopes(parsedScopes);
       } catch (error) {
         console.error("Error fetching home page data:", error);
         setEmployees([]);
@@ -483,6 +500,8 @@ function HomeContent() {
         setPmAssignments([]);
         setCrewTemplates([]);
         setProjects([]);
+        setScopes([]);
+        setScopes([]);
       } finally {
         setLoading(false);
       }
@@ -1131,6 +1150,26 @@ function HomeContent() {
                                           <div className="text-xs md:text-[11px] font-black uppercase tracking-widest text-red-200 pt-1">Crew Target</div>
                                           <div className="text-xs md:text-xs text-white/90">
                                             {job.crewTarget > 0 ? `${job.crewTarget} total workers planned` : "No crew target stored"}
+                                          </div>
+                                          <div className="text-xs md:text-[11px] font-black uppercase tracking-widest text-red-200 pt-1">Scopes & Tasks</div>
+                                          <div className="text-xs md:text-xs text-white/90 space-y-1">
+                                            {scopes.filter(s => s.jobKey === job.jobKey).length > 0 ? (
+                                              scopes.filter(s => s.jobKey === job.jobKey).map((scope, idx) => (
+                                                <div key={idx}>
+                                                  <div className="font-bold text-white">{scope.title}</div>
+                                                  {scope.tasks.length > 0 && (
+                                                    <ul className="ml-2 text-white/80 text-[10px]">
+                                                      {scope.tasks.slice(0, 3).map((task, tidx) => (
+                                                        <li key={tidx}>• {task}</li>
+                                                      ))}
+                                                      {scope.tasks.length > 3 && <li>... +{scope.tasks.length - 3} more</li>}
+                                                    </ul>
+                                                  )}
+                                                </div>
+                                              ))
+                                            ) : (
+                                              "No scopes assigned"
+                                            )}
                                           </div>
                                         </div>
                                       )}
