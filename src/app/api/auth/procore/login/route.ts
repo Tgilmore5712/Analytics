@@ -6,7 +6,23 @@ import { cookies } from "next/headers";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const rawReturnTo = String(searchParams.get("returnTo") || "").trim();
+    let rawReturnTo = String(searchParams.get("returnTo") || "").trim();
+    
+    // If no explicit returnTo, try to get it from referrer or default to /procore
+    if (!rawReturnTo) {
+      const referer = request.headers.get("referer") || "";
+      try {
+        const refererUrl = new URL(referer);
+        const refererPath = refererUrl.pathname + refererUrl.search;
+        // Only use referer if it's a Procore page
+        if (refererPath.startsWith("/procore/")) {
+          rawReturnTo = refererPath;
+        }
+      } catch {
+        // Ignore invalid referer
+      }
+    }
+    
     const returnTo = rawReturnTo.startsWith("/") ? rawReturnTo : "/procore";
 
     // Generate a random state for CSRF protection

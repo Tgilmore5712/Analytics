@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Navigation from "@/components/Navigation";
+import { useProcoreAuthAfterRefresh } from "@/hooks/useProcoreAuthAfterRefresh";
 
 type ToolResponse = {
   success?: boolean;
@@ -28,6 +29,9 @@ export default function ProcoreProjectsFeedToolsPage() {
   const [bidsProjectId, setBidsProjectId] = useState<string>("");
   const [bidFormsProjectId, setBidFormsProjectId] = useState<string>("");
   const [bidFormsPackageId, setBidFormsPackageId] = useState<string>("");
+
+  // Preserve Procore page location on refresh
+  useProcoreAuthAfterRefresh();
 
   const endpointExamples = useMemo(
     () => ({

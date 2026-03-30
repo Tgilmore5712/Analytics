@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import Navigation from "@/components/Navigation";
+import { useProcoreAuthAfterRefresh } from "@/hooks/useProcoreAuthAfterRefresh";
 
 type CCOLineItemSyncResponse = {
   success?: boolean;
@@ -394,6 +395,9 @@ export default function ProcoreProductivityFeedPage() {
   const [qtyPatchLoading, setQtyPatchLoading] = useState(false);
   const [qtyPatchError, setQtyPatchError] = useState<string | null>(null);
   const [qtyPatchResponse, setQtyPatchResponse] = useState<BidFormPatchTestResponse | null>(null);
+
+  // Preserve Procore page location on refresh
+  useProcoreAuthAfterRefresh();
 
   useEffect(() => {
     let cancelled = false;
