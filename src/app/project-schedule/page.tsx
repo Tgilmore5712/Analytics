@@ -315,9 +315,45 @@ export default function ProjectSchedulePage() {
     setLoading(true);
     try {
       await fetch("/api/gantt-v2/setup", { method: "POST" });
-      const res = await fetch("/api/gantt-v2/projects");
-      const json = await res.json();
-      const projectsData = json?.data || [];
+      const [ganttRes, scopesRes] = await Promise.all([
+        fetch("/api/gantt-v2/projects"),
+        fetch("/api/project-scopes"),
+      ]);
+      const json = await ganttRes.json();
+      let projectsData: ProjectRow[] = json?.data || [];
+
+      // Enrich gantt scopes with color data from project-scopes
+      if (scopesRes.ok) {
+        try {
+          const scopesJson = await scopesRes.json();
+          const allPersistedScopes: Array<{ jobKey?: string; title?: string; color?: string | null; taskColors?: unknown }> =
+            Array.isArray(scopesJson?.data) ? scopesJson.data : [];
+
+          if (allPersistedScopes.length > 0) {
+            const colorLookup = new Map<string, { color?: string | null; taskColors?: Record<string, string> | null }>();
+            allPersistedScopes.forEach((ps) => {
+              if (ps.color || ps.taskColors) {
+                const key = `${ps.jobKey || ""}~${(ps.title || "").toLowerCase().trim()}`;
+                colorLookup.set(key, { color: ps.color || null, taskColors: ps.taskColors as Record<string, string> | null });
+              }
+            });
+
+            projectsData = projectsData.map((project) => {
+              const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
+              const enrichedScopes = (project.scopes || []).map((scope) => {
+                const colorKey = `${jobKey}~${(scope.title || "").toLowerCase().trim()}`;
+                const colorData = colorLookup.get(colorKey);
+                if (!colorData) return scope;
+                return { ...scope, ...colorData };
+              });
+              return { ...project, scopes: enrichedScopes };
+            });
+          }
+        } catch {
+          // Non-critical: colors just won't show on initial load
+        }
+      }
+
       setProjects(projectsData);
       // Collapse all projects by default
       setCollapsedProjects(new Set(projectsData.map((p: ProjectRow) => p.id)));
@@ -337,6 +373,17 @@ export default function ProjectSchedulePage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [updateTableScrollWidth, timeline.length, viewMode, loading, projects.length]);
+
+  const deleteProject = async (projectId: string, projectName: string) => {
+    if (!window.confirm(`Delete project "${projectName}" and all its scopes? This cannot be undone.`)) return;
+    const res = await fetch(`/api/gantt-v2/projects/${projectId}`, { method: 'DELETE' });
+    const result = await res.json();
+    if (!res.ok || !result?.success) {
+      alert(`Failed to delete project: ${result?.error || 'Unknown error'}`);
+      return;
+    }
+    await loadProjects();
+  };
 
   const addProject = async () => {
     if (!newProject.projectName.trim()) return;
@@ -401,6 +448,8 @@ export default function ProjectSchedulePage() {
       description: scope.notes || "",
       tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
       hours: Number(scope.totalHours || 0),
+      color: scope.color || undefined,
+      taskColors: (scope.taskColors && typeof scope.taskColors === 'object' ? scope.taskColors as Record<string, string> : undefined),
       schedulingMode: "contiguous",
       selectedDays: [],
     }));
@@ -556,12 +605,20 @@ export default function ProjectSchedulePage() {
                         <div className="mt-1 text-[11px] text-gray-500 ml-6">
                           {scopes.length} scope{scopes.length !== 1 ? "s" : ""} {"\u2022"} {projectTotalHours.toFixed(1)} hours
                         </div>
-                        <button
-                          onClick={() => setSelectedProject(project)}
-                          className="mt-2 ml-6 text-xs px-2 py-1 rounded border border-orange-300 text-orange-700 hover:bg-orange-50"
-                        >
-                          Manage Scopes
-                        </button>
+                        <div className="mt-2 ml-6 flex gap-2">
+                          <button
+                            onClick={() => setSelectedProject(project)}
+                            className="text-xs px-2 py-1 rounded border border-orange-300 text-orange-700 hover:bg-orange-50"
+                          >
+                            Manage Scopes
+                          </button>
+                          <button
+                            onClick={() => deleteProject(project.id, project.projectName)}
+                            className="text-xs px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div className="col-span-full relative" style={{ gridColumn: `2 / span ${timeline.length}` }}>

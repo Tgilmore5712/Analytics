@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 
 export type GanttV2ProjectRow = {
   id: string;
@@ -90,105 +91,109 @@ const getWorkdayCountPerMonth = (start: Date, end: Date): Map<string, number> =>
 };
 
 export async function ensureGanttV2Schema(): Promise<void> {
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS gantt_v2_projects (
-      id TEXT PRIMARY KEY,
-      project_name TEXT NOT NULL,
-      customer TEXT,
-      project_number TEXT,
-      status TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
+  const statements = [
+    `
+      CREATE TABLE IF NOT EXISTS gantt_v2_projects (
+        id TEXT PRIMARY KEY,
+        project_name TEXT NOT NULL,
+        customer TEXT,
+        project_number TEXT,
+        status TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES gantt_v2_projects(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        start_date DATE,
+        end_date DATE,
+        total_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+        crew_size DOUBLE PRECISION,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS gantt_v2_schedule_entries (
+        id TEXT PRIMARY KEY,
+        scope_id TEXT NOT NULL REFERENCES gantt_v2_scopes(id) ON DELETE CASCADE,
+        work_date DATE NOT NULL,
+        scheduled_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(scope_id, work_date)
+      );
+    `,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_scope_id ON gantt_v2_schedule_entries(scope_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_work_date ON gantt_v2_schedule_entries(work_date);`,
+  ];
 
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL REFERENCES gantt_v2_projects(id) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      start_date DATE,
-      end_date DATE,
-      total_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-      crew_size DOUBLE PRECISION,
-      notes TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS gantt_v2_schedule_entries (
-      id TEXT PRIMARY KEY,
-      scope_id TEXT NOT NULL REFERENCES gantt_v2_scopes(id) ON DELETE CASCADE,
-      work_date DATE NOT NULL,
-      scheduled_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(scope_id, work_date)
-    );
-  `);
-
-  await prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`
-  );
-  await prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`
-  );
-  await prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`
-  );
-  await prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`
-  );
-  await prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_scope_id ON gantt_v2_schedule_entries(scope_id);`
-  );
-  await prisma.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_work_date ON gantt_v2_schedule_entries(work_date);`
-  );
+  for (const statement of statements) {
+    try {
+      await prisma.$executeRawUnsafe(statement);
+    } catch (error) {
+      if (!shouldFallbackToEmptyRead(error)) {
+        throw error;
+      }
+    }
+  }
 }
 
 export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
-  const rows = await prisma.$queryRawUnsafe<Array<{
-    id: string;
-    project_name: string;
-    customer: string | null;
-    project_number: string | null;
-    status: string | null;
-    scope_count: number;
-    scoped_hours: number;
-    start_date: Date | null;
-    end_date: Date | null;
-  }>>(`
-    SELECT
-      p.id,
-      p.project_name,
-      p.customer,
-      p.project_number,
-      p.status,
-      COUNT(s.id)::int AS scope_count,
-      COALESCE(SUM(s.total_hours), 0)::float8 AS scoped_hours,
-      MIN(s.start_date) AS start_date,
-      MAX(s.end_date) AS end_date
-    FROM gantt_v2_projects p
-    LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
-    WHERE p.status = 'In Progress'
-    GROUP BY p.id, p.project_name, p.customer, p.project_number, p.status
-    ORDER BY p.created_at DESC;
-  `);
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      id: string;
+      project_name: string;
+      customer: string | null;
+      project_number: string | null;
+      status: string | null;
+      scope_count: number;
+      scoped_hours: number;
+      start_date: Date | null;
+      end_date: Date | null;
+    }>>(`
+      SELECT
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        COUNT(s.id)::int AS scope_count,
+        COALESCE(SUM(s.total_hours), 0)::float8 AS scoped_hours,
+        MIN(s.start_date) AS start_date,
+        MAX(s.end_date) AS end_date
+      FROM gantt_v2_projects p
+      LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
+      WHERE p.status = 'In Progress'
+      GROUP BY p.id, p.project_name, p.customer, p.project_number, p.status
+      ORDER BY p.created_at DESC;
+    `);
 
-  return rows.map((row) => ({
-    id: row.id,
-    projectName: row.project_name,
-    customer: row.customer,
-    projectNumber: row.project_number,
-    status: row.status,
-    scopeCount: Number(row.scope_count || 0),
-    scopedHours: Number(row.scoped_hours || 0),
-    startDate: row.start_date ? row.start_date.toISOString().split('T')[0] : null,
-    endDate: row.end_date ? row.end_date.toISOString().split('T')[0] : null,
-  }));
+    return rows.map((row) => ({
+      id: row.id,
+      projectName: row.project_name,
+      customer: row.customer,
+      projectNumber: row.project_number,
+      status: row.status,
+      scopeCount: Number(row.scope_count || 0),
+      scopedHours: Number(row.scoped_hours || 0),
+      startDate: row.start_date ? row.start_date.toISOString().split('T')[0] : null,
+      endDate: row.end_date ? row.end_date.toISOString().split('T')[0] : null,
+    }));
+  } catch (error) {
+    if (shouldFallbackToEmptyRead(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWithScopes[]> {
@@ -229,7 +234,6 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
     description: string | null;
     tasks?: unknown;
   }> = [];
-
   try {
     legacyScopes = await prisma.projectScope.findMany({
       select: {

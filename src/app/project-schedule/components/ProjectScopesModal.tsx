@@ -360,6 +360,8 @@ export function ProjectScopesModal({
               tasks: Array.isArray(persisted.tasks) ? persisted.tasks : (scope.tasks || []),
               schedulingMode: persisted.schedulingMode === 'specific-days' ? 'specific-days' : (scope.schedulingMode || 'contiguous'),
               selectedDays: Array.isArray(persisted.selectedDays) ? persisted.selectedDays : (scope.selectedDays || []),
+              color: persisted.color || scope.color || null,
+              taskColors: (persisted.taskColors && typeof persisted.taskColors === 'object' ? persisted.taskColors : null) || scope.taskColors || null,
             };
           });
         }
@@ -1027,6 +1029,54 @@ export function ProjectScopesModal({
     // - POST /api/scope-tracking/recalculate
   };
 
+  const handleDeleteScope = async () => {
+    if (!activeScopeId || activeScopeId === NEW_SCOPE_ID) return;
+    const scope = effectiveScopes.find((s) => s.id === activeScopeId);
+    const scopeTitle = scope?.title || 'this scope';
+    if (!window.confirm(`Delete scope "${scopeTitle}"? This cannot be undone.`)) return;
+
+    try {
+      const isGeneratedId =
+        activeScopeId.startsWith('fallback-') ||
+        activeScopeId.startsWith('virtual-') ||
+        activeScopeId.startsWith('generated-');
+
+      if (!isGeneratedId) {
+        let deletedSomewhere = false;
+
+        // Try deleting canonical gantt scope first (primary source of truth).
+        const ganttRes = await fetch(`/api/gantt-v2/scopes/${activeScopeId}`, { method: 'DELETE' });
+        const ganttJson = await ganttRes.json().catch(() => ({}));
+        if (ganttRes.ok && ganttJson?.success) {
+          deletedSomewhere = true;
+        }
+
+        // Cleanup legacy metadata row by project identity and scope title so it can't be auto-recreated.
+        const metadataRes = await fetch(
+          `/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey || project.jobKey || '')}&title=${encodeURIComponent(scopeTitle)}`,
+          { method: 'DELETE' }
+        );
+        const metadataJson = await metadataRes.json().catch(() => ({}));
+        if (metadataRes.ok && metadataJson?.success && Number(metadataJson?.deletedCount || 0) > 0) {
+          deletedSomewhere = true;
+        }
+
+        if (!deletedSomewhere) {
+          throw new Error(ganttJson?.error || metadataJson?.error || 'Scope was not deleted');
+        }
+      }
+
+      setActiveScopeId(null);
+      setIsCreatingNewScope(false);
+      const refreshedScopes = await loadCanonicalScopes();
+      const remaining = refreshedScopes ?? effectiveScopes.filter((s) => s.id !== activeScopeId);
+      onScopesUpdated(resolvedJobKey || project.jobKey || '', remaining);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      alert(`Failed to delete scope: ${msg}`);
+    }
+  };
+
   const handleStartCreateScope = () => {
     previousActiveScopeIdRef.current =
       activeScopeId && activeScopeId !== NEW_SCOPE_ID ? activeScopeId : null;
@@ -1466,6 +1516,11 @@ export function ProjectScopesModal({
             <button type="button" onClick={handleSaveScope} disabled={isSaving} className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-semibold hover:bg-orange-700 disabled:bg-gray-400">
               {isSaving ? "Saving..." : "Save Scope of Work"}
             </button>
+            {activeScopeId && activeScopeId !== NEW_SCOPE_ID && !activeScopeId.startsWith('fallback-') && !activeScopeId.startsWith('virtual-') && !activeScopeId.startsWith('generated-') && (
+              <button type="button" onClick={handleDeleteScope} className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-semibold hover:bg-red-700">
+                Delete Scope
+              </button>
+            )}
             <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300">Close</button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -107,8 +108,12 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to fetch time off requests:', error);
+    if (shouldFallbackToEmptyRead(error)) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch time off requests' },
+      { success: false, error: `Failed to fetch time off requests: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }

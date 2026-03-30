@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ensureGanttV2Schema, getGanttV2ProjectsWithScopes } from '@/lib/ganttV2Db';
+import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,8 +11,12 @@ export async function GET() {
     const projects = await getGanttV2ProjectsWithScopes();
     return NextResponse.json({ success: true, data: projects });
   } catch (error) {
+    if (shouldFallbackToEmptyRead(error)) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
     return NextResponse.json(
-      { success: false, error: `Failed to load Gantt V2 projects: ${String(error)}` },
+      { success: false, error: `Failed to load Gantt V2 projects: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }

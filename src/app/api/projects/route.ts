@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/auditLog';
 import { getCanonicalProjectCustomFields, getCanonicalProjectIdentity } from '@/lib/projectCanonical';
+import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 
@@ -358,8 +359,27 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to fetch projects:', error);
+    if (shouldFallbackToEmptyRead(error)) {
+      const searchParams = request.nextUrl.searchParams;
+      const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
+      const requestedPageSize = Number.parseInt(searchParams.get('pageSize') || '100', 10) || 100;
+      const pageSize = Math.min(500, Math.max(1, requestedPageSize));
+
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        total: 0,
+        page,
+        pageSize,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: page > 1,
+        data: [],
+      });
+    }
+
     return NextResponse.json(
-      { success: false, error: `Failed to fetch projects: ${String(error)}` },
+      { success: false, error: `Failed to fetch projects: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }

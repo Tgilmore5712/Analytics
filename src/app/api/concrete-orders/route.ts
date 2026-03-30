@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,8 +53,12 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to fetch concrete orders:', error);
+    if (shouldFallbackToEmptyRead(error)) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch concrete orders' },
+      { success: false, error: `Failed to fetch concrete orders: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }

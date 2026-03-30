@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 import { NextRequest, NextResponse } from 'next/server';
 import { syncAllocationToActiveSchedule } from '@/utils/syncActiveSchedule';
 
@@ -90,8 +91,26 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to fetch schedules:', error);
+    if (shouldFallbackToEmptyRead(error)) {
+      const fallbackPage = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('page') || '1', 10) || 1);
+      const requestedPageSize = Number.parseInt(request.nextUrl.searchParams.get('pageSize') || '100', 10) || 100;
+      const fallbackPageSize = Math.min(500, Math.max(1, requestedPageSize));
+
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        total: 0,
+        page: fallbackPage,
+        pageSize: fallbackPageSize,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: fallbackPage > 1,
+        data: [],
+      });
+    }
+
     return NextResponse.json(
-      { success: false, error: `Failed to fetch schedules: ${String(error)}` },
+      { success: false, error: `Failed to fetch schedules: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }

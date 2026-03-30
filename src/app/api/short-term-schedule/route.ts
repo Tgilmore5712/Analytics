@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -227,16 +228,31 @@ export async function GET(request: NextRequest) {
 
     if (action === 'time-off') {
       // GET time off requests
-      const timeOffRequests = await prisma.timeOffRequest.findMany({
-        select: {
-          id: true,
-          employeeId: true,
-          employeeName: true,
-          dates: true,
-          reason: true,
-          status: true,
-        },
-      });
+      let timeOffRequests: Array<{
+        id: string;
+        employeeId: string;
+        employeeName: string | null;
+        dates: unknown;
+        reason: string | null;
+        status: string;
+      }> = [];
+
+      try {
+        timeOffRequests = await prisma.timeOffRequest.findMany({
+          select: {
+            id: true,
+            employeeId: true,
+            employeeName: true,
+            dates: true,
+            reason: true,
+            status: true,
+          },
+        });
+      } catch (error) {
+        if (!shouldFallbackToEmptyRead(error)) {
+          throw error;
+        }
+      }
 
       return NextResponse.json({
         success: true,
@@ -392,12 +408,29 @@ export async function GET(request: NextRequest) {
     }
 
     // Default: return all critical data for schedule view
-    const [employees, timeOffs, scopes, projects] = await Promise.all([
-      prisma.employee.findMany({
+    let employees: Array<Record<string, unknown>> = [];
+    let timeOffs: Array<{
+      id: string;
+      employeeId: string;
+      employeeName: string | null;
+      dates: unknown;
+      reason: string | null;
+      status: string;
+    }> = [];
+    let scopes: Array<Record<string, unknown>> = [];
+    let projects: Array<Record<string, unknown>> = [];
+
+    try {
+      employees = await prisma.employee.findMany({
         where: { isActive: true },
         orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-      }),
-      prisma.timeOffRequest.findMany({
+      }) as unknown as Array<Record<string, unknown>>;
+    } catch (error) {
+      if (!shouldFallbackToEmptyRead(error)) throw error;
+    }
+
+    try {
+      timeOffs = await prisma.timeOffRequest.findMany({
         select: {
           id: true,
           employeeId: true,
@@ -406,8 +439,13 @@ export async function GET(request: NextRequest) {
           reason: true,
           status: true,
         },
-      }),
-      prisma.projectScope.findMany({
+      });
+    } catch (error) {
+      if (!shouldFallbackToEmptyRead(error)) throw error;
+    }
+
+    try {
+      scopes = await prisma.projectScope.findMany({
         select: {
           id: true,
           jobKey: true,
@@ -419,8 +457,13 @@ export async function GET(request: NextRequest) {
           description: true,
           tasks: true,
         },
-      }),
-      prisma.project.findMany({
+      }) as unknown as Array<Record<string, unknown>>;
+    } catch (error) {
+      if (!shouldFallbackToEmptyRead(error)) throw error;
+    }
+
+    try {
+      projects = await prisma.project.findMany({
         where: {
           status: { notIn: ['Bid Submitted', 'Lost'] },
         },
@@ -433,8 +476,10 @@ export async function GET(request: NextRequest) {
           hours: true,
           projectManager: true,
         },
-      }),
-    ]);
+      }) as unknown as Array<Record<string, unknown>>;
+    } catch (error) {
+      if (!shouldFallbackToEmptyRead(error)) throw error;
+    }
 
     return NextResponse.json({
       success: true,
@@ -447,8 +492,20 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to fetch short-term schedule data:', error);
+    if (shouldFallbackToEmptyRead(error)) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          employees: [],
+          timeOffs: [],
+          scopes: [],
+          projects: [],
+        },
+      });
+    }
+
     return NextResponse.json(
-      { success: false, error: `Failed to fetch data: ${String(error)}` },
+      { success: false, error: `Failed to fetch data: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }
