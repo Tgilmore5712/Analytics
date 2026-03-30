@@ -285,6 +285,30 @@ function formatProjectLabel(row: ActiveScheduleEntry): string {
   return [customer, number, name].filter(Boolean).join(" | ");
 }
 
+const TASK_WITH_DATE_REGEX = /^\[(\d{4}-\d{2}-\d{2})\s*\|\s*(\d+)d\]\s*(.*)$/;
+
+function addDaysToDateKey(dateKey: string, daysToAdd: number): string {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + daysToAdd);
+  return toDateKey(date);
+}
+
+function isTaskScheduledOnDate(task: string, targetDateKey: string): boolean {
+  const match = task.match(TASK_WITH_DATE_REGEX);
+  if (!match) return false;
+
+  const startDate = match[1];
+  const days = Math.max(1, Number.parseInt(match[2], 10) || 1);
+  const endDate = addDaysToDateKey(startDate, days - 1);
+  return targetDateKey >= startDate && targetDateKey <= endDate;
+}
+
+function getTaskDisplayName(task: string): string {
+  const match = task.match(TASK_WITH_DATE_REGEX);
+  if (!match) return task;
+  return (match[3] || "").trim() || task;
+}
+
 function getMonthWeekStarts(monthStr: string): Date[] {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) return [];
   const [year, month] = monthStr.split("-").map(Number);
@@ -1151,25 +1175,29 @@ function HomeContent() {
                                           <div className="text-xs md:text-xs text-white/90">
                                             {job.crewTarget > 0 ? `${job.crewTarget} total workers planned` : "No crew target stored"}
                                           </div>
-                                          <div className="text-xs md:text-[11px] font-black uppercase tracking-widest text-red-200 pt-1">Scopes & Tasks</div>
+                                          <div className="text-xs md:text-[11px] font-black uppercase tracking-widest text-red-200 pt-1">Scopes & Tasks (Today)</div>
                                           <div className="text-xs md:text-xs text-white/90 space-y-1">
-                                            {scopes.filter(s => s.jobKey === job.jobKey).length > 0 ? (
-                                              scopes.filter(s => s.jobKey === job.jobKey).map((scope, idx) => (
-                                                <div key={idx}>
-                                                  <div className="font-bold text-white">{scope.title}</div>
-                                                  {scope.tasks.length > 0 && (
+                                            {scopes
+                                              .filter((scope) => scope.jobKey === job.jobKey)
+                                              .map((scope, idx) => {
+                                                const todaysTasks = (scope.tasks || []).filter((task) => isTaskScheduledOnDate(task, TODAY_KEY));
+                                                if (todaysTasks.length === 0) return null;
+
+                                                return (
+                                                  <div key={idx}>
+                                                    <div className="font-bold text-white">{scope.title}</div>
                                                     <ul className="ml-2 text-white/80 text-[10px]">
-                                                      {scope.tasks.slice(0, 3).map((task, tidx) => (
-                                                        <li key={tidx}>• {task}</li>
+                                                      {todaysTasks.map((task, tidx) => (
+                                                        <li key={tidx}>• {getTaskDisplayName(task)}</li>
                                                       ))}
-                                                      {scope.tasks.length > 3 && <li>... +{scope.tasks.length - 3} more</li>}
                                                     </ul>
-                                                  )}
-                                                </div>
-                                              ))
-                                            ) : (
-                                              "No scopes assigned"
-                                            )}
+                                                  </div>
+                                                );
+                                              })
+                                              .filter(Boolean)}
+                                            {scopes.filter((scope) => scope.jobKey === job.jobKey).every((scope) => !(scope.tasks || []).some((task) => isTaskScheduledOnDate(task, TODAY_KEY)))
+                                              ? "No scope tasks scheduled for today"
+                                              : null}
                                           </div>
                                         </div>
                                       )}
