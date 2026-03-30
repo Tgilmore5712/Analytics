@@ -554,14 +554,17 @@ function HomeContent() {
 
   const persona = useMemo<Persona>(() => {
     const userEmail = normalizeEmail(user?.email);
-    if (userEmail === "john@pmcdecor.com") return "manager";
+    if (userEmail === "john@pmcdecor.com" || userEmail === "todd@pmcdecor.com" || userEmail === "todd.gilmore@hotmail.com") return "manager";
     if (isGeneralManagerTitle(me?.jobTitle)) return "manager";
     if (isForemanLikeTitle(me?.jobTitle)) return "foreman";
     if (isPmLikeTitle(me?.jobTitle)) return "pm";
     return "generic";
   }, [me?.jobTitle, user?.email]);
 
-  const isJohnFullSnapshot = useMemo(() => normalizeEmail(user?.email) === "john@pmcdecor.com", [user?.email]);
+  const isJohnFullSnapshot = useMemo(() => {
+    const userEmail = normalizeEmail(user?.email);
+    return userEmail === "john@pmcdecor.com" || userEmail === "todd@pmcdecor.com" || userEmail === "todd.gilmore@hotmail.com";
+  }, [user?.email]);
 
   const offEntriesInWindow = useMemo(() => {
     const dateSet = new Set(dateKeys);
