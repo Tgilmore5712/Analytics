@@ -75,10 +75,10 @@ export const GanttRow = memo(function GanttRow({
             <button
               type="button"
               onClick={() => onOpenTask(task)}
-              className={`rounded-md text-white text-xs font-semibold px-3 shadow-sm transition-colors whitespace-normal break-words inline-block text-left min-h-8 py-2 ${
+              className={`rounded-md text-white text-xs font-semibold px-3 shadow-sm transition-colors text-left min-h-8 py-2 block overflow-hidden ${
                 task.type === "project" ? "bg-orange-500 hover:bg-orange-600" : "bg-blue-500 hover:bg-blue-600"
               }`}
-              style={{ marginLeft: left, width }}
+              style={{ marginLeft: left, width, wordBreak: 'break-word', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}
             >
               {task.type === "project" ? `${task.totalHours.toFixed(1)} hrs` : task.title || "Scope"}
             </button>

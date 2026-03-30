@@ -754,13 +754,13 @@ export default function ProjectSchedulePage() {
                                       </button>
                                     )}
                                     {!scope.tasks || scope.tasks.length === 0 ? <div className="w-3.5" /> : null}
-                                    <div className="flex-1">
+                                    <div className="flex-1 min-w-0">
                                       <div
                                         onClick={() => {
                                           setSelectedScopeId(scope.id);
                                           setSelectedProject(project);
                                         }}
-                                        className="text-xs font-medium text-gray-700 truncate cursor-pointer hover:text-blue-700"
+                                        className="text-xs font-medium text-gray-700 cursor-pointer hover:text-blue-700 whitespace-normal break-words leading-tight"
                                       >
                                         {scope.title}
                                       </div>
@@ -860,7 +860,7 @@ export default function ProjectSchedulePage() {
                                   return (
                                     <div key={`${scope.id}-task-${taskIdx}`} className="grid border-t border-gray-200" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
                                       <div className="sticky left-0 z-20 bg-gray-50 border-r border-gray-200 px-3 py-2 ml-12">
-                                        <div className="text-xs text-gray-600 truncate">
+                                        <div className="text-xs text-gray-600 whitespace-normal break-words leading-tight">
                                           {taskName}
                                         </div>
                                         {startDate && days > 0 && (
