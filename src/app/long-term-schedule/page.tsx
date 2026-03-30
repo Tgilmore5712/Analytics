@@ -801,8 +801,8 @@ export default function LongTermSchedulePage() {
             )
           }
         >
-          <div className="font-black text-gray-900 truncate">{proj.scopeOfWork}</div>
-          <div className="text-gray-500 truncate">{proj.jobKey.split("~")[2] || proj.jobKey}</div>
+          <div className="font-black text-gray-900 whitespace-normal break-words">{proj.scopeOfWork}</div>
+          <div className="text-gray-500 whitespace-normal break-words">{proj.jobKey.split("~")[2] || proj.jobKey}</div>
           <div className="mt-1.5 flex items-center gap-1">
             {canRemoveFromDay && (
               <button
