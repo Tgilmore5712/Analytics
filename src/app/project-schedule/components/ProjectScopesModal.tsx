@@ -9,6 +9,7 @@ type GanttProjectResponse = {
   projectNumber: string | null;
   scopes?: Array<{
     id: string;
+    predecessorScopeId?: string | null;
     title: string;
     startDate: string | null;
     endDate: string | null;
@@ -100,6 +101,74 @@ const computeScopeHours = (scope: Partial<Scope>) => {
   return 0;
 };
 
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+type ParsedTaskEntry = {
+  name: string;
+  startDate: string;
+  days: number | null;
+};
+
+const parseTaskEntry = (taskString: string): ParsedTaskEntry => {
+  const match = taskString.match(/^\[(.*?)\]\s*(.+)$/);
+  if (!match) {
+    return { name: taskString.trim(), startDate: '', days: null };
+  }
+
+  const prefix = match[1] || '';
+  const name = (match[2] || '').trim();
+  const parts = prefix.split('|').map((part) => part.trim());
+  const startDate = parts.find((part) => /^\d{4}-\d{2}-\d{2}$/.test(part)) || '';
+  const daysPart = parts.find((part) => /\d+\s*d$/i.test(part));
+  const daysValue = daysPart ? Number(daysPart.replace(/[^0-9]/g, '')) : null;
+
+  return {
+    name,
+    startDate,
+    days: Number.isFinite(daysValue || 0) && (daysValue || 0) > 0 ? Number(daysValue) : null,
+  };
+};
+
+const formatTaskEntry = ({ name, startDate, days }: ParsedTaskEntry): string => {
+  const dateText = /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : '';
+  const daysText = Number.isFinite(days || 0) && (days || 0) > 0 ? `${Math.round(days as number)}d` : '';
+  const prefix = [dateText, daysText].filter(Boolean).join(' | ');
+  return prefix ? `[${prefix}] ${name}` : name;
+};
+
+const calculateTaskDateRange = (tasks: string[]): { startDate: string; endDate: string } | null => {
+  const datedTasks = tasks
+    .map(parseTaskEntry)
+    .filter((task) => /^\d{4}-\d{2}-\d{2}$/.test(task.startDate));
+
+  if (datedTasks.length === 0) return null;
+
+  let minStart: string | null = null;
+  let maxEnd: string | null = null;
+
+  datedTasks.forEach((task) => {
+    const start = task.startDate;
+    const base = new Date(`${start}T00:00:00`);
+    if (isNaN(base.getTime())) return;
+
+    const taskDays = Number.isFinite(task.days || 0) && (task.days || 0) > 0 ? Number(task.days) : 1;
+    const endDate = new Date(base);
+    endDate.setDate(endDate.getDate() + taskDays - 1);
+    const end = formatDateKey(endDate);
+
+    if (!minStart || start < minStart) minStart = start;
+    if (!maxEnd || end > maxEnd) maxEnd = end;
+  });
+
+  if (!minStart || !maxEnd) return null;
+  return { startDate: minStart, endDate: maxEnd };
+};
+
 export function ProjectScopesModal({
   project,
   scopes,
@@ -120,8 +189,11 @@ export function ProjectScopesModal({
   const [ganttProjectId, setGanttProjectId] = useState<string | null>(null);
   const [canonicalScopes, setCanonicalScopes] = useState<Scope[] | null>(null);
   const [projectBudgetHours, setProjectBudgetHours] = useState<number | null>(null);
+  const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
+  const [draggedTaskIndex, setDraggedTaskIndex] = useState<number | null>(null);
   const [scopeDetail, setScopeDetail] = useState<Partial<Scope>>({
     title: "",
+    predecessorScopeId: null,
     startDate: "",
     endDate: "",
     description: "",
@@ -134,25 +206,22 @@ export function ProjectScopesModal({
   const [newTask, setNewTask] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskDays, setNewTaskDays] = useState("");
-  const [newTaskColor, setNewTaskColor] = useState("#A855F7"); // Default task color
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
   const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
-  const [editingTaskColorIndex, setEditingTaskColorIndex] = useState<number | null>(null);
   const formSectionRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const previousActiveScopeIdRef = useRef<string | null>(selectedScopeId);
 
   const emptyScopeDetail: Partial<Scope> = {
     title: "",
+    predecessorScopeId: null,
     startDate: "",
     endDate: "",
     manpower: undefined,
     hours: undefined,
     description: "",
     tasks: [],
-    color: undefined,
-    taskColors: {},
     schedulingMode: "contiguous",
     selectedDays: [],
   };
@@ -264,6 +333,7 @@ export function ProjectScopesModal({
   const mapGanttScopes = (rows: NonNullable<GanttProjectResponse["scopes"]>): Scope[] =>
     rows.map((scope) => ({
       id: scope.id,
+      predecessorScopeId: scope.predecessorScopeId || null,
       jobKey: resolvedJobKey || project.jobKey,
       title: scope.title,
       startDate: scope.startDate || "",
@@ -624,6 +694,7 @@ export function ProjectScopesModal({
 
     setScopeDetail({
       title: scope.title || "",
+      predecessorScopeId: scope.predecessorScopeId || null,
       startDate: scope.startDate || "",
       endDate: scope.endDate || "",
       manpower: scope.manpower,
@@ -645,23 +716,19 @@ export function ProjectScopesModal({
     if (!trimmed) return;
     const parsedDays = Number(newTaskDays || 0);
     const hasDays = Number.isFinite(parsedDays) && parsedDays > 0;
-    const daysText = hasDays ? `${Math.round(parsedDays)}d` : "";
-    const dateText = newTaskDate ? newTaskDate : "";
-    const prefix = [dateText, daysText].filter(Boolean).join(" | ");
-    const taskEntry = prefix ? `[${prefix}] ${trimmed}` : trimmed;
+    const taskEntry = formatTaskEntry({
+      name: trimmed,
+      startDate: newTaskDate ? newTaskDate : "",
+      days: hasDays ? Math.round(parsedDays) : null,
+    });
     
     setScopeDetail((prev) => ({
       ...prev,
       tasks: [...(prev.tasks || []), taskEntry],
-      taskColors: {
-        ...(prev.taskColors || {}),
-        [trimmed]: newTaskColor,
-      },
     }));
     setNewTask("");
     setNewTaskDate("");
     setNewTaskDays("");
-    setNewTaskColor("#A855F7");
   };
 
   const handleRemoveTask = (index: number) => {
@@ -681,21 +748,65 @@ export function ProjectScopesModal({
   };
 
   const extractTaskName = (taskString: string): string => {
-    // Extract task name from "[DATE | Days] TaskName" format
-    const match = taskString.match(/^\[.*?\]\s*(.+)$|^(.+)$/);
-    return match ? (match[1] || match[2]) : taskString;
+    return parseTaskEntry(taskString).name || taskString;
   };
 
-  const updateTaskColor = (taskString: string, newColor: string) => {
-    const taskName = extractTaskName(taskString);
-    setScopeDetail((prev) => ({
-      ...prev,
-      taskColors: {
-        ...(prev.taskColors || {}),
-        [taskName]: newColor,
-      },
-    }));
+  const updateTaskDateMeta = (index: number, next: { startDate?: string; days?: number | null }) => {
+    setScopeDetail((prev) => {
+      const currentTasks = Array.isArray(prev.tasks) ? [...prev.tasks] : [];
+      const existing = currentTasks[index];
+      if (!existing) return prev;
+
+      const parsedTasks = currentTasks.map((task) => parseTaskEntry(task));
+      const parsed = parsedTasks[index];
+
+      parsedTasks[index] = {
+        ...parsed,
+        startDate: typeof next.startDate === 'string' ? next.startDate : parsed.startDate,
+        days: next.days === undefined ? parsed.days : next.days,
+      };
+
+      const calcEndDate = (task: ParsedTaskEntry): string | null => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(task.startDate)) return null;
+        const start = new Date(`${task.startDate}T00:00:00`);
+        if (isNaN(start.getTime())) return null;
+        const duration = Number.isFinite(task.days || 0) && (task.days || 0) > 0 ? Number(task.days) : 1;
+        const end = new Date(start);
+        end.setDate(end.getDate() + duration - 1);
+        return formatDateKey(end);
+      };
+
+      const addDays = (dateKey: string, daysToAdd: number): string | null => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
+        const base = new Date(`${dateKey}T00:00:00`);
+        if (isNaN(base.getTime())) return null;
+        base.setDate(base.getDate() + daysToAdd);
+        return formatDateKey(base);
+      };
+
+      // Cascade dates down the task chain: each next task starts the day after previous task ends.
+      for (let i = index + 1; i < parsedTasks.length; i += 1) {
+        const previous = parsedTasks[i - 1];
+        const previousEnd = calcEndDate(previous);
+        if (!previousEnd) break;
+
+        const nextStart = addDays(previousEnd, 1);
+        if (!nextStart) break;
+
+        parsedTasks[i] = {
+          ...parsedTasks[i],
+          startDate: nextStart,
+        };
+      }
+
+      for (let i = 0; i < parsedTasks.length; i += 1) {
+        currentTasks[i] = formatTaskEntry(parsedTasks[i]);
+      }
+
+      return { ...prev, tasks: currentTasks };
+    });
   };
+
 
   const selectedDays = Array.isArray(scopeDetail.selectedDays)
     ? scopeDetail.selectedDays
@@ -707,6 +818,11 @@ export function ProjectScopesModal({
         .filter((entry: any) => /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && Number.isFinite(entry.hours) && entry.hours > 0)
         .sort((a: any, b: any) => a.date.localeCompare(b.date))
     : [];
+
+  const derivedTaskRange = useMemo(() => {
+    const tasks = Array.isArray(scopeDetail.tasks) ? scopeDetail.tasks : [];
+    return calculateTaskDateRange(tasks);
+  }, [scopeDetail.tasks]);
 
   const getDayOfWeek = (dateKey: string) => {
     const [year, month, day] = dateKey.split('-').map(Number);
@@ -810,8 +926,8 @@ export function ProjectScopesModal({
 
       if (dayEditMode && selectedScheduleDate && effectiveSchedulingMode === 'specific-days' && (selectedScopeTitle || scopeDetail.title)) {
         const scopeName = (scopeDetail.title || selectedScopeTitle || '').trim();
-        const resolvedStartDate = (scopeDetail.startDate || selectedScheduleDate || '').trim();
-        const resolvedEndDate = (scopeDetail.endDate || resolvedStartDate || '').trim();
+        const resolvedStartDate = (derivedTaskRange?.startDate || scopeDetail.startDate || selectedScheduleDate || '').trim();
+        const resolvedEndDate = (derivedTaskRange?.endDate || scopeDetail.endDate || resolvedStartDate || '').trim();
         if (!resolvedStartDate) {
           throw new Error('Scope start date is required.');
         }
@@ -856,13 +972,16 @@ export function ProjectScopesModal({
           endDate: resolvedEndDate,
           description: scopeDetail.description || '',
           tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
-          color: scopeDetail.color,
-          taskColors: scopeDetail.taskColors,
+
           schedulingMode: effectiveSchedulingMode,
           selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
           manpower: scopeDetail.manpower,
           hours: computeScopeHours(scopeDetail),
         };
+        // Keep existing predecessor relationship in day-edit mode
+        if (activeScope?.predecessorScopeId) {
+          metadataPayload.predecessorScopeId = activeScope.predecessorScopeId;
+        }
         await upsertProjectScopeMetadata(metadataPayload, { activeScope });
 
         const updatedScopes = effectiveScopes.map((scope) => {
@@ -889,17 +1008,31 @@ export function ProjectScopesModal({
         title: (scopeDetail.title || "Scope").trim() || "Scope",
         startDate: effectiveSchedulingMode === 'specific-days'
           ? (selectedDays[0]?.date || scopeDetail.startDate || "")
-          : (scopeDetail.startDate || ""),
+          : (derivedTaskRange?.startDate || scopeDetail.startDate || ""),
         endDate: effectiveSchedulingMode === 'specific-days'
           ? (selectedDays[selectedDays.length - 1]?.date || scopeDetail.endDate || "")
-          : (scopeDetail.endDate || ""),
+          : (derivedTaskRange?.endDate || scopeDetail.endDate || ""),
         description: scopeDetail.description || "",
         tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
-        color: scopeDetail.color,
-        taskColors: scopeDetail.taskColors,
+
         schedulingMode: effectiveSchedulingMode,
         selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
       };
+
+      // For implicit predecessor based on list position
+      const isNewScope = isCreatingNewScope || activeScopeId === NEW_SCOPE_ID;
+      if (isNewScope && visibleScopes.length > 0) {
+        // New scopes get the last scope as their predecessor
+        const nonNewScopes = visibleScopes.filter(s => s.id !== NEW_SCOPE_ID);
+        if (nonNewScopes.length > 0) {
+          payload.predecessorScopeId = nonNewScopes[nonNewScopes.length - 1].id;
+        } else {
+          payload.predecessorScopeId = null;
+        }
+      } else if (!isNewScope && activeScope) {
+        // Existing scopes keep their current predecessor (only change via drag-drop)
+        payload.predecessorScopeId = activeScope.predecessorScopeId || null;
+      }
 
       payload.startDate = dateKey(payload.startDate);
       payload.endDate = dateKey(payload.endDate) || payload.startDate;
@@ -932,6 +1065,7 @@ export function ProjectScopesModal({
 
         const ganttPayload = {
           title: payload.title,
+          predecessorScopeId: payload.predecessorScopeId || null,
           startDate: payload.startDate || null,
           endDate: payload.endDate || null,
           totalHours: computedHours,
@@ -946,7 +1080,31 @@ export function ProjectScopesModal({
             body: JSON.stringify(ganttPayload),
           });
           const result = await response.json();
-          if (!result.success) throw new Error(result.error || 'Failed to update scope');
+          if (!result.success) {
+            const isScopeMissing =
+              response.status === 404 ||
+              String(result?.error || '').toLowerCase().includes('scope not found');
+
+            if (isScopeMissing) {
+              // Recover from stale/non-canonical scope ids by creating a fresh canonical scope.
+              const createResponse = await fetch(`/api/gantt-v2/projects/${ganttProjectId}/scopes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ganttPayload),
+              });
+              const createResult = await createResponse.json();
+              if (!createResult.success) {
+                throw new Error(createResult.error || 'Failed to recover missing scope');
+              }
+              savedScope = createResult.data;
+              if (savedScope?.id) {
+                setIsCreatingNewScope(false);
+                setActiveScopeId(savedScope.id);
+              }
+            } else {
+              throw new Error(result.error || 'Failed to update scope');
+            }
+          }
         } else {
           const response = await fetch(`/api/gantt-v2/projects/${ganttProjectId}/scopes`, {
             method: 'POST',
@@ -1084,6 +1242,47 @@ export function ProjectScopesModal({
     setActiveScopeId(NEW_SCOPE_ID);
   };
 
+  const handleScopeReorder = async (reorderedScopes: Scope[]) => {
+    try {
+      // Update predecessors based on new order
+      const updatePromises = reorderedScopes.map(async (scope, index) => {
+        const newPredecessorId = index > 0 ? reorderedScopes[index - 1].id : null;
+        
+        // Skip if no change needed
+        if (scope.predecessorScopeId === newPredecessorId) {
+          return null;
+        }
+        
+        // Call API to update this scope's predecessor
+        const res = await fetch(`/api/gantt-v2/scopes/${scope.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            predecessorScopeId: newPredecessorId,
+          }),
+        });
+        
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok || !result?.success) {
+          throw new Error(result?.error || `Failed to update scope dependency for ${scope.title}`);
+        }
+        
+        return result?.cascadeUpdates || [];
+      });
+      
+      await Promise.all(updatePromises);
+      
+      // Reload scopes to reflect changes
+      const updatedScopes = await loadCanonicalScopes();
+      if (updatedScopes) {
+        setCanonicalScopes(updatedScopes);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      alert(`Failed to reorder scopes: ${msg}`);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900">
@@ -1143,29 +1342,68 @@ export function ProjectScopesModal({
               {visibleScopes.length === 0 ? (
                 <div className="text-sm text-gray-500">No scopes yet.</div>
               ) : (
-                visibleScopes.map((scope) => {
+                visibleScopes.map((scope, index) => {
                   const scopeHours = getEffectiveScopeHours(scope);
                   const scheduledHours = getScheduledHoursForScope(scope);
                   const unscheduledHours = Math.max(scopeHours - scheduledHours, 0);
+                  const isNew = scope.id === NEW_SCOPE_ID;
+                  const predecessorScope = !isNew && index > 0 ? visibleScopes[index - 1] : null;
+                  const isDraggedOver = draggedScopeId && draggedScopeId !== scope.id;
+                  
                   return (
-                  <button
+                  <div
                     key={scope.id}
-                    type="button"
+                    draggable={!isNew}
+                    onDragStart={(e) => {
+                      if (!isNew) {
+                        setDraggedScopeId(scope.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }
+                    }}
+                    onDragOver={(e) => {
+                      if (!isNew && draggedScopeId && draggedScopeId !== scope.id) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                      }
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      if (!isNew && draggedScopeId && draggedScopeId !== scope.id && ganttProjectId) {
+                        // Reorder the scopes
+                        const draggedIndex = visibleScopes.findIndex(s => s.id === draggedScopeId);
+                        const targetIndex = index;
+                        
+                        if (draggedIndex !== -1 && targetIndex !== -1) {
+                          const newOrder = [...visibleScopes];
+                          const [draggedItem] = newOrder.splice(draggedIndex, 1);
+                          newOrder.splice(targetIndex, 0, draggedItem);
+                          
+                          // Update predecessors based on new order and persist
+                          await handleScopeReorder(newOrder);
+                        }
+                      }
+                      setDraggedScopeId(null);
+                    }}
+                    onDragEnd={() => setDraggedScopeId(null)}
+                    className={`text-left border rounded-md px-3 py-2 transition-colors ${
+                      activeScopeId === scope.id ? "border-orange-400 bg-orange-50" : 
+                      isDraggedOver ? "border-orange-300 bg-orange-100/30" :
+                      "border-gray-200 hover:border-orange-200"
+                    } ${!isNew ? 'cursor-move' : ''}`}
                     onClick={() => {
                       setIsCreatingNewScope(false);
                       setActiveScopeId(scope.id);
                     }}
-                    className={`text-left border rounded-md px-3 py-2 transition-colors ${
-                      activeScopeId === scope.id ? "border-orange-400 bg-orange-50" : "border-gray-200 hover:border-orange-200"
-                    }`}
                   >
                     <div className={scheduledHoursByJobKeyDate ? "grid grid-cols-[1fr_auto_auto] items-center gap-3" : "flex justify-between items-center"}>
-                      <div>
-                        <div className="text-sm font-semibold">
-                          {scope.id === NEW_SCOPE_ID ? `${scope.title || "New Scope"} (draft)` : (scope.title || "Scope")}
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold flex items-center gap-2">
+                          {!isNew && <span className="text-xs text-gray-400">☰</span>}
+                          {isNew ? `${scope.title || "New Scope"} (draft)` : (scope.title || "Scope")}
                         </div>
                         <div className="text-xs text-gray-500">
                           {scope.startDate || "No start"} - {scope.endDate || "No end"}
+                          {predecessorScope && <span className="ml-2 text-orange-600 font-semibold">→ after {predecessorScope.title}</span>}
                         </div>
                       </div>
                       {scheduledHoursByJobKeyDate ? (
@@ -1185,7 +1423,7 @@ export function ProjectScopesModal({
                         )
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
                 })
               )}
@@ -1220,37 +1458,41 @@ export function ProjectScopesModal({
               <input ref={titleInputRef} type="text" value={scopeDetail.title || ""} onChange={(e) => setScopeDetail(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-orange-500" />
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-semibold mb-1">Scope Color</label>
-              <div className="flex items-center gap-2">
-                <input 
-                  type="color" 
-                  value={scopeDetail.color || "#3B82F6"} 
-                  onChange={(e) => setScopeDetail(p => ({ ...p, color: e.target.value }))} 
-                  className="w-12 h-10 border rounded-md cursor-pointer"
-                  title="Choose a color for this scope"
-                />
-                <input 
-                  type="text" 
-                  value={scopeDetail.color || "#3B82F6"} 
-                  onChange={(e) => {
-                    const hex = e.target.value;
-                    if (/^#[0-9A-F]{6}$/i.test(hex)) {
-                      setScopeDetail(p => ({ ...p, color: hex }));
-                    }
-                  }} 
-                  placeholder="#3B82F6"
-                  className="flex-1 px-3 py-2 border rounded-md text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setScopeDetail(p => ({ ...p, color: undefined }))}
-                  className="px-3 py-2 border rounded-md text-xs font-semibold text-gray-600 hover:bg-gray-50"
-                >
-                  Reset
-                </button>
+            {activeScopeId && activeScopeId !== NEW_SCOPE_ID && (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold mb-1">Dependency Chain (Reorder in list above)</label>
+                {(() => {
+                  const activeIndex = visibleScopes.findIndex(s => s.id === activeScopeId);
+                  const predecessorScope = activeIndex > 0 ? visibleScopes[activeIndex - 1] : null;
+                  const successorScopes = visibleScopes.slice(activeIndex + 1);
+                  const hasDirectSuccessor = successorScopes.length > 0;
+                  
+                  return (
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-2 text-sm">
+                      {predecessorScope ? (
+                        <div>
+                          <span className="font-semibold text-gray-700">Starts after:</span>
+                          <div className="text-blue-700 font-semibold mt-1">{predecessorScope.title}</div>
+                          <p className="text-[10px] text-gray-500 mt-1">Drag scopes in the list above to change dependencies.</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="font-semibold text-gray-700">This is the first scope (no dependencies)</span>
+                          <p className="text-[10px] text-gray-500 mt-1">Drag other scopes below this one to make them dependent.</p>
+                        </div>
+                      )}
+                      {hasDirectSuccessor && (
+                        <div className="border-t border-blue-200 pt-2">
+                          <span className="font-semibold text-gray-700">Next in chain:</span>
+                          <div className="text-blue-700 text-xs mt-1">→ {successorScopes[0].title}</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
-            </div>
+            )}
+
 
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-2">Scheduling Mode</label>
@@ -1275,11 +1517,13 @@ export function ProjectScopesModal({
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-semibold mb-1">Start Date</label>
-                <input type="date" value={scopeDetail.startDate || ""} onChange={(e) => setScopeDetail(p => ({ ...p, startDate: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm" />
+                <input type="date" value={derivedTaskRange?.startDate || scopeDetail.startDate || ""} onChange={(e) => setScopeDetail(p => ({ ...p, startDate: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm" />
+                {derivedTaskRange && <p className="mt-1 text-[10px] text-gray-500">Driven by task dates.</p>}
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-1">End Date</label>
-                <input type="date" value={scopeDetail.endDate || ""} onChange={(e) => setScopeDetail(p => ({ ...p, endDate: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm" />
+                <input type="date" value={derivedTaskRange?.endDate || scopeDetail.endDate || ""} onChange={(e) => setScopeDetail(p => ({ ...p, endDate: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm" />
+                {derivedTaskRange && <p className="mt-1 text-[10px] text-gray-500">Driven by task dates.</p>}
               </div>
             </div>
 
@@ -1294,7 +1538,10 @@ export function ProjectScopesModal({
                     value={scopeDetail.manpower ?? ""} 
                     onChange={(e) => {
                       const mp = e.target.value ? parseFloat(e.target.value) : 0;
-                      const days = calculateWorkDays(scopeDetail.startDate, scopeDetail.endDate);
+                      const days = calculateWorkDays(
+                        derivedTaskRange?.startDate || scopeDetail.startDate,
+                        derivedTaskRange?.endDate || scopeDetail.endDate
+                      );
                       // Auto-calculate Budgeted Hours: Manpower * 10 hrs * Days
                       setScopeDetail(p => ({
                         ...p,
@@ -1324,17 +1571,18 @@ export function ProjectScopesModal({
                 </div>
               </div>
               
-              {scopeDetail.startDate && scopeDetail.endDate && (
+              {(derivedTaskRange?.startDate || scopeDetail.startDate) && (derivedTaskRange?.endDate || scopeDetail.endDate) && (
                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
                   {(() => {
                     const manpowerRequested = scopeDetail.manpower || 0;
                     const dailyUsage = manpowerRequested * 10;
                     const companyLimit = companyCapacity; 
+                    const effectiveStartDate = derivedTaskRange?.startDate || scopeDetail.startDate || '';
                     
                     // Sum up all OTHER scopes for the start date to give a real-time snapshot
                     let companyWideManpowerOnDay = 0;
-                    if (allScopes && scopeDetail.startDate) {
-                      const targetDateStr = scopeDetail.startDate;
+                    if (allScopes && effectiveStartDate) {
+                      const targetDateStr = effectiveStartDate;
                       Object.values(allScopes).forEach(projectScopes => {
                         projectScopes.forEach(s => {
                           // Skip the one we are currently editing to avoid double counting
@@ -1355,7 +1603,7 @@ export function ProjectScopesModal({
                     return (
                       <div className="space-y-1">
                         <div className="flex justify-between items-center text-sm font-bold text-green-800">
-                          <span>Total Company Availability ({scopeDetail.startDate}):</span>
+                          <span>Total Company Availability ({effectiveStartDate}):</span>
                           <span>{companyLimit} hrs ({companyLimit/10} heads)</span>
                         </div>
                         <div className="flex justify-between items-center text-xs text-gray-600">
@@ -1431,8 +1679,9 @@ export function ProjectScopesModal({
               <textarea value={scopeDetail.description || ""} onChange={(e) => setScopeDetail(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm" rows={4} />
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-semibold mb-2">Tasks</label>
-              <div className="grid grid-cols-[1fr_160px_90px_70px_auto] gap-2 mb-3">
+              <label className="block text-sm font-semibold mb-2">Tasks (Drag to Reorder Dependencies)</label>
+              <p className="text-xs text-gray-500 mb-3">Tasks follow in order within each scope. First task in next scope starts after last task in previous scope.</p>
+              <div className="grid grid-cols-[1fr_160px_90px_auto] gap-2 mb-3">
                 <div>
                   <label className="block text-xs font-semibold mb-1 text-gray-700">Task Name</label>
                   <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddTask()} className="w-full px-3 py-2 border rounded-md text-sm" />
@@ -1445,16 +1694,6 @@ export function ProjectScopesModal({
                   <label className="block text-xs font-semibold mb-1 text-gray-700"># of Days</label>
                   <input type="number" min="1" step="1" value={newTaskDays} onChange={(e) => setNewTaskDays(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-gray-700">Color</label>
-                  <input 
-                    type="color" 
-                    value={newTaskColor} 
-                    onChange={(e) => setNewTaskColor(e.target.value)} 
-                    className="w-full h-9 border rounded-md cursor-pointer"
-                    title="Task color"
-                  />
-                </div>
                 <div className="flex items-end">
                   <button type="button" onClick={handleAddTask} className="w-full px-4 py-2 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300">Add</button>
                 </div>
@@ -1462,47 +1701,82 @@ export function ProjectScopesModal({
               {scopeDetail.tasks && scopeDetail.tasks.length > 0 && (
                 <div className="space-y-2 bg-gray-50 p-3 rounded">
                   {scopeDetail.tasks.map((task, index) => {
-                    const taskName = extractTaskName(task);
-                    const taskColor = scopeDetail.taskColors?.[taskName] || '#A855F7';
-                    const isEditing = editingTaskColorIndex === index;
+                    const isDraggedOver = draggedTaskIndex !== null && draggedTaskIndex !== index;
+                    const predecessorTask = index > 0 ? scopeDetail.tasks[index - 1] : null;
+                    const predecessorName = predecessorTask ? extractTaskName(predecessorTask) : null;
+                    const parsedTask = parseTaskEntry(task);
                     
                     return (
-                      <div key={index} className="flex items-center justify-between gap-2 bg-white p-2 rounded border border-gray-200">
-                        <div className="text-sm flex-1">{task}</div>
-                        <div className="flex items-center gap-2">
-                          {isEditing ? (
-                            <>
-                              <input 
-                                type="color" 
-                                value={taskColor} 
-                                onChange={(e) => updateTaskColor(task, e.target.value)} 
-                                className="w-8 h-8 border rounded cursor-pointer"
-                              />
-                              <button 
-                                type="button" 
-                                onClick={() => setEditingTaskColorIndex(null)} 
-                                className="px-2 py-1 text-xs bg-gray-200 rounded hover:bg-gray-300"
-                              >
-                                Done
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <div 
-                                className="w-6 h-6 rounded border border-gray-300 cursor-pointer hover:border-gray-600" 
-                                style={{ backgroundColor: taskColor }}
-                                onClick={() => setEditingTaskColorIndex(index)}
-                                title="Click to edit color"
-                              />
-                              <button 
-                                type="button" 
-                                onClick={() => handleRemoveTask(index)} 
-                                className="text-red-500 hover:text-red-700 font-bold"
-                              >
-                                x
-                              </button>
-                            </>
+                      <div 
+                        key={index} 
+                        draggable={true}
+                        onDragStart={(e) => {
+                          setDraggedTaskIndex(index);
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(e) => {
+                          if (draggedTaskIndex !== null && draggedTaskIndex !== index) {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggedTaskIndex !== null && draggedTaskIndex !== index) {
+                            const newTasks = [...(scopeDetail.tasks || [])];
+                            const draggedTask = newTasks[draggedTaskIndex];
+                            newTasks.splice(draggedTaskIndex, 1);
+                            newTasks.splice(index, 0, draggedTask);
+                            setScopeDetail(p => ({ ...p, tasks: newTasks }));
+                          }
+                          setDraggedTaskIndex(null);
+                        }}
+                        onDragEnd={() => setDraggedTaskIndex(null)}
+                        className={`flex items-center justify-between gap-2 bg-white p-2 rounded border cursor-move transition-colors ${ 
+                          isDraggedOver ? 'border-orange-300 bg-orange-100/30' : 'border-gray-200'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400">☰</span>
+                            <div className="text-sm flex-1 truncate" title={parsedTask.name}>{parsedTask.name}</div>
+                          </div>
+                          <div className="ml-5 mt-1 grid grid-cols-[160px_90px] gap-2 max-w-[270px]">
+                            <input
+                              type="date"
+                              value={parsedTask.startDate}
+                              onChange={(e) => updateTaskDateMeta(index, { startDate: e.target.value })}
+                              className="px-2 py-1 border rounded text-xs"
+                            />
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={parsedTask.days ?? ''}
+                              onChange={(e) => {
+                                const nextDays = Number(e.target.value || 0);
+                                updateTaskDateMeta(index, {
+                                  days: Number.isFinite(nextDays) && nextDays > 0 ? nextDays : null,
+                                });
+                              }}
+                              className="px-2 py-1 border rounded text-xs"
+                              placeholder="Days"
+                            />
+                          </div>
+                          {predecessorName && (
+                            <div className="text-xs text-orange-600 font-semibold ml-5">
+                              → after {predecessorName}
+                            </div>
                           )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveTask(index)} 
+                            className="text-red-500 hover:text-red-700 font-bold"
+                          >
+                            x
+                          </button>
                         </div>
                       </div>
                     );

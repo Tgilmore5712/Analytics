@@ -1097,6 +1097,7 @@ model GanttV2Project {
 model GanttV2Scope {
   id            String                    @id @db.Text
   projectId     String                    @map("project_id")
+  predecessorScopeId String?              @map("predecessor_scope_id") @db.Text
   title         String                    @db.Text
   startDate     DateTime?                 @map("start_date") @db.Date
   endDate       DateTime?                 @map("end_date") @db.Date
@@ -1107,9 +1108,12 @@ model GanttV2Scope {
   updatedAt     DateTime                  @updatedAt @map("updated_at")
   
   project       GanttV2Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  predecessor   GanttV2Scope?             @relation("GanttV2ScopeDependency", fields: [predecessorScopeId], references: [id], onDelete: SetNull)
+  successors    GanttV2Scope[]            @relation("GanttV2ScopeDependency")
   scheduleEntries GanttV2ScheduleEntry[]
 
   @@index([projectId])
+  @@index([predecessorScopeId])
   @@map("gantt_v2_scopes")
 }
 

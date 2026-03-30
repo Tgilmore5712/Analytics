@@ -23,6 +23,7 @@ export interface Project {
 export interface Scope {
   id: string;
   title: string;
+  predecessorScopeId?: string | null;
   jobKey?: string;
   startDate?: string;
   endDate?: string;

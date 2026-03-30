@@ -72,7 +72,12 @@ export default function ConcreteOrdersSchedulePage() {
     try {
       const response = await fetch("/api/concrete-orders", { cache: "no-store" });
       if (!response.ok) {
-        throw new Error("Failed to fetch concrete orders");
+        const errorJson = await response.json().catch(() => ({}));
+        const errorMessage =
+          typeof errorJson?.error === "string" && errorJson.error
+            ? errorJson.error
+            : `HTTP ${response.status}`;
+        throw new Error(`Failed to fetch concrete orders: ${errorMessage}`);
       }
 
       const json = await response.json();

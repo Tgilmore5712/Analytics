@@ -4,6 +4,31 @@ import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 
 export const dynamic = 'force-dynamic';
 
+async function ensureConcreteOrdersTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS concrete_orders (
+      id TEXT PRIMARY KEY,
+      job_key TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      concrete_company TEXT NOT NULL,
+      date TEXT NOT NULL,
+      time TEXT NOT NULL,
+      total_yards DOUBLE PRECISION NOT NULL,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS concrete_orders_date_time_idx
+    ON concrete_orders (date, time)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS concrete_orders_job_key_idx
+    ON concrete_orders (job_key)
+  `);
+}
+
 type ConcreteOrderRow = {
   id: string;
   job_key: string;
@@ -30,6 +55,8 @@ function toResponseShape(row: ConcreteOrderRow) {
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureConcreteOrdersTable();
+
     const startDate = request.nextUrl.searchParams.get('startDate') || '';
     const endDate = request.nextUrl.searchParams.get('endDate') || '';
     const beforeTime = request.nextUrl.searchParams.get('beforeTime') || '';
@@ -66,6 +93,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureConcreteOrdersTable();
+
     const body = await request.json();
     const jobKey = (body?.jobKey || '').trim();
     const projectName = (body?.projectName || '').trim();
@@ -111,6 +140,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    await ensureConcreteOrdersTable();
+
     const body = await request.json();
     const id = (body?.id || '').trim();
 

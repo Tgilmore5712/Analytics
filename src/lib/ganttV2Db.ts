@@ -16,6 +16,7 @@ export type GanttV2ProjectRow = {
 export type GanttV2ScopeRow = {
   id: string;
   projectId: string;
+  predecessorScopeId: string | null;
   title: string;
   startDate: string | null;
   endDate: string | null;
@@ -107,6 +108,7 @@ export async function ensureGanttV2Schema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL REFERENCES gantt_v2_projects(id) ON DELETE CASCADE,
+        predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL,
         title TEXT NOT NULL,
         start_date DATE,
         end_date DATE,
@@ -128,9 +130,11 @@ export async function ensureGanttV2Schema(): Promise<void> {
         UNIQUE(scope_id, work_date)
       );
     `,
+    `ALTER TABLE gantt_v2_scopes ADD COLUMN IF NOT EXISTS predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL;`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_predecessor_scope_id ON gantt_v2_scopes(predecessor_scope_id);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_scope_id ON gantt_v2_schedule_entries(scope_id);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_work_date ON gantt_v2_schedule_entries(work_date);`,
@@ -500,6 +504,7 @@ export async function getGanttV2Scopes(projectId: string): Promise<GanttV2ScopeR
   const rows = await prisma.$queryRawUnsafe<Array<{
     id: string;
     project_id: string;
+    predecessor_scope_id: string | null;
     title: string;
     start_date: Date | null;
     end_date: Date | null;
@@ -512,6 +517,7 @@ export async function getGanttV2Scopes(projectId: string): Promise<GanttV2ScopeR
       SELECT
         s.id,
         s.project_id,
+        s.predecessor_scope_id,
         s.title,
         s.start_date,
         s.end_date,
@@ -538,6 +544,7 @@ export async function getGanttV2Scopes(projectId: string): Promise<GanttV2ScopeR
     return {
       id: row.id,
       projectId: row.project_id,
+      predecessorScopeId: row.predecessor_scope_id,
       title: row.title,
       startDate: row.start_date ? row.start_date.toISOString().split('T')[0] : null,
       endDate: row.end_date ? row.end_date.toISOString().split('T')[0] : null,

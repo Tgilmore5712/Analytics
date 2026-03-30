@@ -21,6 +21,7 @@ type ProjectRow = {
 type ScopeRow = {
   id: string;
   projectId: string;
+  predecessorScopeId: string | null;
   title: string;
   startDate: string | null;
   endDate: string | null;
@@ -69,18 +70,8 @@ const asDate = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const getScopeColor = (scope: ScopeRow): string => {
-  // Return custom color if set, otherwise use default blue
-  return scope.color || "#3B82F6"; // Default to blue-500
-};
-
-const getTaskColor = (taskName: string, scope: ScopeRow): string => {
-  // Check if task has a custom color, otherwise use scope color
-  if (scope.taskColors && scope.taskColors[taskName]) {
-    return scope.taskColors[taskName];
-  }
-  return scope.color || "#A855F7"; // Default to purple-500
-};
+const SCOPE_LINE_COLOR = "#6B7280"; // mid gray
+const TASK_LINE_COLOR = "#EA580C"; // orange
 
 const lightenColor = (hex: string, percent: number): string => {
   // Lighten a hex color by a percentage for hover states
@@ -315,44 +306,9 @@ export default function ProjectSchedulePage() {
     setLoading(true);
     try {
       await fetch("/api/gantt-v2/setup", { method: "POST" });
-      const [ganttRes, scopesRes] = await Promise.all([
-        fetch("/api/gantt-v2/projects"),
-        fetch("/api/project-scopes"),
-      ]);
+      const ganttRes = await fetch("/api/gantt-v2/projects");
       const json = await ganttRes.json();
-      let projectsData: ProjectRow[] = json?.data || [];
-
-      // Enrich gantt scopes with color data from project-scopes
-      if (scopesRes.ok) {
-        try {
-          const scopesJson = await scopesRes.json();
-          const allPersistedScopes: Array<{ jobKey?: string; title?: string; color?: string | null; taskColors?: unknown }> =
-            Array.isArray(scopesJson?.data) ? scopesJson.data : [];
-
-          if (allPersistedScopes.length > 0) {
-            const colorLookup = new Map<string, { color?: string | null; taskColors?: Record<string, string> | null }>();
-            allPersistedScopes.forEach((ps) => {
-              if (ps.color || ps.taskColors) {
-                const key = `${ps.jobKey || ""}~${(ps.title || "").toLowerCase().trim()}`;
-                colorLookup.set(key, { color: ps.color || null, taskColors: ps.taskColors as Record<string, string> | null });
-              }
-            });
-
-            projectsData = projectsData.map((project) => {
-              const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
-              const enrichedScopes = (project.scopes || []).map((scope) => {
-                const colorKey = `${jobKey}~${(scope.title || "").toLowerCase().trim()}`;
-                const colorData = colorLookup.get(colorKey);
-                if (!colorData) return scope;
-                return { ...scope, ...colorData };
-              });
-              return { ...project, scopes: enrichedScopes };
-            });
-          }
-        } catch {
-          // Non-critical: colors just won't show on initial load
-        }
-      }
+      const projectsData: ProjectRow[] = json?.data || [];
 
       setProjects(projectsData);
       // Collapse all projects by default
@@ -440,6 +396,7 @@ export default function ProjectSchedulePage() {
     if (!selectedProject?.scopes) return [];
     return selectedProject.scopes.map((scope) => ({
       id: scope.id,
+      predecessorScopeId: scope.predecessorScopeId || null,
       jobKey: `${selectedProject.customer || ""}~${selectedProject.projectNumber || ""}~${selectedProject.projectName || ""}`,
       title: scope.title,
       startDate: scope.startDate || "",
@@ -788,15 +745,15 @@ export default function ProjectSchedulePage() {
                                     }}
                                     className="absolute top-1.5 h-6 rounded text-white text-xs font-semibold px-2 flex items-center cursor-pointer"
                                     style={{
-                                      backgroundColor: getScopeColor(scope),
+                                      backgroundColor: SCOPE_LINE_COLOR,
                                       left: `calc(${(startIdx / timeline.length) * 100}% + 4px)`,
                                       width: `calc(${((endIdx - startIdx + 1) / timeline.length) * 100}% - 8px)`,
                                     }}
                                     onMouseEnter={(e) => {
-                                      e.currentTarget.style.backgroundColor = lightenColor(getScopeColor(scope), 10);
+                                      e.currentTarget.style.backgroundColor = lightenColor(SCOPE_LINE_COLOR, 10);
                                     }}
                                     onMouseLeave={(e) => {
-                                      e.currentTarget.style.backgroundColor = getScopeColor(scope);
+                                      e.currentTarget.style.backgroundColor = SCOPE_LINE_COLOR;
                                     }}
                                   >
                                     {scope.totalHours.toFixed(0)}h
@@ -814,7 +771,7 @@ export default function ProjectSchedulePage() {
                                       projectHours > 0 ? (alloc.hours * scopeHours) / projectHours : 0;
                                     if (scopeAllocationHours <= 0) return null;
 
-                                    const scopeColor = getScopeColor(scope);
+                                    const scopeColor = SCOPE_LINE_COLOR;
                                     return (
                                       <div
                                         key={`${scope.id}-${alloc.period}`}
@@ -886,15 +843,15 @@ export default function ProjectSchedulePage() {
                                           <div
                                             className="absolute top-1.5 h-5 rounded text-white text-[10px] font-semibold px-1.5 flex items-center"
                                             style={{
-                                              backgroundColor: getTaskColor(taskName, scope),
+                                              backgroundColor: TASK_LINE_COLOR,
                                               left: `calc(${(taskStartIdx / timeline.length) * 100}% + 4px)`,
                                               width: `calc(${((taskEndIdx - taskStartIdx + 1) / timeline.length) * 100}% - 8px)`,
                                             }}
                                             onMouseEnter={(e) => {
-                                              e.currentTarget.style.backgroundColor = lightenColor(getTaskColor(taskName, scope), 10);
+                                              e.currentTarget.style.backgroundColor = lightenColor(TASK_LINE_COLOR, 10);
                                             }}
                                             onMouseLeave={(e) => {
-                                              e.currentTarget.style.backgroundColor = getTaskColor(taskName, scope);
+                                              e.currentTarget.style.backgroundColor = TASK_LINE_COLOR;
                                             }}
                                             title={`${taskName} - ${startDate} (${days}d)`}
                                           >

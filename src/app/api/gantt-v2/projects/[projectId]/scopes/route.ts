@@ -59,16 +59,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ? null
       : Number(body.crewSize);
     const notes = (body?.notes || '').toString().trim() || null;
+    const predecessorScopeId = body?.predecessorScopeId
+      ? String(body.predecessorScopeId).trim()
+      : null;
 
     if (!title) {
       return NextResponse.json({ success: false, error: 'title is required' }, { status: 400 });
     }
 
+    if (predecessorScopeId) {
+      const predecessor = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM gantt_v2_scopes WHERE id = $1 AND project_id = $2 LIMIT 1`,
+        predecessorScopeId,
+        projectId
+      );
+      if (!predecessor || predecessor.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Predecessor scope must belong to the same project' },
+          { status: 400 }
+        );
+      }
+    }
+
     const id = crypto.randomUUID();
     await prisma.$executeRawUnsafe(
       `
-        INSERT INTO gantt_v2_scopes (id, project_id, title, start_date, end_date, total_hours, crew_size, notes)
-        VALUES ($1, $2, $3, CAST($4 AS date), CAST($5 AS date), $6, $7, $8);
+        INSERT INTO gantt_v2_scopes (id, project_id, title, start_date, end_date, total_hours, crew_size, notes, predecessor_scope_id)
+        VALUES ($1, $2, $3, CAST($4 AS date), CAST($5 AS date), $6, $7, $8, $9);
       `,
       id,
       projectId,
@@ -77,7 +94,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       endDate,
       Number.isFinite(totalHours) ? totalHours : 0,
       crewSize,
-      notes
+      notes,
+      predecessorScopeId
     );
 
     // Sync to ActiveSchedule if dates and hours are provided
@@ -98,6 +116,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       data: {
         id,
         projectId,
+        predecessorScopeId,
         title,
         startDate,
         endDate,

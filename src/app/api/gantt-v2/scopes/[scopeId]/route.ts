@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ensureGanttV2Schema } from '@/lib/ganttV2Db';
 import { syncGanttScopeToActiveSchedule } from '@/lib/scheduling/ganttScopeSync';
+import { cascadeDependentScopesFromLead } from '@/lib/scheduling/ganttDependencyCascade';
 import { SchedulingConflictError } from '@/lib/scheduling/dailyAssignment';
 
 export const dynamic = 'force-dynamic';
@@ -46,14 +47,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ? null
       : Number(body.crewSize);
     const notes = (body?.notes || '').toString().trim() || null;
+    const predecessorScopeId = body?.predecessorScopeId
+      ? String(body.predecessorScopeId).trim()
+      : null;
 
     if (!title) {
       return NextResponse.json({ success: false, error: 'title is required' }, { status: 400 });
     }
 
     // Get projectId before updating
-    const existingScope = await prisma.$queryRawUnsafe<Array<{ project_id: string }>>(
-      `SELECT project_id FROM gantt_v2_scopes WHERE id = $1 LIMIT 1`,
+    const existingScope = await prisma.$queryRawUnsafe<Array<{
+      project_id: string;
+      start_date: Date | null;
+      end_date: Date | null;
+    }>>(
+      `SELECT project_id, start_date, end_date FROM gantt_v2_scopes WHERE id = $1 LIMIT 1`,
       scopeId
     );
 
@@ -62,6 +70,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const projectId = existingScope[0].project_id;
+
+    if (predecessorScopeId === scopeId) {
+      return NextResponse.json({ success: false, error: 'Scope cannot depend on itself' }, { status: 400 });
+    }
+
+    if (predecessorScopeId) {
+      const predecessor = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM gantt_v2_scopes WHERE id = $1 AND project_id = $2 LIMIT 1`,
+        predecessorScopeId,
+        projectId
+      );
+      if (!predecessor || predecessor.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Predecessor scope must belong to the same project' },
+          { status: 400 }
+        );
+      }
+    }
 
     await prisma.$executeRawUnsafe(
       `
@@ -72,6 +98,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             total_hours = $5,
             crew_size = $6,
             notes = $7,
+            predecessor_scope_id = $8,
             updated_at = NOW()
         WHERE id = $1;
       `,
@@ -81,8 +108,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       endDate,
       Number.isFinite(totalHours) ? totalHours : 0,
       crewSize,
-      notes
+      notes,
+      predecessorScopeId
     );
+
+    const previousStartDate = existingScope[0].start_date
+      ? existingScope[0].start_date.toISOString().slice(0, 10)
+      : null;
+    const previousEndDate = existingScope[0].end_date
+      ? existingScope[0].end_date.toISOString().slice(0, 10)
+      : null;
+    const didDatesChange = previousStartDate !== startDate || previousEndDate !== endDate;
 
     // Sync to ActiveSchedule
     await syncScopeToActiveSchedule(
@@ -96,7 +132,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     );
     console.log('[PUT] Scope sync complete');
 
-    return NextResponse.json({ success: true });
+    let cascadeUpdates: Array<{
+      scopeId: string;
+      oldStartDate: string | null;
+      oldEndDate: string | null;
+      newStartDate: string;
+      newEndDate: string;
+    }> = [];
+
+    if (didDatesChange && endDate) {
+      cascadeUpdates = await cascadeDependentScopesFromLead({
+        projectId,
+        leadScopeId: scopeId,
+      });
+    }
+
+    return NextResponse.json({ success: true, cascadeUpdates });
   } catch (error) {
     if (error instanceof SchedulingConflictError) {
       return NextResponse.json(
