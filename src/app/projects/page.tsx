@@ -101,18 +101,13 @@ function ProjectsContent() {
       let projects = (projData.success && Array.isArray(projData.data)) ? projData.data : [];
       
       // Filter projects: 
-      // 1. Must have a Procore ID (stored in customFields)
-      // 2. Exclude "Lost" (Optional: adjust as needed)
-      // 3. Respect archived filter
+      // 1. Exclude "Lost" (Optional: adjust as needed)
+      // 2. Respect archived filter
       projects = projects.filter((p: any) => {
-        const customFields = p.customFields && typeof p.customFields === 'object' ? p.customFields : {};
-        const hasProcoreId = !!(customFields.procoreId || customFields.bidBoardId);
-        
         // Loosen status restriction to show Procore synced bids
         const isNotLost = p.status !== "Lost";
         const isActuallyArchived = p.projectArchived === true;
         
-        if (!hasProcoreId) return false;
         if (!isNotLost) return false;
         if (!showArchived && isActuallyArchived) return false;
         
