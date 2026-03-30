@@ -67,15 +67,15 @@ export const GanttRow = memo(function GanttRow({
           </div>
         )}
       </div>
-      <div className="relative col-span-full" style={{ gridColumn: `2 / span ${unitsCount}` }}>
-        <div className="absolute inset-0 flex items-center">
+      <div className="relative col-span-full min-h-12" style={{ gridColumn: `2 / span ${unitsCount}` }}>
+        <div className="absolute inset-0 flex items-start pt-2">
           {isOutOfRange ? (
             <div className="text-[11px] text-gray-400 px-2">Out of range</div>
           ) : (
             <button
               type="button"
               onClick={() => onOpenTask(task)}
-              className={`h-8 rounded-md text-white text-xs font-semibold px-3 shadow-sm transition-colors ${
+              className={`rounded-md text-white text-xs font-semibold px-3 shadow-sm transition-colors whitespace-normal break-words inline-block text-left min-h-8 py-2 ${
                 task.type === "project" ? "bg-orange-500 hover:bg-orange-600" : "bg-blue-500 hover:bg-blue-600"
               }`}
               style={{ marginLeft: left, width }}
@@ -84,7 +84,6 @@ export const GanttRow = memo(function GanttRow({
             </button>
           )}
         </div>
-        <div className="h-12"></div>
       </div>
     </div>
   );
