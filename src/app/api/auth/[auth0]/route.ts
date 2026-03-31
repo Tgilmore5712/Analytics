@@ -7,7 +7,18 @@ function isSafeReturnToPath(value: string | null): value is string {
   if (value.startsWith('/api/auth')) return false;
   if (value === '/login' || value.startsWith('/login?')) return false;
   if (value === '/auth/start' || value.startsWith('/auth/start?')) return false;
-  if (value === '/auth/complete' || value.startsWith('/auth/complete?')) return false;
+  // /auth/complete is intentionally allowed — it is the post-auth signal page for
+  // Procore framed logins. Guard against double-nesting (/auth/complete returning
+  // to another /auth/complete) which would create a redirect cycle.
+  if (value === '/auth/complete') return false; // no returnTo provided — pointless
+  if (value.startsWith('/auth/complete?')) {
+    try {
+      const nested = new URLSearchParams(value.slice(value.indexOf('?'))).get('returnTo');
+      if (!nested || nested.startsWith('/auth/complete')) return false;
+    } catch {
+      return false;
+    }
+  }
   return true;
 }
 

@@ -14,7 +14,12 @@ export default function AuthCompletePage() {
     const params = new URLSearchParams(window.location.search);
     const returnTo = params.get("returnTo");
 
-    if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("/api/auth")) {
+    if (
+      returnTo &&
+      returnTo.startsWith("/") &&
+      !returnTo.startsWith("/api/auth") &&
+      !returnTo.startsWith("/auth/complete")
+    ) {
       return returnTo;
     }
 
