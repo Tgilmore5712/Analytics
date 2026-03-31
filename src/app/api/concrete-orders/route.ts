@@ -138,6 +138,63 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    await ensureConcreteOrdersTable();
+
+    const body = await request.json();
+    const id = (body?.id || '').trim();
+    const concreteCompany = (body?.concreteCompany || '').trim();
+    const date = (body?.date || '').trim();
+    const time = (body?.time || '').trim();
+    const totalYards = Number(body?.totalYards || 0);
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'id is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!concreteCompany || !date || !time || !Number.isFinite(totalYards) || totalYards <= 0) {
+      return NextResponse.json(
+        { success: false, error: 'concreteCompany, date, time, and totalYards are required' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.$executeRaw`
+      UPDATE concrete_orders
+      SET concrete_company = ${concreteCompany},
+          date = ${date},
+          time = ${time},
+          total_yards = ${totalYards}
+      WHERE id = ${id}
+    `;
+
+    const rows = await prisma.$queryRaw<ConcreteOrderRow[]>`
+      SELECT id, job_key, project_name, concrete_company, date, time, total_yards, created_at
+      FROM concrete_orders
+      WHERE id = ${id}
+    `;
+
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: toResponseShape(rows[0]) });
+  } catch (error) {
+    console.error('Failed to update concrete order:', error);
+    return NextResponse.json(
+      { success: false, error: `Failed to update concrete order: ${getErrorMessage(error)}` },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     await ensureConcreteOrdersTable();
