@@ -44,12 +44,26 @@ function LoginContent() {
       setStatus("Click below to sign in.");
     }
 
-    const handleAuthComplete = () => {
+    const handleAuthComplete = async () => {
       if (pollRef.current) {
         window.clearInterval(pollRef.current);
         pollRef.current = null;
       }
       setError(null);
+      // Verify the session cookie is reachable in this browsing context before
+      // redirecting.  On mobile Safari (iOS ITP), third-party cookies are blocked
+      // inside cross-site iframes, so even after a successful login the session
+      // is invisible here.  In that case, tell the user to use the tab that
+      // already has the app open rather than looping back to /login.
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (!res.ok) {
+          setStatus("Login complete! Please continue in the app tab that just opened.");
+          return;
+        }
+      } catch {
+        // Network error — attempt the redirect optimistically.
+      }
       setStatus("Login complete. Reloading embedded app...");
       window.location.replace(returnTo || "/");
     };
