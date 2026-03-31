@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProjectScopesModal } from "@/app/project-schedule/components/ProjectScopesModal";
-import { ProjectInfo, Scope } from "@/types";
+import { ProjectInfo, Scope, ScheduleTask } from "@/types";
 
 type ProjectRow = {
   id: string;
@@ -28,7 +28,7 @@ type ScopeRow = {
   totalHours: number;
   crewSize: number | null;
   notes: string | null;
-  tasks?: string[];
+  tasks?: Array<string | ScheduleTask>;
   color?: string; // Hex color code for scope
   taskColors?: Record<string, string>; // Map of task names to color codes
   scheduledHours: number;
@@ -124,7 +124,18 @@ export default function ProjectSchedulePage() {
     setExpandedScopes(newExpanded);
   };
 
-  const parseTaskMetadata = (taskString: string) => {
+  const parseTaskMetadata = (taskEntry: string | { name?: string; startDate?: string; days?: number | null }) => {
+    if (taskEntry && typeof taskEntry === 'object' && !Array.isArray(taskEntry)) {
+      const taskName = String(taskEntry.name || '').trim();
+      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(taskEntry.startDate || '').trim())
+        ? String(taskEntry.startDate || '').trim()
+        : null;
+      const daysRaw = Number(taskEntry.days || 0);
+      const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.round(daysRaw) : 0;
+      return { taskName: taskName || 'Task', startDate, days };
+    }
+
+    const taskString = String(taskEntry || '');
     // Extract metadata from format: "[YYYY-MM-DD | Nd] Task Name"
     const match = taskString.match(/^\[([^\]]+)\]\s*(.+)$/);
     if (!match) {
@@ -306,13 +317,71 @@ export default function ProjectSchedulePage() {
     setLoading(true);
     try {
       await fetch("/api/gantt-v2/setup", { method: "POST" });
-      const ganttRes = await fetch("/api/gantt-v2/projects");
+      const [ganttRes, metadataRes] = await Promise.all([
+        fetch("/api/gantt-v2/projects"),
+        fetch("/api/project-scopes"),
+      ]);
       const json = await ganttRes.json();
-      const projectsData: ProjectRow[] = json?.data || [];
+      const metadataJson = await metadataRes.json().catch(() => ({ success: false, data: [] }));
 
-      setProjects(projectsData);
+      const projectsData: ProjectRow[] = json?.data || [];
+      const metadataScopes: Array<{
+        id?: string;
+        jobKey?: string;
+        title?: string;
+        startDate?: string | null;
+        endDate?: string | null;
+        tasks?: Array<string | ScheduleTask>;
+      }> = Array.isArray(metadataJson?.data) ? metadataJson.data : [];
+
+      const normalized = (value: unknown) =>
+        String(value || "")
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const metadataByJobKey = new Map<string, typeof metadataScopes>();
+      metadataScopes.forEach((scope) => {
+        const key = String(scope.jobKey || "").trim();
+        if (!key) return;
+        const bucket = metadataByJobKey.get(key) || [];
+        bucket.push(scope);
+        metadataByJobKey.set(key, bucket);
+      });
+
+      const mergedProjects = projectsData.map((project) => {
+        const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
+        const metadataForProject = metadataByJobKey.get(jobKey) || [];
+
+        const mergedScopes = (project.scopes || []).map((scope) => {
+          const titleKey = normalized(scope.title);
+          const startKey = String(scope.startDate || "").trim();
+          const endKey = String(scope.endDate || "").trim();
+
+          const exact = metadataForProject.find((meta) =>
+            normalized(meta.title) === titleKey &&
+            String(meta.startDate || "").trim() === startKey &&
+            String(meta.endDate || "").trim() === endKey
+          );
+
+          const fallback = metadataForProject.find((meta) => normalized(meta.title) === titleKey);
+          const matched = exact || fallback;
+
+          return {
+            ...scope,
+            tasks: Array.isArray(matched?.tasks) ? matched!.tasks : (scope.tasks || []),
+          };
+        });
+
+        return {
+          ...project,
+          scopes: mergedScopes,
+        };
+      });
+
+      setProjects(mergedProjects);
       // Collapse all projects by default
-      setCollapsedProjects(new Set(projectsData.map((p: ProjectRow) => p.id)));
+      setCollapsedProjects(new Set(mergedProjects.map((p: ProjectRow) => p.id)));
     } finally {
       setLoading(false);
     }

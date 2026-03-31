@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 
-import { ProjectInfo, Scope } from "@/types";
+import { ConcreteOrderModal, type ConcreteOrderProjectRef } from "@/components/ConcreteOrderModal";
+import { ProjectInfo, Scope, ScheduleTask } from "@/types";
 
 type GanttProjectResponse = {
   id: string;
@@ -84,12 +85,10 @@ const calculateWorkDays = (startValue?: unknown, endValue?: unknown) => {
 };
 
 const computeScopeHours = (scope: Partial<Scope>) => {
-  // Priority 1: Use manually entered hours (total budgeted)
   const hoursRaw = scope.hours;
   const hoursValue = typeof hoursRaw === "number" ? hoursRaw : parseFloat(String(hoursRaw));
   if (Number.isFinite(hoursValue) && hoursValue > 0) return hoursValue;
 
-  // Priority 2: Fall back to manpower calculation if hours not set
   const manpowerRaw = scope.manpower;
   const manpowerValue = typeof manpowerRaw === "number" ? manpowerRaw : parseFloat(String(manpowerRaw));
   const days = calculateWorkDays(scope.startDate, scope.endDate);
@@ -112,12 +111,39 @@ type ParsedTaskEntry = {
   name: string;
   startDate: string;
   days: number | null;
+  manpower: number | null;
+  yards: number | null;
 };
 
-const parseTaskEntry = (taskString: string): ParsedTaskEntry => {
-  const match = taskString.match(/^\[(.*?)\]\s*(.+)$/);
+const LEGACY_TASK_REGEX = /^\[(.*?)\]\s*(.+)$/;
+
+const toOptionalPositiveNumber = (value: unknown): number | null => {
+  const numeric = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return numeric;
+};
+
+const toPositiveWholeDays = (value: unknown): number | null => {
+  const numeric = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return Math.round(numeric);
+};
+
+const parseTaskEntry = (taskEntry: string | ScheduleTask): ParsedTaskEntry => {
+  if (taskEntry && typeof taskEntry === 'object' && !Array.isArray(taskEntry)) {
+    return {
+      name: String(taskEntry.name || '').trim(),
+      startDate: /^\d{4}-\d{2}-\d{2}$/.test(String(taskEntry.startDate || '').trim()) ? String(taskEntry.startDate || '').trim() : '',
+      days: toPositiveWholeDays(taskEntry.days),
+      manpower: toOptionalPositiveNumber(taskEntry.manpower),
+      yards: toOptionalPositiveNumber(taskEntry.yards),
+    };
+  }
+
+  const taskString = String(taskEntry || '').trim();
+  const match = taskString.match(LEGACY_TASK_REGEX);
   if (!match) {
-    return { name: taskString.trim(), startDate: '', days: null };
+    return { name: taskString, startDate: '', days: null, manpower: null, yards: null };
   }
 
   const prefix = match[1] || '';
@@ -131,17 +157,59 @@ const parseTaskEntry = (taskString: string): ParsedTaskEntry => {
     name,
     startDate,
     days: Number.isFinite(daysValue || 0) && (daysValue || 0) > 0 ? Number(daysValue) : null,
+    manpower: null,
+    yards: null,
   };
 };
 
-const formatTaskEntry = ({ name, startDate, days }: ParsedTaskEntry): string => {
-  const dateText = /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : '';
-  const daysText = Number.isFinite(days || 0) && (days || 0) > 0 ? `${Math.round(days as number)}d` : '';
-  const prefix = [dateText, daysText].filter(Boolean).join(' | ');
-  return prefix ? `[${prefix}] ${name}` : name;
+const formatTaskEntry = ({ name, startDate, days, manpower, yards }: ParsedTaskEntry): ScheduleTask => {
+  const taskName = String(name || '').trim();
+  const parsedDays = toPositiveWholeDays(days);
+  const parsedManpower = toOptionalPositiveNumber(manpower);
+  const parsedYards = toOptionalPositiveNumber(yards);
+
+  return {
+    name: taskName,
+    startDate: /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : '',
+    days: parsedDays,
+    manpower: parsedManpower,
+    yards: parsedYards,
+  };
 };
 
-const calculateTaskDateRange = (tasks: string[]): { startDate: string; endDate: string } | null => {
+const normalizeTaskEntries = (tasks: Array<string | ScheduleTask> | undefined | null): ScheduleTask[] => {
+  if (!Array.isArray(tasks)) return [];
+  return tasks
+    .map((task) => formatTaskEntry(parseTaskEntry(task)))
+    .filter((task) => String(task.name || '').trim().length > 0);
+};
+
+const getTaskHours = (task: ScheduleTask): number => {
+  const manpower = toOptionalPositiveNumber(task.manpower);
+  const days = toPositiveWholeDays(task.days);
+  if (!Number.isFinite(manpower || 0) || !Number.isFinite(days || 0)) return 0;
+  if (!manpower || !days) return 0;
+  return manpower * 10 * days;
+};
+
+const calculateTaskRollups = (tasks: ScheduleTask[]): { manpower: number; hours: number } => {
+  const normalized = normalizeTaskEntries(tasks);
+  const manpower = normalized.reduce((sum, task) => sum + (toOptionalPositiveNumber(task.manpower) || 0), 0);
+  const hours = normalized.reduce((sum, task) => sum + getTaskHours(task), 0);
+  return { manpower, hours };
+};
+
+const hasCompleteTaskInputs = (tasks: ScheduleTask[]): boolean => {
+  const normalized = normalizeTaskEntries(tasks);
+  if (normalized.length === 0) return false;
+  return normalized.every((task) => {
+    const manpower = toOptionalPositiveNumber(task.manpower);
+    const days = toPositiveWholeDays(task.days);
+    return Number.isFinite(manpower || 0) && Number.isFinite(days || 0) && (manpower || 0) > 0 && (days || 0) > 0;
+  });
+};
+
+const calculateTaskDateRange = (tasks: Array<string | ScheduleTask>): { startDate: string; endDate: string } | null => {
   const datedTasks = tasks
     .map(parseTaskEntry)
     .filter((task) => /^\d{4}-\d{2}-\d{2}$/.test(task.startDate));
@@ -191,6 +259,7 @@ export function ProjectScopesModal({
   const [projectBudgetHours, setProjectBudgetHours] = useState<number | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [draggedTaskIndex, setDraggedTaskIndex] = useState<number | null>(null);
+  const [expandedScopeRows, setExpandedScopeRows] = useState<Set<string>>(new Set());
   const [scopeDetail, setScopeDetail] = useState<Partial<Scope>>({
     title: "",
     predecessorScopeId: null,
@@ -206,6 +275,15 @@ export function ProjectScopesModal({
   const [newTask, setNewTask] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskDays, setNewTaskDays] = useState("");
+  const [newTaskManpower, setNewTaskManpower] = useState("");
+  const [newTaskYards, setNewTaskYards] = useState("");
+  const [concreteModalTarget, setConcreteModalTarget] = useState<{
+    mode: "new-task" | "existing-task";
+    taskIndex?: number;
+    taskLabel?: string;
+    date?: string;
+    yards?: number | null;
+  } | null>(null);
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
   const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
@@ -276,9 +354,31 @@ export function ProjectScopesModal({
     return `${customer}~${projectNumber}~${projectName}`;
   }, [project.customer, project.jobKey, project.projectName, project.projectNumber]);
 
+  const concreteProjectRef = useMemo<ConcreteOrderProjectRef>(() => ({
+    jobKey: resolvedJobKey || project.jobKey,
+    projectName: project.projectName,
+    customer: project.customer,
+    projectNumber: project.projectNumber,
+  }), [project.customer, project.jobKey, project.projectName, project.projectNumber, resolvedJobKey]);
+
   const dateKey = (value: unknown) => String(value || "").trim();
   const scopeMatchKey = (title: unknown, startDate: unknown, endDate: unknown) =>
     `${normalize(String(title || ""))}|${dateKey(startDate)}|${dateKey(endDate)}`;
+  const scopeMatchesSelectedDate = (scope: Partial<Scope>, targetDate: string | null | undefined) => {
+    const date = dateKey(targetDate);
+    if (!date) return false;
+
+    if (scope.schedulingMode === 'specific-days' && Array.isArray(scope.selectedDays)) {
+      return scope.selectedDays.some((entry) => dateKey(entry?.date) === date);
+    }
+
+    const start = dateKey(scope.startDate);
+    const end = dateKey(scope.endDate);
+    if (!start && !end) return false;
+    const rangeStart = start || date;
+    const rangeEnd = end || date;
+    return date >= rangeStart && date <= rangeEnd;
+  };
 
   // Never let a failed canonical lookup hide already-known scopes from the grid.
   const effectiveScopes =
@@ -606,24 +706,63 @@ export function ProjectScopesModal({
   useEffect(() => {
     if (isCreatingNewScope) return;
 
-    if (selectedScopeId) {
-      setIsCreatingNewScope(false);
-      setActiveScopeId(selectedScopeId);
-      return;
-    }
+    const resolveToEffectiveScopeId = () => {
+      if (selectedScopeId) {
+        const direct = effectiveScopes.find((scope) => scope.id === selectedScopeId);
+        if (direct) return direct.id;
 
-    if (!selectedScopeTitle) return;
-    const match = effectiveScopes.find(
-      (scope) => normalize(scope.title) === normalize(selectedScopeTitle)
-    );
-    if (match) {
+        const sourceScope = identityFallbackScopes.find((scope) => scope.id === selectedScopeId);
+        if (sourceScope) {
+          const exactComposite = effectiveScopes.find(
+            (scope) => scopeMatchKey(scope.title, scope.startDate, scope.endDate) === scopeMatchKey(sourceScope.title, sourceScope.startDate, sourceScope.endDate)
+          );
+          if (exactComposite) return exactComposite.id;
+
+          const matchingTitles = effectiveScopes.filter(
+            (scope) => normalize(scope.title) === normalize(sourceScope.title)
+          );
+
+          const datedTitleMatch = selectedScheduleDate
+            ? matchingTitles.find((scope) => scopeMatchesSelectedDate(scope, selectedScheduleDate))
+            : null;
+          if (datedTitleMatch) return datedTitleMatch.id;
+
+          if (matchingTitles.length === 1) return matchingTitles[0].id;
+        }
+      }
+
+      if (selectedScopeTitle) {
+        const matchingTitles = effectiveScopes.filter(
+          (scope) => normalize(scope.title) === normalize(selectedScopeTitle)
+        );
+
+        const datedTitleMatch = selectedScheduleDate
+          ? matchingTitles.find((scope) => scopeMatchesSelectedDate(scope, selectedScheduleDate))
+          : null;
+        if (datedTitleMatch) return datedTitleMatch.id;
+
+        if (matchingTitles.length === 1) return matchingTitles[0].id;
+      }
+
+      return null;
+    };
+
+    const resolvedScopeId = resolveToEffectiveScopeId();
+    if (resolvedScopeId) {
       setIsCreatingNewScope(false);
-      setActiveScopeId(match.id);
+      setActiveScopeId(resolvedScopeId);
       return;
     }
 
     setActiveScopeId(null);
-  }, [selectedScopeId, selectedScopeTitle, effectiveScopes, isCreatingNewScope]);
+  }, [
+    selectedScopeId,
+    selectedScopeTitle,
+    selectedScheduleDate,
+    effectiveScopes,
+    identityFallbackScopes,
+    isCreatingNewScope,
+  ]);
 
   useEffect(() => {
     loadCanonicalScopes().catch((error) => {
@@ -685,25 +824,30 @@ export function ProjectScopesModal({
     if (!scope) return;
 
     const normalizedSchedulingMode = scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
+    const normalizedTasks = normalizeTaskEntries(scope.tasks);
+    const taskRollups = calculateTaskRollups(normalizedTasks);
     const selectedDayEntry =
       normalizedSchedulingMode === 'specific-days' && selectedScheduleDate
         ? (Array.isArray(scope.selectedDays)
             ? scope.selectedDays.find((entry: any) => String(entry?.date || '').trim() === selectedScheduleDate)
             : null)
         : null;
+    const canUseTaskRollups = hasCompleteTaskInputs(normalizedTasks);
+    const fallbackManpower = toOptionalPositiveNumber(scope.manpower);
+    const fallbackHours = getEffectiveScopeHours(scope);
 
     setScopeDetail({
       title: scope.title || "",
       predecessorScopeId: scope.predecessorScopeId || null,
       startDate: scope.startDate || "",
       endDate: scope.endDate || "",
-      manpower: scope.manpower,
+      manpower: canUseTaskRollups && taskRollups.manpower > 0 ? taskRollups.manpower : (fallbackManpower ?? undefined),
       hours:
         normalizedSchedulingMode === 'specific-days' && dayEditMode && selectedDayEntry
           ? Number(selectedDayEntry.hours || 0)
-          : getEffectiveScopeHours(scope),
+          : (canUseTaskRollups && taskRollups.hours > 0 ? taskRollups.hours : fallbackHours),
       description: scope.description || "",
-      tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
+      tasks: normalizedTasks,
       color: scope.color,
       taskColors: (scope.taskColors as Record<string, string>) || {},
       schedulingMode: normalizedSchedulingMode,
@@ -714,46 +858,59 @@ export function ProjectScopesModal({
   const handleAddTask = () => {
     const trimmed = newTask.trim();
     if (!trimmed) return;
-    const parsedDays = Number(newTaskDays || 0);
-    const hasDays = Number.isFinite(parsedDays) && parsedDays > 0;
     const taskEntry = formatTaskEntry({
       name: trimmed,
       startDate: newTaskDate ? newTaskDate : "",
-      days: hasDays ? Math.round(parsedDays) : null,
+      days: toPositiveWholeDays(newTaskDays),
+      manpower: toOptionalPositiveNumber(newTaskManpower),
+      yards: toOptionalPositiveNumber(newTaskYards),
     });
-    
+
+    const existingTasks = normalizeTaskEntries(scopeDetail.tasks);
+    const nextTasks = [...existingTasks, taskEntry];
+    const rollups = calculateTaskRollups(nextTasks);
+
     setScopeDetail((prev) => ({
       ...prev,
-      tasks: [...(prev.tasks || []), taskEntry],
+      tasks: nextTasks,
+      manpower: rollups.manpower > 0 ? rollups.manpower : undefined,
+      hours: rollups.hours > 0 ? rollups.hours : undefined,
     }));
     setNewTask("");
     setNewTaskDate("");
     setNewTaskDays("");
+    setNewTaskManpower("");
+    setNewTaskYards("");
   };
 
   const handleRemoveTask = (index: number) => {
     setScopeDetail((prev) => {
-      const taskToRemove = prev.tasks?.[index];
-      const taskName = taskToRemove?.replace(/^\[.*?\]\s*/, '') || '';
+      const normalizedTasks = normalizeTaskEntries(prev.tasks);
+      const taskToRemove = normalizedTasks[index];
+      const taskName = (taskToRemove?.name || '').trim();
       
       const updatedTaskColors = { ...(prev.taskColors || {}) };
       delete updatedTaskColors[taskName];
+      const nextTasks = normalizedTasks.filter((_, i) => i !== index);
+      const rollups = calculateTaskRollups(nextTasks);
       
       return {
         ...prev,
-        tasks: prev.tasks?.filter((_, i) => i !== index) || [],
+        tasks: nextTasks,
+        manpower: rollups.manpower > 0 ? rollups.manpower : undefined,
+        hours: rollups.hours > 0 ? rollups.hours : undefined,
         taskColors: updatedTaskColors,
       };
     });
   };
 
-  const extractTaskName = (taskString: string): string => {
-    return parseTaskEntry(taskString).name || taskString;
+  const extractTaskName = (taskEntry: string | ScheduleTask): string => {
+    return parseTaskEntry(taskEntry).name || String(taskEntry || '');
   };
 
-  const updateTaskDateMeta = (index: number, next: { startDate?: string; days?: number | null }) => {
+  const updateTaskDateMeta = (index: number, next: Partial<ParsedTaskEntry>) => {
     setScopeDetail((prev) => {
-      const currentTasks = Array.isArray(prev.tasks) ? [...prev.tasks] : [];
+      const currentTasks = normalizeTaskEntries(prev.tasks);
       const existing = currentTasks[index];
       if (!existing) return prev;
 
@@ -764,6 +921,9 @@ export function ProjectScopesModal({
         ...parsed,
         startDate: typeof next.startDate === 'string' ? next.startDate : parsed.startDate,
         days: next.days === undefined ? parsed.days : next.days,
+        name: typeof next.name === 'string' ? next.name : parsed.name,
+        manpower: next.manpower === undefined ? parsed.manpower : next.manpower,
+        yards: next.yards === undefined ? parsed.yards : next.yards,
       };
 
       const calcEndDate = (task: ParsedTaskEntry): string | null => {
@@ -803,7 +963,14 @@ export function ProjectScopesModal({
         currentTasks[i] = formatTaskEntry(parsedTasks[i]);
       }
 
-      return { ...prev, tasks: currentTasks };
+      const rollups = calculateTaskRollups(currentTasks);
+
+      return {
+        ...prev,
+        tasks: currentTasks,
+        manpower: rollups.manpower > 0 ? rollups.manpower : undefined,
+        hours: rollups.hours > 0 ? rollups.hours : undefined,
+      };
     });
   };
 
@@ -820,9 +987,45 @@ export function ProjectScopesModal({
     : [];
 
   const derivedTaskRange = useMemo(() => {
-    const tasks = Array.isArray(scopeDetail.tasks) ? scopeDetail.tasks : [];
+    const tasks = normalizeTaskEntries(scopeDetail.tasks);
     return calculateTaskDateRange(tasks);
   }, [scopeDetail.tasks]);
+
+  const derivedTaskRollups = useMemo(() => {
+    const tasks = normalizeTaskEntries(scopeDetail.tasks);
+    return calculateTaskRollups(tasks);
+  }, [scopeDetail.tasks]);
+
+  const canUseDerivedTaskRollups = useMemo(() => {
+    const tasks = normalizeTaskEntries(scopeDetail.tasks);
+    return hasCompleteTaskInputs(tasks);
+  }, [scopeDetail.tasks]);
+
+  const selectedDayHoursForDisplay = useMemo(() => {
+    if (!dayEditMode) return 0;
+    if (scopeDetail.schedulingMode === 'specific-days' && selectedScheduleDate) {
+      const selectedEntry = selectedDays.find((entry) => entry.date === selectedScheduleDate);
+      if (selectedEntry && Number.isFinite(selectedEntry.hours) && selectedEntry.hours > 0) {
+        return Number(selectedEntry.hours);
+      }
+    }
+    if (typeof selectedScheduledHours === 'number' && Number.isFinite(selectedScheduledHours) && selectedScheduledHours > 0) {
+      return Number(selectedScheduledHours);
+    }
+    return 0;
+  }, [dayEditMode, scopeDetail.schedulingMode, selectedScheduleDate, selectedDays, selectedScheduledHours]);
+
+  const displayedSummaryHours = useMemo(() => {
+    if (selectedDayHoursForDisplay > 0) return selectedDayHoursForDisplay;
+    if (canUseDerivedTaskRollups && derivedTaskRollups.hours > 0) return derivedTaskRollups.hours;
+    return computeScopeHours(scopeDetail);
+  }, [selectedDayHoursForDisplay, canUseDerivedTaskRollups, derivedTaskRollups.hours, scopeDetail]);
+
+  const displayedSummaryManpower = useMemo(() => {
+    if (selectedDayHoursForDisplay > 0) return selectedDayHoursForDisplay / 10;
+    if (canUseDerivedTaskRollups && derivedTaskRollups.manpower > 0) return derivedTaskRollups.manpower;
+    return toOptionalPositiveNumber(scopeDetail.manpower) || 0;
+  }, [selectedDayHoursForDisplay, canUseDerivedTaskRollups, derivedTaskRollups.manpower, scopeDetail.manpower]);
 
   const getDayOfWeek = (dateKey: string) => {
     const [year, month, day] = dateKey.split('-').map(Number);
@@ -897,6 +1100,16 @@ export function ProjectScopesModal({
     }));
   };
 
+  const openConcreteOrderModal = (target: {
+    mode: "new-task" | "existing-task";
+    taskIndex?: number;
+    taskLabel?: string;
+    date?: string;
+    yards?: number | null;
+  }) => {
+    setConcreteModalTarget(target);
+  };
+
   const handleSaveScope = async () => {
     setIsSaving(true);
     try {
@@ -965,18 +1178,23 @@ export function ProjectScopesModal({
 
         // In day-edit mode we still persist full scope metadata from the modal,
         // including total budgeted hours/manpower for contiguous scopes.
+        const normalizedTasks = normalizeTaskEntries(scopeDetail.tasks);
+        const rollups = calculateTaskRollups(normalizedTasks);
+
+        const canUseRollupsForMetadata = hasCompleteTaskInputs(normalizedTasks);
+
         const metadataPayload: Record<string, any> = {
           jobKey: resolvedJobKey,
           title: scopeName || 'Scope',
           startDate: resolvedStartDate,
           endDate: resolvedEndDate,
           description: scopeDetail.description || '',
-          tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
+          tasks: normalizedTasks,
 
           schedulingMode: effectiveSchedulingMode,
           selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
-          manpower: scopeDetail.manpower,
-          hours: computeScopeHours(scopeDetail),
+          manpower: canUseRollupsForMetadata && rollups.manpower > 0 ? rollups.manpower : scopeDetail.manpower,
+          hours: canUseRollupsForMetadata && rollups.hours > 0 ? rollups.hours : computeScopeHours(scopeDetail),
         };
         // Keep existing predecessor relationship in day-edit mode
         if (activeScope?.predecessorScopeId) {
@@ -1003,6 +1221,9 @@ export function ProjectScopesModal({
         return;
       }
 
+      const normalizedTasks = normalizeTaskEntries(scopeDetail.tasks);
+      const rollups = calculateTaskRollups(normalizedTasks);
+
       const payload: Record<string, any> = {
         jobKey: resolvedJobKey,
         title: (scopeDetail.title || "Scope").trim() || "Scope",
@@ -1013,7 +1234,7 @@ export function ProjectScopesModal({
           ? (selectedDays[selectedDays.length - 1]?.date || scopeDetail.endDate || "")
           : (derivedTaskRange?.endDate || scopeDetail.endDate || ""),
         description: scopeDetail.description || "",
-        tasks: (scopeDetail.tasks || []).filter((task) => task.trim()),
+        tasks: normalizedTasks,
 
         schedulingMode: effectiveSchedulingMode,
         selectedDays: effectiveSchedulingMode === 'specific-days' ? selectedDays : [],
@@ -1041,12 +1262,16 @@ export function ProjectScopesModal({
         throw new Error('Scope start date is required.');
       }
 
+      const canUseRollupsForPayload = hasCompleteTaskInputs(normalizedTasks);
+
       // Only include manpower and hours if they have valid values
-      if (scopeDetail.manpower !== undefined && scopeDetail.manpower !== null) {
+      if (canUseRollupsForPayload && rollups.manpower > 0) {
+        payload.manpower = rollups.manpower;
+      } else if (scopeDetail.manpower !== undefined && scopeDetail.manpower !== null) {
         payload.manpower = scopeDetail.manpower;
       }
       
-      const computedHours = computeScopeHours(scopeDetail);
+      const computedHours = canUseRollupsForPayload && rollups.hours > 0 ? rollups.hours : computeScopeHours(scopeDetail);
       if (computedHours > 0) {
         payload.hours = computedHours;
       }
@@ -1284,8 +1509,9 @@ export function ProjectScopesModal({
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900">
+      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900">
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="text-lg font-bold">{project.projectName}</div>
@@ -1343,12 +1569,14 @@ export function ProjectScopesModal({
                 <div className="text-sm text-gray-500">No scopes yet.</div>
               ) : (
                 visibleScopes.map((scope, index) => {
+                  const scopeTasks = normalizeTaskEntries(scope.tasks);
                   const scopeHours = getEffectiveScopeHours(scope);
                   const scheduledHours = getScheduledHoursForScope(scope);
                   const unscheduledHours = Math.max(scopeHours - scheduledHours, 0);
                   const isNew = scope.id === NEW_SCOPE_ID;
                   const predecessorScope = !isNew && index > 0 ? visibleScopes[index - 1] : null;
                   const isDraggedOver = draggedScopeId && draggedScopeId !== scope.id;
+                  const isExpanded = expandedScopeRows.has(scope.id);
                   
                   return (
                   <div
@@ -1399,12 +1627,51 @@ export function ProjectScopesModal({
                       <div className="flex-1">
                         <div className="text-sm font-semibold flex items-center gap-2">
                           {!isNew && <span className="text-xs text-gray-400">☰</span>}
+                          {scopeTasks.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setExpandedScopeRows((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(scope.id)) {
+                                    next.delete(scope.id);
+                                  } else {
+                                    next.add(scope.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 hover:text-gray-800 hover:border-gray-400 bg-white"
+                              title={isExpanded ? 'Collapse tasks' : 'Expand tasks'}
+                            >
+                              <svg
+                                className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <span>Tasks</span>
+                              <span className="text-gray-400">({scopeTasks.length})</span>
+                            </button>
+                          )}
                           {isNew ? `${scope.title || "New Scope"} (draft)` : (scope.title || "Scope")}
                         </div>
                         <div className="text-xs text-gray-500">
                           {scope.startDate || "No start"} - {scope.endDate || "No end"}
                           {predecessorScope && <span className="ml-2 text-orange-600 font-semibold">→ after {predecessorScope.title}</span>}
                         </div>
+                        {isExpanded && scopeTasks.length > 0 && (
+                          <div className="mt-2 ml-4 space-y-1">
+                            {scopeTasks.map((task, taskIndex) => (
+                              <div key={`${scope.id}-preview-task-${taskIndex}`} className="text-xs text-gray-600 leading-tight">
+                                • {task.name}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {scheduledHoursByJobKeyDate ? (
                         <>
@@ -1535,26 +1802,12 @@ export function ProjectScopesModal({
                     type="number" 
                     min="0" 
                     step="0.5" 
-                    value={scopeDetail.manpower ?? ""} 
-                    onChange={(e) => {
-                      const mp = e.target.value ? parseFloat(e.target.value) : 0;
-                      const days = calculateWorkDays(
-                        derivedTaskRange?.startDate || scopeDetail.startDate,
-                        derivedTaskRange?.endDate || scopeDetail.endDate
-                      );
-                      // Auto-calculate Budgeted Hours: Manpower * 10 hrs * Days
-                      setScopeDetail(p => ({
-                        ...p,
-                        manpower: mp,
-                        hours: p.schedulingMode === 'specific-days'
-                          ? (p.hours ?? selectedDays.reduce((sum, entry) => sum + Number(entry.hours || 0), 0))
-                          : mp * 10 * days,
-                      }));
-                    }} 
-                    className="w-full px-3 py-2 border rounded-md text-sm bg-white font-bold" 
+                    value={displayedSummaryManpower > 0 ? displayedSummaryManpower : ""} 
+                    readOnly
+                    className="w-full px-3 py-2 border rounded-md text-sm bg-gray-100 font-bold" 
                     placeholder="e.g. 2.0" 
                   />
-                  <p className="mt-1 text-[10px] text-gray-400">Heads assigned</p>
+                  <p className="mt-1 text-[10px] text-gray-400">Auto-derived from task manpower</p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Budgeted Hours</label>
@@ -1562,19 +1815,19 @@ export function ProjectScopesModal({
                     type="number" 
                     min="0" 
                     step="0.5" 
-                    value={scopeDetail.hours ?? ""} 
-                    onChange={(e) => setScopeDetail(p => ({ ...p, hours: e.target.value ? parseFloat(e.target.value) : undefined }))} 
-                    className="w-full px-3 py-2 border rounded-md text-sm bg-white font-bold text-orange-900" 
+                    value={displayedSummaryHours > 0 ? displayedSummaryHours : ""} 
+                    readOnly
+                    className="w-full px-3 py-2 border rounded-md text-sm bg-gray-100 font-bold text-orange-900" 
                     placeholder="Total hours" 
                   />
-                  <p className="mt-1 text-[10px] text-gray-400">Total (Manpower x 10 x Days)</p>
+                  <p className="mt-1 text-[10px] text-gray-400">Total (sum of task manpower x 10 x days)</p>
                 </div>
               </div>
               
               {(derivedTaskRange?.startDate || scopeDetail.startDate) && (derivedTaskRange?.endDate || scopeDetail.endDate) && (
                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
                   {(() => {
-                    const manpowerRequested = scopeDetail.manpower || 0;
+                    const manpowerRequested = displayedSummaryManpower || 0;
                     const dailyUsage = manpowerRequested * 10;
                     const companyLimit = companyCapacity; 
                     const effectiveStartDate = derivedTaskRange?.startDate || scopeDetail.startDate || '';
@@ -1681,30 +1934,68 @@ export function ProjectScopesModal({
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-2">Tasks (Drag to Reorder Dependencies)</label>
               <p className="text-xs text-gray-500 mb-3">Tasks follow in order within each scope. First task in next scope starts after last task in previous scope.</p>
-              <div className="grid grid-cols-[1fr_160px_90px_auto] gap-2 mb-3">
+              <div className="mb-4">
+                <label className="block text-xs font-semibold mb-1.5 text-gray-700">Task Name</label>
+                <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddTask()} className="w-full px-3 py-2 border rounded-md text-sm" />
+              </div>
+              <div className="overflow-x-auto pb-2 mb-4">
+              <div className="grid min-w-[860px] grid-cols-[160px_110px_120px_120px_110px_auto] gap-4 items-end">
                 <div>
-                  <label className="block text-xs font-semibold mb-1 text-gray-700">Task Name</label>
-                  <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyPress={(e) => e.key === "Enter" && handleAddTask()} className="w-full px-3 py-2 border rounded-md text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-gray-700">Start Date</label>
+                  <label className="block text-xs font-semibold mb-1.5 text-gray-700">Start Date</label>
                   <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold mb-1 text-gray-700"># of Days</label>
+                  <label className="block text-xs font-semibold mb-1.5 text-gray-700"># of Days</label>
                   <input type="number" min="1" step="1" value={newTaskDays} onChange={(e) => setNewTaskDays(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
                 </div>
-                <div className="flex items-end">
-                  <button type="button" onClick={handleAddTask} className="w-full px-4 py-2 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300">Add</button>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-gray-700">Manpower</label>
+                  <input type="number" min="0" step="0.5" value={newTaskManpower} onChange={(e) => setNewTaskManpower(e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-gray-700">Hours</label>
+                  <input
+                    type="text"
+                    value={(() => {
+                      const mp = toOptionalPositiveNumber(newTaskManpower) || 0;
+                      const d = toPositiveWholeDays(newTaskDays) || 0;
+                      const hours = mp * 10 * d;
+                      return hours > 0 ? hours.toFixed(1) : '';
+                    })()}
+                    readOnly
+                    className="w-full px-3 py-2 border rounded-md text-sm bg-gray-100 text-gray-600"
+                    placeholder="Auto"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 text-gray-700">Yards</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={newTaskYards}
+                    onClick={() => openConcreteOrderModal({
+                      mode: "new-task",
+                      taskLabel: newTask.trim() || "New Task",
+                      date: newTaskDate,
+                      yards: toOptionalPositiveNumber(newTaskYards),
+                    })}
+                    className="w-full px-3 py-2 border rounded-md text-sm cursor-pointer bg-white"
+                    placeholder="Click to add order"
+                  />
+                </div>
+                <div className="flex items-end justify-start">
+                  <button type="button" onClick={handleAddTask} className="px-5 py-2.5 bg-gray-200 rounded-md text-sm font-semibold hover:bg-gray-300 whitespace-nowrap">Add</button>
                 </div>
               </div>
+              </div>
               {scopeDetail.tasks && scopeDetail.tasks.length > 0 && (
-                <div className="space-y-2 bg-gray-50 p-3 rounded">
-                  {scopeDetail.tasks.map((task, index) => {
+                <div className="space-y-2 bg-gray-50 p-3 rounded overflow-x-auto">
+                  {normalizeTaskEntries(scopeDetail.tasks).map((task, index) => {
                     const isDraggedOver = draggedTaskIndex !== null && draggedTaskIndex !== index;
                     const predecessorTask = index > 0 ? scopeDetail.tasks[index - 1] : null;
                     const predecessorName = predecessorTask ? extractTaskName(predecessorTask) : null;
                     const parsedTask = parseTaskEntry(task);
+                    const taskHours = getTaskHours(task);
                     
                     return (
                       <div 
@@ -1723,60 +2014,103 @@ export function ProjectScopesModal({
                         onDrop={(e) => {
                           e.preventDefault();
                           if (draggedTaskIndex !== null && draggedTaskIndex !== index) {
-                            const newTasks = [...(scopeDetail.tasks || [])];
+                            const newTasks = normalizeTaskEntries(scopeDetail.tasks);
                             const draggedTask = newTasks[draggedTaskIndex];
                             newTasks.splice(draggedTaskIndex, 1);
                             newTasks.splice(index, 0, draggedTask);
-                            setScopeDetail(p => ({ ...p, tasks: newTasks }));
+                            const rollups = calculateTaskRollups(newTasks);
+                            setScopeDetail((prev) => ({
+                              ...prev,
+                              tasks: newTasks,
+                              manpower: rollups.manpower > 0 ? rollups.manpower : undefined,
+                              hours: rollups.hours > 0 ? rollups.hours : undefined,
+                            }));
                           }
                           setDraggedTaskIndex(null);
                         }}
                         onDragEnd={() => setDraggedTaskIndex(null)}
-                        className={`flex items-center justify-between gap-2 bg-white p-2 rounded border cursor-move transition-colors ${ 
+                        className={`bg-white p-2 rounded border cursor-move transition-colors ${ 
                           isDraggedOver ? 'border-orange-300 bg-orange-100/30' : 'border-gray-200'
                         }`}
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-400">☰</span>
-                            <div className="text-sm flex-1 truncate" title={parsedTask.name}>{parsedTask.name}</div>
-                          </div>
-                          <div className="ml-5 mt-1 grid grid-cols-[160px_90px] gap-2 max-w-[270px]">
-                            <input
-                              type="date"
-                              value={parsedTask.startDate}
-                              onChange={(e) => updateTaskDateMeta(index, { startDate: e.target.value })}
-                              className="px-2 py-1 border rounded text-xs"
-                            />
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={parsedTask.days ?? ''}
-                              onChange={(e) => {
-                                const nextDays = Number(e.target.value || 0);
-                                updateTaskDateMeta(index, {
-                                  days: Number.isFinite(nextDays) && nextDays > 0 ? nextDays : null,
-                                });
-                              }}
-                              className="px-2 py-1 border rounded text-xs"
-                              placeholder="Days"
-                            />
+                        <div className="grid min-w-[860px] grid-cols-[18px_1fr_120px_80px_90px_95px_80px_auto] items-end gap-2">
+                          <span className="text-xs text-gray-400 pb-2">☰</span>
+                          <input
+                            type="text"
+                            value={parsedTask.name}
+                            onChange={(e) => updateTaskDateMeta(index, { name: e.target.value })}
+                            className="px-2 py-1 border rounded text-xs"
+                            placeholder="Task name"
+                          />
+                          <input
+                            type="date"
+                            value={parsedTask.startDate}
+                            onChange={(e) => updateTaskDateMeta(index, { startDate: e.target.value })}
+                            className="px-2 py-1 border rounded text-xs"
+                          />
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={parsedTask.days ?? ''}
+                            onChange={(e) => {
+                              const nextDays = Number(e.target.value || 0);
+                              updateTaskDateMeta(index, {
+                                days: Number.isFinite(nextDays) && nextDays > 0 ? nextDays : null,
+                              });
+                            }}
+                            className="px-2 py-1 border rounded text-xs"
+                            placeholder="Days"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={parsedTask.manpower ?? ''}
+                            onChange={(e) => {
+                              const nextValue = Number(e.target.value || 0);
+                              updateTaskDateMeta(index, {
+                                manpower: Number.isFinite(nextValue) && nextValue >= 0 ? nextValue : null,
+                              });
+                            }}
+                            className="px-2 py-1 border rounded text-xs"
+                            placeholder="Manpower"
+                          />
+                          <input
+                            type="text"
+                            value={taskHours > 0 ? taskHours.toFixed(1) : ''}
+                            readOnly
+                            className="px-2 py-1 border rounded text-xs bg-gray-100 text-gray-600"
+                            placeholder="Auto hours"
+                          />
+                          <input
+                            type="text"
+                            readOnly
+                            value={parsedTask.yards ?? ''}
+                            onClick={() => openConcreteOrderModal({
+                              mode: "existing-task",
+                              taskIndex: index,
+                              taskLabel: parsedTask.name,
+                              date: parsedTask.startDate,
+                              yards: parsedTask.yards,
+                            })}
+                            className="px-2 py-1 border rounded text-xs cursor-pointer bg-white"
+                            placeholder="Click for order"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTask(index)}
+                              className="text-red-500 hover:text-red-700 font-bold px-2 py-1"
+                            >
+                              x
+                            </button>
                           </div>
                           {predecessorName && (
-                            <div className="text-xs text-orange-600 font-semibold ml-5">
+                            <div className="text-xs text-orange-600 font-semibold ml-6 col-span-full">
                               → after {predecessorName}
                             </div>
                           )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button 
-                            type="button" 
-                            onClick={() => handleRemoveTask(index)} 
-                            className="text-red-500 hover:text-red-700 font-bold"
-                          >
-                            x
-                          </button>
                         </div>
                       </div>
                     );
@@ -1800,5 +2134,31 @@ export function ProjectScopesModal({
         </div>
       </div>
     </div>
+    <ConcreteOrderModal
+      isOpen={Boolean(concreteModalTarget)}
+      project={concreteModalTarget ? concreteProjectRef : null}
+      taskLabel={concreteModalTarget?.taskLabel || null}
+      initialDate={concreteModalTarget?.date || ""}
+      initialYards={concreteModalTarget?.yards ?? null}
+      onClose={() => setConcreteModalTarget(null)}
+      onSaved={(saved) => {
+        if (!concreteModalTarget) return;
+
+        if (concreteModalTarget.mode === "new-task") {
+          setNewTaskYards(String(saved.totalYards));
+          if (!newTaskDate) {
+            setNewTaskDate(saved.date);
+          }
+        } else if (typeof concreteModalTarget.taskIndex === "number") {
+          updateTaskDateMeta(concreteModalTarget.taskIndex, {
+            yards: saved.totalYards,
+            startDate: concreteModalTarget.date || saved.date,
+          });
+        }
+
+        setConcreteModalTarget(null);
+      }}
+    />
+    </>
   );
 }

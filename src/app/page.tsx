@@ -40,7 +40,7 @@ interface WeatherData {
 type ScopeWithTasks = {
   jobKey: string;
   title: string;
-  tasks: string[];
+  tasks: Array<string | { name?: string; startDate?: string; days?: number | null }>;
 };
 
 type ActiveScheduleEntry = {
@@ -293,8 +293,18 @@ function addDaysToDateKey(dateKey: string, daysToAdd: number): string {
   return toDateKey(date);
 }
 
-function isTaskScheduledOnDate(task: string, targetDateKey: string): boolean {
-  const match = task.match(TASK_WITH_DATE_REGEX);
+function isTaskScheduledOnDate(task: string | { startDate?: string; days?: number | null }, targetDateKey: string): boolean {
+  if (task && typeof task === "object" && !Array.isArray(task)) {
+    const startDate = String(task.startDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return false;
+    const daysRaw = Number(task.days || 0);
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.round(daysRaw) : 1;
+    const endDate = addDaysToDateKey(startDate, days - 1);
+    return targetDateKey >= startDate && targetDateKey <= endDate;
+  }
+
+  const taskText = String(task || "");
+  const match = taskText.match(TASK_WITH_DATE_REGEX);
   if (!match) return false;
 
   const startDate = match[1];
@@ -303,10 +313,15 @@ function isTaskScheduledOnDate(task: string, targetDateKey: string): boolean {
   return targetDateKey >= startDate && targetDateKey <= endDate;
 }
 
-function getTaskDisplayName(task: string): string {
-  const match = task.match(TASK_WITH_DATE_REGEX);
-  if (!match) return task;
-  return (match[3] || "").trim() || task;
+function getTaskDisplayName(task: string | { name?: string }): string {
+  if (task && typeof task === "object" && !Array.isArray(task)) {
+    return String(task.name || "").trim() || "Untitled Task";
+  }
+
+  const taskText = String(task || "");
+  const match = taskText.match(TASK_WITH_DATE_REGEX);
+  if (!match) return taskText;
+  return (match[3] || "").trim() || taskText;
 }
 
 function getMonthWeekStarts(monthStr: string): Date[] {

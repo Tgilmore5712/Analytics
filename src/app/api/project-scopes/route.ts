@@ -10,6 +10,14 @@ type SelectedDayEntry = {
   foreman: string | null;
 };
 
+type ScopeTaskEntry = {
+  name: string;
+  startDate?: string;
+  days?: number | null;
+  manpower?: number | null;
+  yards?: number | null;
+};
+
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function toSelectedDayEntries(value: unknown): SelectedDayEntry[] | null | undefined {
@@ -29,6 +37,42 @@ function toSelectedDayEntries(value: unknown): SelectedDayEntry[] | null | undef
 function getDateKeyWeekday(dateKey: string): number {
   const [y, m, d] = dateKey.split('-').map(Number);
   return new Date(y, m - 1, d).getDay();
+}
+
+function normalizeScopeTasks(value: unknown): ScopeTaskEntry[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!Array.isArray(value)) return null;
+
+  return value
+    .map((entry): ScopeTaskEntry | null => {
+      if (typeof entry === 'string') {
+        const trimmed = entry.trim();
+        if (!trimmed) return null;
+        return { name: trimmed };
+      }
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+
+      const row = entry as Record<string, unknown>;
+      const name = String(row.name || '').trim();
+      if (!name) return null;
+
+      const startDateRaw = String(row.startDate || '').trim();
+      const startDate = DATE_KEY_REGEX.test(startDateRaw) ? startDateRaw : undefined;
+
+      const daysRaw = Number(row.days);
+      const manpowerRaw = Number(row.manpower);
+      const yardsRaw = Number(row.yards);
+
+      return {
+        name,
+        ...(startDate ? { startDate } : {}),
+        ...(Number.isFinite(daysRaw) && daysRaw > 0 ? { days: Math.round(daysRaw) } : {}),
+        ...(Number.isFinite(manpowerRaw) && manpowerRaw >= 0 ? { manpower: manpowerRaw } : {}),
+        ...(Number.isFinite(yardsRaw) && yardsRaw >= 0 ? { yards: yardsRaw } : {}),
+      };
+    })
+    .filter((entry): entry is ScopeTaskEntry => Boolean(entry));
 }
 
 async function validateSpecificDays(entries: SelectedDayEntry[] | null, schedulingMode: 'contiguous' | 'specific-days') {
@@ -259,6 +303,7 @@ export async function POST(request: NextRequest) {
       schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
 
     const normalizedSelectedDays = toSelectedDayEntries(selectedDays) ?? null;
+    const normalizedTasks = normalizeScopeTasks(tasks) ?? null;
 
     if (!jobKey || !title) {
       return NextResponse.json(
@@ -284,7 +329,7 @@ export async function POST(request: NextRequest) {
         manpower: manpower !== undefined && manpower !== null ? manpower : null,
         hours: hours && hours > 0 ? hours : null,
         description: description || null,
-        tasks: tasks || null,
+        tasks: normalizedTasks,
         schedulingMode: normalizedSchedulingMode,
         selectedDays: normalizedSelectedDays,
       } as any,
@@ -362,6 +407,7 @@ export async function PUT(request: NextRequest) {
       selectedDays === undefined
         ? undefined
         : (toSelectedDayEntries(selectedDays) ?? null);
+    const normalizedTasks = normalizeScopeTasks(tasks);
 
     if (!id) {
       return NextResponse.json(
@@ -400,7 +446,7 @@ export async function PUT(request: NextRequest) {
         ...(manpower !== undefined && { manpower: manpower !== null ? manpower : null }),
         ...(hours !== undefined && { hours: hours && hours > 0 ? hours : null }),
         ...(description !== undefined && { description: description || null }),
-        ...(tasks !== undefined && { tasks: tasks || null }),
+        ...(tasks !== undefined && { tasks: normalizedTasks ?? null }),
         ...(normalizedSchedulingMode !== undefined && { schedulingMode: normalizedSchedulingMode }),
         ...(normalizedSelectedDays !== undefined && { selectedDays: normalizedSelectedDays }),
       } as any,

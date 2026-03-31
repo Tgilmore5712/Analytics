@@ -29,7 +29,7 @@ export interface Scope {
   endDate?: string;
   manpower?: number;
   description?: string;
-  tasks?: string[];
+  tasks?: Array<string | ScheduleTask>;
   color?: string; // Hex color code for scope (e.g., "#3B82F6")
   taskColors?: Record<string, string>; // Map of task names to color codes
   schedulingMode?: "contiguous" | "specific-days";
@@ -41,6 +41,14 @@ export interface Scope {
   sales?: number;
   cost?: number;
   hours?: number;
+}
+
+export interface ScheduleTask {
+  name: string;
+  startDate?: string;
+  days?: number | null;
+  manpower?: number | null;
+  yards?: number | null;
 }
 
 export interface Holiday {
@@ -75,7 +83,7 @@ export interface GanttTask {
   totalHours: number;
   manpower?: number;
   description?: string;
-  tasks?: string[];
+  tasks?: Array<string | ScheduleTask>;
   sales?: number;
   cost?: number;
   hours?: number;

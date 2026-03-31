@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ProjectScopesModal } from "@/app/project-schedule/components/ProjectScopesModal";
-import { type ProjectInfo, type Scope } from "@/types";
+import { type ProjectInfo, type Scope, type ScheduleTask } from "@/types";
 import { fetchJsonWithRetry } from "@/utils/fetchJsonWithRetry";
 
 interface WeekColumn {
@@ -43,6 +43,7 @@ interface ActiveScheduleEntry {
   scopeOfWork?: string;
   date: string;
   hours: number;
+  manpower?: number | null;
   foreman?: string | null;
   source?: string | null;
 }
@@ -88,6 +89,142 @@ type ColDef =
     };
 
 const PM_TITLES = ["Project Manager", "Lead Foreman / Project Manager", "Superintendent"];
+const HOURS_PER_FTE_DAY = 10;
+const HOURS_PER_FTE_WEEK = 50;
+
+function getHoursFromScheduleEntry(entry: ActiveScheduleEntry): number {
+  const hours = Number(entry.hours || 0);
+  if (Number.isFinite(hours) && hours > 0) {
+    return hours;
+  }
+
+  const manpower = Number(entry.manpower || 0);
+  if (Number.isFinite(manpower) && manpower > 0) {
+    return manpower * HOURS_PER_FTE_DAY;
+  }
+  return 0;
+}
+
+function getFteFromHours(hours: number, granularity: "day" | "week") {
+  return hours / (granularity === "week" ? HOURS_PER_FTE_WEEK : HOURS_PER_FTE_DAY);
+}
+
+function getScopeSpecificDayHours(scope: Scope | null | undefined, dateKey: string): number | null {
+  if (!scope || !Array.isArray(scope.selectedDays) || !dateKey) return null;
+  const match = scope.selectedDays.find((entry) => String(entry?.date || "").trim() === dateKey);
+  const hours = Number(match?.hours || 0);
+  if (!Number.isFinite(hours) || hours <= 0) return null;
+  return hours;
+}
+
+function normalizeTaskForLongTerm(task: string | ScheduleTask): ScheduleTask | null {
+  if (!task) return null;
+  if (typeof task === "object" && !Array.isArray(task)) {
+    const name = String(task.name || "").trim();
+    if (!name) return null;
+    return {
+      name,
+      startDate: String(task.startDate || "").trim(),
+      days: Number(task.days || 0) || null,
+      manpower: Number(task.manpower || 0) || null,
+      yards: Number(task.yards || 0) || null,
+    };
+  }
+
+  const raw = String(task).trim();
+  if (!raw) return null;
+  return { name: raw };
+}
+
+function getScopeTaskDayHours(scope: Scope | null | undefined, dateKey: string): number | null {
+  if (!scope || !Array.isArray(scope.tasks) || !dateKey) return null;
+
+  let totalHours = 0;
+
+  for (const rawTask of scope.tasks) {
+    const task = normalizeTaskForLongTerm(rawTask);
+    if (!task) continue;
+
+    const startDate = String(task.startDate || "").trim();
+    const days = Number(task.days || 0);
+    const manpower = Number(task.manpower || 0);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) continue;
+    if (!Number.isFinite(days) || days <= 0) continue;
+    if (!Number.isFinite(manpower) || manpower <= 0) continue;
+
+    const start = new Date(`${startDate}T00:00:00`);
+    if (isNaN(start.getTime())) continue;
+
+    for (let offset = 0; offset < days; offset += 1) {
+      const current = new Date(start);
+      current.setDate(current.getDate() + offset);
+      if (formatDateKey(current) === dateKey) {
+        totalHours += manpower * HOURS_PER_FTE_DAY;
+      }
+    }
+  }
+
+  return totalHours > 0 ? totalHours : null;
+}
+
+function getScopeContiguousDayHours(
+  scope: Scope | null | undefined,
+  dateKey: string,
+  paidHolidayByDate: Record<string, Holiday>
+): number | null {
+  if (!scope || scope.schedulingMode === "specific-days") return null;
+  const startDate = String(scope.startDate || "").trim();
+  const endDate = String(scope.endDate || "").trim();
+  const totalHours = Number(scope.hours || 0);
+
+  if (!startDate || !endDate) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return null;
+  if (!Number.isFinite(totalHours) || totalHours <= 0) return null;
+  if (dateKey < startDate || dateKey > endDate) return null;
+
+  const workingDates: string[] = [];
+  const current = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+
+  while (current <= end) {
+    const weekday = current.getDay();
+    const key = formatDateKey(current);
+    if (weekday >= 1 && weekday <= 5 && !paidHolidayByDate[key]) {
+      workingDates.push(key);
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  if (workingDates.length === 0) return null;
+  if (!workingDates.includes(dateKey)) return 0;
+
+  return totalHours / workingDates.length;
+}
+
+function getBestSpecificDayHours(
+  scopes: Scope[],
+  dateKey: string,
+  preferredScopeTitle?: string | null
+): number | null {
+  if (!Array.isArray(scopes) || scopes.length === 0 || !dateKey) return null;
+
+  const normalizedPreferred = String(preferredScopeTitle || "").trim().toLowerCase();
+  const scopesWithSpecificDay = scopes
+    .map((scope) => ({ scope, hours: getScopeSpecificDayHours(scope, dateKey) }))
+    .filter((row): row is { scope: Scope; hours: number } => Number.isFinite(row.hours || 0) && (row.hours || 0) > 0);
+
+  if (scopesWithSpecificDay.length === 0) return null;
+
+  const exactTitleMatch = normalizedPreferred
+    ? scopesWithSpecificDay.find((row) => String(row.scope.title || "").trim().toLowerCase() === normalizedPreferred)
+    : null;
+
+  if (exactTitleMatch) return exactTitleMatch.hours;
+
+  // If we cannot disambiguate by title, prefer the highest explicit day-hours to avoid under-allocation.
+  return scopesWithSpecificDay.reduce((max, row) => Math.max(max, row.hours), 0);
+}
 
 function isForemanRole(jobTitle?: string) {
   return (
@@ -218,7 +355,7 @@ export default function LongTermSchedulePage() {
       const startDate = currentWeekStart.toISOString().split("T")[0];
       const endDate = rangeEnd.toISOString().split("T")[0];
 
-      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson] = await Promise.all([
+      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson, scopesJson] = await Promise.all([
         fetchJsonWithRetry<{ data?: Employee[] }>("/api/short-term-schedule?action=employees", {
           fallback: { data: [] },
           label: "long-term employees",
@@ -249,6 +386,10 @@ export default function LongTermSchedulePage() {
           fallback: { data: [] },
           label: "long-term time off",
         }),
+        fetchJsonWithRetry<{ data?: Scope[] }>("/api/project-scopes", {
+          fallback: { data: [] },
+          label: "long-term project scopes",
+        }),
       ]);
 
       const employees: Employee[] = employeesJson?.data || [];
@@ -256,6 +397,20 @@ export default function LongTermSchedulePage() {
       const projects: Array<{ id?: string; customer?: string; projectNumber?: string; projectName?: string; projectManager?: string }> =
         projectsJson?.data || [];
       const pmAssignments: PMAssignment[] = pmAssignmentsJson?.data || [];
+      const allScopes: Scope[] = Array.isArray(scopesJson?.data) ? scopesJson.data : [];
+      const normalizedScopeTitle = (value?: string | null) =>
+        String(value || "")
+          .trim()
+          .toLowerCase();
+
+      const scopesByJobKeyLocal = allScopes.reduce<Record<string, Scope[]>>((acc, scope) => {
+        const key = String(scope.jobKey || "").trim();
+        if (!key) return acc;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(scope);
+        return acc;
+      }, {});
+      setScopesByJobKey(scopesByJobKeyLocal);
 
       const paidHolidayMap: Record<string, Holiday> = {};
       (holidaysJson?.data || []).forEach((holiday: Holiday) => {
@@ -381,7 +536,63 @@ export default function LongTermSchedulePage() {
           const dayAllocation = dayAllocations[dayKey];
 
           const scopeOfWork = entry.scopeOfWork || "Unnamed Scope";
-          const hours = Number(entry.hours || 0);
+          const assignmentScopes = scopesByJobKeyLocal[entry.jobKey] || [];
+          const matchingScopeByTitleAndDate = assignmentScopes.find((scope) => {
+            const sameTitle = normalizedScopeTitle(scope.title) === normalizedScopeTitle(entry.scopeOfWork || "Unnamed Scope");
+            if (!sameTitle) return false;
+            const start = String(scope.startDate || "").trim();
+            const end = String(scope.endDate || "").trim();
+            if (!start && !end) return true;
+            const rangeStart = start || entry.date;
+            const rangeEnd = end || entry.date;
+            return entry.date >= rangeStart && entry.date <= rangeEnd;
+          });
+          const matchingScopeByTitleOnly = assignmentScopes.find(
+            (scope) => normalizedScopeTitle(scope.title) === normalizedScopeTitle(entry.scopeOfWork || "Unnamed Scope")
+          );
+          const dateScopedMatches = assignmentScopes.filter((scope) => {
+            const start = String(scope.startDate || "").trim();
+            const end = String(scope.endDate || "").trim();
+            if (!start && !end) return false;
+            const rangeStart = start || entry.date;
+            const rangeEnd = end || entry.date;
+            return entry.date >= rangeStart && entry.date <= rangeEnd;
+          });
+          const matchingScopeByDateOnly = dateScopedMatches.length === 1 ? dateScopedMatches[0] : null;
+          const matchingScope =
+            matchingScopeByTitleAndDate ||
+            matchingScopeByTitleOnly ||
+            matchingScopeByDateOnly ||
+            (assignmentScopes.length === 1 ? assignmentScopes[0] : null);
+
+          const fallbackManpower = Number(matchingScope?.manpower || 0);
+          const taskDayHours =
+            getScopeTaskDayHours(matchingScope, entry.date) ||
+            assignmentScopes
+              .map((scope) => getScopeTaskDayHours(scope, entry.date))
+              .find((hours): hours is number => Number.isFinite(hours || 0) && (hours || 0) > 0) ||
+            null;
+          const specificDayHours =
+            getBestSpecificDayHours(assignmentScopes, entry.date, entry.scopeOfWork || "") ||
+            getScopeSpecificDayHours(matchingScope, entry.date);
+          const contiguousDayHours =
+            getScopeContiguousDayHours(matchingScope, entry.date, paidHolidayMap) ||
+            assignmentScopes
+              .map((scope) => getScopeContiguousDayHours(scope, entry.date, paidHolidayMap))
+              .find((hours): hours is number => Number.isFinite(hours || 0) && (hours || 0) >= 0) ||
+            null;
+          const scheduleHours = getHoursFromScheduleEntry(entry);
+          const hours = (Number.isFinite(taskDayHours || 0) && (taskDayHours || 0) > 0)
+            ? Number(taskDayHours)
+            : (Number.isFinite(specificDayHours || 0) && (specificDayHours || 0) > 0)
+            ? Number(specificDayHours)
+            : (Number.isFinite(contiguousDayHours || 0) && (contiguousDayHours || 0) > 0)
+              ? Number(contiguousDayHours)
+            : (Number.isFinite(scheduleHours) && scheduleHours > 0)
+              ? scheduleHours
+              : (Number.isFinite(fallbackManpower) && fallbackManpower > 0)
+                ? fallbackManpower * HOURS_PER_FTE_DAY
+                : 0;
           addProjectToAllocation(weekAllocation, entry.jobKey, scopeOfWork, hours);
           addProjectToAllocation(dayAllocation, entry.jobKey, scopeOfWork, hours);
         });
@@ -775,6 +986,7 @@ export default function LongTermSchedulePage() {
   function renderProjects(
     projects: Array<{ jobKey: string; scopeOfWork: string; hours: number }>,
     isCompact = false,
+    granularity: "day" | "week" = "week",
     dragContext?: { sourceDateKey?: string; sourceForemanId?: string }
   ) {
     return projects.map((proj, idx) => {
@@ -801,6 +1013,9 @@ export default function LongTermSchedulePage() {
             )
           }
         >
+          <div className="text-[10px] font-black text-orange-700 mb-1">
+            {getFteFromHours(proj.hours, granularity).toFixed(1)} FTE
+          </div>
           <div className="font-black text-gray-900 whitespace-normal break-words">{proj.scopeOfWork}</div>
           <div className="text-gray-500 whitespace-normal break-words">{proj.jobKey.split("~")[2] || proj.jobKey}</div>
           <div className="mt-1.5 flex items-center gap-1">
@@ -1121,8 +1336,8 @@ export default function LongTermSchedulePage() {
                                 key={`pm-${group.pmId}-${col.type === "week" ? col.weekKey : `${col.weekKey}-${col.dateKey}`}`}
                                 className="py-3 px-2 text-center text-xs font-black text-orange-100 border-r border-stone-600"
                               >
-                                <div className="text-orange-50 tracking-tight text-sm">{columnHours.toFixed(0)}H</div>
-                                <div className="text-[10px] text-orange-300">{(columnHours / 50).toFixed(1)} FTE</div>
+                                <div className="text-orange-50 tracking-tight text-sm">{getFteFromHours(columnHours, col.type === "week" ? "week" : "day").toFixed(1)} FTE</div>
+                                <div className="text-[10px] text-orange-300">{columnHours.toFixed(0)}H</div>
                                 <div className="text-[10px] text-stone-300 uppercase tracking-wider">{uniqueJobs.size} Jobs</div>
                               </td>
                             );
@@ -1172,10 +1387,11 @@ export default function LongTermSchedulePage() {
                                     {hours > 0 && (
                                       <div className="space-y-1.5">
                                         <div className="font-black text-gray-900 text-base tracking-tight">
-                                          {hours.toFixed(1)}
-                                          <span className="text-[10px] opacity-40 ml-0.5">H</span>
+                                          {getFteFromHours(hours, "week").toFixed(1)}
+                                          <span className="text-[10px] opacity-50 ml-0.5">FTE</span>
                                         </div>
-                                        {renderProjects(allocation.projects, false, { sourceForemanId: row.id })}
+                                        <div className="text-[10px] text-gray-500 font-black">{hours.toFixed(1)}H</div>
+                                        {renderProjects(allocation.projects, false, "week", { sourceForemanId: row.id })}
                                       </div>
                                     )}
                                   </td>
@@ -1202,10 +1418,11 @@ export default function LongTermSchedulePage() {
                                   {dayHours > 0 && (
                                     <div className="space-y-1.5">
                                       <div className="font-black text-gray-900 text-base tracking-tight">
-                                        {dayHours.toFixed(1)}
-                                        <span className="text-[10px] opacity-40 ml-0.5">H</span>
+                                        {getFteFromHours(dayHours, "day").toFixed(1)}
+                                        <span className="text-[10px] opacity-50 ml-0.5">FTE</span>
                                       </div>
-                                      {renderProjects(dayAllocation.projects, true, { sourceDateKey: col.dateKey, sourceForemanId: row.id })}
+                                      <div className="text-[10px] text-gray-500 font-black">{dayHours.toFixed(1)}H</div>
+                                      {renderProjects(dayAllocation.projects, true, "day", { sourceDateKey: col.dateKey, sourceForemanId: row.id })}
                                     </div>
                                   )}
                                 </td>
@@ -1228,8 +1445,8 @@ export default function LongTermSchedulePage() {
                       </td>
                       {globalColumnTotals.map((total, idx) => (
                         <td key={idx} className="text-center py-6 px-3 text-sm border-r border-stone-700">
-                          <div className="text-lg tracking-tight text-orange-300">{total.toFixed(0)}H</div>
-                          <div className="text-[10px] text-stone-300 opacity-80">{(total / 50).toFixed(1)} FTE</div>
+                          <div className="text-lg tracking-tight text-orange-300">{getFteFromHours(total, columnDefs[idx]?.type === "week" ? "week" : "day").toFixed(1)} FTE</div>
+                          <div className="text-[10px] text-stone-300 opacity-80">{total.toFixed(0)}H</div>
                         </td>
                       ))}
                       <td className="text-center py-6 px-5 text-sm bg-stone-800 border-l border-stone-700">
@@ -1302,11 +1519,12 @@ export default function LongTermSchedulePage() {
                                 </button>
 
                                 <div className="mb-2">
-                                  <span className="font-black text-gray-900 text-sm">{hours.toFixed(1)}h</span>
+                                  <span className="font-black text-gray-900 text-sm">{getFteFromHours(hours, "week").toFixed(1)} FTE</span>
+                                  <span className="text-[10px] text-gray-500 ml-2">{hours.toFixed(1)}h</span>
                                 </div>
 
                                 {!expanded ? (
-                                  renderProjects(allocation?.projects || [], true, { sourceForemanId: row.id })
+                                  renderProjects(allocation?.projects || [], true, "week", { sourceForemanId: row.id })
                                 ) : (
                                   <div className="space-y-2">
                                     {Array.from({ length: 5 }).map((_, i) => {
@@ -1334,8 +1552,9 @@ export default function LongTermSchedulePage() {
                                           )}
                                           {dayHours > 0 && (
                                             <div className="space-y-1">
-                                              <div className="text-[10px] font-black text-gray-800 mt-1">{dayHours.toFixed(1)}h</div>
-                                              {renderProjects(dayAllocation?.projects || [], true, { sourceDateKey: dayKey, sourceForemanId: row.id })}
+                                              <div className="text-[10px] font-black text-gray-800 mt-1">{getFteFromHours(dayHours, "day").toFixed(1)} FTE</div>
+                                              <div className="text-[9px] text-gray-500">{dayHours.toFixed(1)}h</div>
+                                              {renderProjects(dayAllocation?.projects || [], true, "day", { sourceDateKey: dayKey, sourceForemanId: row.id })}
                                             </div>
                                           )}
                                         </div>

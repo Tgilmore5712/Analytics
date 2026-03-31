@@ -391,10 +391,14 @@ export async function syncProjectScopeToActiveSchedule(
       return result;
     }
 
-    // Calculate hours per day (fallback to manpower-based estimate when available)
-    const totalHours = scope.hours || 0;
-    const manpower = scope.manpower || 0;
-    const hoursPerDay = manpower > 0 ? manpower * 10 : totalHours / workingDays;
+    // Calculate hours per day.
+    // Primary source is scope total hours distributed across working days.
+    // Fallback to manpower-based estimate only when total hours are unavailable.
+    const totalHours = Number(scope.hours || 0);
+    const manpower = Number(scope.manpower || 0);
+    const hoursPerDay = totalHours > 0
+      ? totalHours / workingDays
+      : (manpower > 0 ? manpower * 10 : 0);
 
     const existingAssignments = await prisma.activeSchedule.findMany({
       where: {
