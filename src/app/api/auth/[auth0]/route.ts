@@ -5,6 +5,9 @@ function isSafeReturnToPath(value: string | null): value is string {
   if (!value) return false;
   if (!value.startsWith('/')) return false;
   if (value.startsWith('/api/auth')) return false;
+  if (value === '/login' || value.startsWith('/login?')) return false;
+  if (value === '/auth/start' || value.startsWith('/auth/start?')) return false;
+  if (value === '/auth/complete' || value.startsWith('/auth/complete?')) return false;
   return true;
 }
 

@@ -16,6 +16,9 @@ function LoginContent() {
     if (!value) return "/";
     if (!value.startsWith("/")) return "/";
     if (value.startsWith("/api/auth")) return "/";
+    if (value === "/login" || value.startsWith("/login?")) return "/";
+    if (value === "/auth/start" || value.startsWith("/auth/start?")) return "/";
+    if (value === "/auth/complete" || value.startsWith("/auth/complete?")) return "/";
     return value;
   };
 
@@ -68,6 +71,19 @@ function LoginContent() {
     };
 
     window.addEventListener("storage", onStorage);
+
+    // If a valid session already exists (e.g., callback landed back on /login),
+    // skip the login screen and continue to the intended destination.
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (res.ok) {
+          window.location.replace(safeReturnTo || "/");
+        }
+      } catch {
+        // Ignore transient auth check failures here.
+      }
+    })();
 
     return () => {
       if (pollRef.current) {
