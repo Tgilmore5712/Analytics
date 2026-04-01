@@ -10,6 +10,9 @@ function LoginContent() {
   const [returnTo, setReturnTo] = useState<string>("/");
   const [framed, setFramed] = useState(false);
   const [status, setStatus] = useState<string>("Choose a login method.");
+  // itpDetected: Safari mobile blocks session cookies in cross-site iframes.
+  // When set, hide login buttons and show an "Open App" link instead.
+  const [itpDetected, setItpDetected] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const normalizeReturnTo = (value: string | null) => {
@@ -58,7 +61,14 @@ function LoginContent() {
       try {
         const res = await fetch("/api/auth/me", { credentials: "include" });
         if (!res.ok) {
-          setStatus("Login complete! Please continue in the app tab that just opened.");
+          // Safari ITP: cookies blocked in this cross-site iframe context.
+          // Stop polling, flag ITP so the UI switches to an "Open App" button.
+          if (pollRef.current) {
+            window.clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          setItpDetected(true);
+          setStatus("Signed in! Open the app using the button below.");
           return;
         }
       } catch {
@@ -201,6 +211,17 @@ function LoginContent() {
         )}
 
         <div className="space-y-3">
+          {itpDetected ? (
+            <a
+              href={returnTo || "/"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 text-center"
+            >
+              Open Analytics App
+            </a>
+          ) : (
+            <>
           <button
             onClick={openLoginPopup}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
@@ -213,6 +234,8 @@ function LoginContent() {
           >
             Login with Procore
           </button>
+            </>
+          )}
         </div>
       </div>
     </div>
