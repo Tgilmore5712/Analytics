@@ -29,6 +29,7 @@ interface ProjectScopesModalProps {
   companyCapacity?: number; // Total available hours per day
   scheduledHoursByJobKeyDate?: Record<string, Record<string, number>>; // jobKey -> dateKey -> hours
   selectedScopeId: string | null;
+  selectedTaskIndex?: number | null;
   selectedScopeTitle?: string | null;
   selectedScheduleDate?: string | null;
   selectedScheduledHours?: number | null;
@@ -114,6 +115,11 @@ type ParsedTaskEntry = {
   manpower: number | null;
   yards: number | null;
 };
+type ConcreteOrderSummary = {
+  jobKey: string;
+  date: string;
+  totalYards: number;
+};
 
 const LEGACY_TASK_REGEX = /^\[(.*?)\]\s*(.+)$/;
 
@@ -127,6 +133,27 @@ const toPositiveWholeDays = (value: unknown): number | null => {
   const numeric = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
   return Math.round(numeric);
+};
+const parseLegacyTaskNumericMetadata = (parts: string[]): { days: number | null; yards: number | null } => {
+  const daysPart = parts.find((part) => /\d+\s*d$/i.test(part));
+  const daysValue = daysPart ? Number(daysPart.replace(/[^0-9]/g, '')) : null;
+
+  let yardsValue: number | null = null;
+  for (const part of parts) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(part)) continue;
+    if (/\d+\s*d$/i.test(part)) continue;
+    const numericMatch = part.match(/(\d+(?:\.\d+)?)/);
+    if (!numericMatch) continue;
+    const candidate = Number.parseFloat(numericMatch[1]);
+    if (!Number.isFinite(candidate) || candidate < 0) continue;
+    yardsValue = candidate;
+    break;
+  }
+
+  return {
+    days: Number.isFinite(daysValue || 0) && (daysValue || 0) > 0 ? Number(daysValue) : null,
+    yards: toOptionalPositiveNumber(yardsValue),
+  };
 };
 
 const parseTaskEntry = (taskEntry: string | ScheduleTask): ParsedTaskEntry => {
@@ -150,15 +177,14 @@ const parseTaskEntry = (taskEntry: string | ScheduleTask): ParsedTaskEntry => {
   const name = (match[2] || '').trim();
   const parts = prefix.split('|').map((part) => part.trim());
   const startDate = parts.find((part) => /^\d{4}-\d{2}-\d{2}$/.test(part)) || '';
-  const daysPart = parts.find((part) => /\d+\s*d$/i.test(part));
-  const daysValue = daysPart ? Number(daysPart.replace(/[^0-9]/g, '')) : null;
+  const { days, yards } = parseLegacyTaskNumericMetadata(parts);
 
   return {
     name,
     startDate,
-    days: Number.isFinite(daysValue || 0) && (daysValue || 0) > 0 ? Number(daysValue) : null,
+    days,
     manpower: null,
-    yards: null,
+    yards,
   };
 };
 
@@ -244,6 +270,7 @@ export function ProjectScopesModal({
   companyCapacity = 210, // Default to 210 if not provided
   scheduledHoursByJobKeyDate,
   selectedScopeId,
+  selectedTaskIndex = null,
   selectedScopeTitle,
   selectedScheduleDate,
   selectedScheduledHours,
@@ -284,12 +311,15 @@ export function ProjectScopesModal({
     date?: string;
     yards?: number | null;
   } | null>(null);
+  const [concreteYardsByDate, setConcreteYardsByDate] = useState<Record<string, number>>({});
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
   const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
   const formSectionRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const taskRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const previousActiveScopeIdRef = useRef<string | null>(selectedScopeId);
+  const [highlightedTaskIndex, setHighlightedTaskIndex] = useState<number | null>(null);
 
   const emptyScopeDetail: Partial<Scope> = {
     title: "",
@@ -360,6 +390,47 @@ export function ProjectScopesModal({
     customer: project.customer,
     projectNumber: project.projectNumber,
   }), [project.customer, project.jobKey, project.projectName, project.projectNumber, resolvedJobKey]);
+
+  useEffect(() => {
+    const effectiveJobKey = (resolvedJobKey || project.jobKey || '').trim();
+    if (!effectiveJobKey) {
+      setConcreteYardsByDate({});
+      return;
+    }
+
+    let cancelled = false;
+    const loadConcreteOrders = async () => {
+      try {
+        const response = await fetch(`/api/project-schedule/concrete-yards?jobKey=${encodeURIComponent(effectiveJobKey)}`, { cache: 'no-store' });
+        if (!response.ok) {
+          if (!cancelled) setConcreteYardsByDate({});
+          return;
+        }
+        const json = await response.json().catch(() => ({}));
+        const rows = Array.isArray(json?.data) ? (json.data as ConcreteOrderSummary[]) : [];
+        const byDate = rows.reduce<Record<string, number>>((acc, row) => {
+            const dateKey = String(row?.date || '').trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return acc;
+            const yards = Number(row?.totalYards || 0);
+            if (!Number.isFinite(yards) || yards <= 0) return acc;
+            acc[dateKey] = (acc[dateKey] || 0) + yards;
+            return acc;
+          }, {});
+
+        if (!cancelled) {
+          setConcreteYardsByDate(byDate);
+        }
+      } catch {
+        if (!cancelled) setConcreteYardsByDate({});
+      }
+    };
+
+    void loadConcreteOrders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project.jobKey, resolvedJobKey]);
 
   const dateKey = (value: unknown) => String(value || "").trim();
   const scopeMatchKey = (title: unknown, startDate: unknown, endDate: unknown) =>
@@ -825,7 +896,22 @@ export function ProjectScopesModal({
 
     const normalizedSchedulingMode = scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
     const normalizedTasks = normalizeTaskEntries(scope.tasks);
-    const taskRollups = calculateTaskRollups(normalizedTasks);
+    const hydratedTasks = normalizedTasks.map((task) => {
+      const currentYards = toOptionalPositiveNumber(task.yards);
+      if (currentYards !== null && currentYards > 0) return task;
+
+      const dateKey = String(task.startDate || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return task;
+
+      const mappedYards = toOptionalPositiveNumber(concreteYardsByDate[dateKey]);
+      if (mappedYards === null || mappedYards <= 0) return task;
+
+      return {
+        ...task,
+        yards: mappedYards,
+      };
+    });
+    const taskRollups = calculateTaskRollups(hydratedTasks);
     const selectedDayEntry =
       normalizedSchedulingMode === 'specific-days' && selectedScheduleDate
         ? (Array.isArray(scope.selectedDays)
@@ -847,13 +933,43 @@ export function ProjectScopesModal({
           ? Number(selectedDayEntry.hours || 0)
           : (canUseTaskRollups && taskRollups.hours > 0 ? taskRollups.hours : fallbackHours),
       description: scope.description || "",
-      tasks: normalizedTasks,
+      tasks: hydratedTasks,
       color: scope.color,
       taskColors: (scope.taskColors as Record<string, string>) || {},
       schedulingMode: normalizedSchedulingMode,
       selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
     });
-  }, [activeScopeId, isCreatingNewScope, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
+  }, [activeScopeId, concreteYardsByDate, isCreatingNewScope, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
+
+  useEffect(() => {
+    if (isCreatingNewScope || !activeScopeId) return;
+    if (selectedTaskIndex === null || selectedTaskIndex < 0) {
+      setHighlightedTaskIndex(null);
+      return;
+    }
+
+    const tasks = normalizeTaskEntries(scopeDetail.tasks);
+    if (selectedTaskIndex >= tasks.length) return;
+
+    const timeoutId = window.setTimeout(() => {
+      formSectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      const row = taskRowRefs.current[selectedTaskIndex];
+      if (!row) return;
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setHighlightedTaskIndex(selectedTaskIndex);
+      const focusTarget = row.querySelector('input, button') as HTMLElement | null;
+      focusTarget?.focus();
+    }, 0);
+
+    const clearHighlightId = window.setTimeout(() => {
+      setHighlightedTaskIndex((current) => (current === selectedTaskIndex ? null : current));
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearTimeout(clearHighlightId);
+    };
+  }, [activeScopeId, isCreatingNewScope, scopeDetail.tasks, selectedTaskIndex]);
 
   const handleAddTask = () => {
     const trimmed = newTask.trim();
@@ -2000,6 +2116,9 @@ export function ProjectScopesModal({
                     return (
                       <div 
                         key={index} 
+                        ref={(element) => {
+                          taskRowRefs.current[index] = element;
+                        }}
                         draggable={true}
                         onDragStart={(e) => {
                           setDraggedTaskIndex(index);
@@ -2030,7 +2149,11 @@ export function ProjectScopesModal({
                         }}
                         onDragEnd={() => setDraggedTaskIndex(null)}
                         className={`bg-white p-2 rounded border cursor-move transition-colors ${ 
-                          isDraggedOver ? 'border-orange-300 bg-orange-100/30' : 'border-gray-200'
+                          highlightedTaskIndex === index
+                            ? 'border-orange-400 bg-orange-50 shadow-sm'
+                            : isDraggedOver
+                              ? 'border-orange-300 bg-orange-100/30'
+                              : 'border-gray-200'
                         }`}
                       >
                         <div className="grid min-w-[860px] grid-cols-[18px_1fr_120px_80px_90px_95px_80px_auto] items-end gap-2">

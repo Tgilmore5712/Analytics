@@ -44,12 +44,46 @@ function normalizeScopeTasks(value: unknown): ScopeTaskEntry[] | null | undefine
   if (value === null) return null;
   if (!Array.isArray(value)) return null;
 
+  const parseStringTask = (raw: string): ScopeTaskEntry | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    const match = trimmed.match(/^\[([^\]]+)\]\s*(.+)$/);
+    if (!match) return { name: trimmed };
+
+    const metadata = String(match[1] || '');
+    const name = String(match[2] || '').trim();
+    if (!name) return null;
+
+    const parts = metadata.split('|').map((part) => part.trim());
+    const startDate = parts.find((part) => DATE_KEY_REGEX.test(part));
+    const daysPart = parts.find((part) => /\d+\s*d$/i.test(part));
+    const daysValue = daysPart ? Number(daysPart.replace(/[^0-9]/g, '')) : null;
+
+    let yardsValue: number | null = null;
+    for (const part of parts) {
+      if (DATE_KEY_REGEX.test(part)) continue;
+      if (/\d+\s*d$/i.test(part)) continue;
+      const numericMatch = part.match(/(\d+(?:\.\d+)?)/);
+      if (!numericMatch) continue;
+      const parsed = Number.parseFloat(numericMatch[1]);
+      if (!Number.isFinite(parsed) || parsed < 0) continue;
+      yardsValue = parsed;
+      break;
+    }
+
+    return {
+      name,
+      ...(startDate ? { startDate } : {}),
+      ...(Number.isFinite(daysValue || 0) && (daysValue || 0) > 0 ? { days: Math.round(daysValue as number) } : {}),
+      ...(Number.isFinite(yardsValue || 0) && (yardsValue || 0) >= 0 ? { yards: yardsValue as number } : {}),
+    };
+  };
+
   return value
     .map((entry): ScopeTaskEntry | null => {
       if (typeof entry === 'string') {
-        const trimmed = entry.trim();
-        if (!trimmed) return null;
-        return { name: trimmed };
+        return parseStringTask(entry);
       }
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
 
@@ -259,6 +293,11 @@ export async function GET(request: NextRequest) {
       // Continue without colors if query fails
     }
 
+    const normalizedScopes = scopesWithColors.map((scope) => ({
+      ...scope,
+      tasks: normalizeScopeTasks(scope.tasks) ?? null,
+    }));
+
     // Add jobKey to each project for consistency
     const projectsWithJobKey = projects.map((p) => ({
       ...p,
@@ -267,9 +306,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: scopesWithColors,
+      data: normalizedScopes,
       projects: projectsWithJobKey,
-      scopes: scopesWithColors, // Keep for backwards compatibility
+      scopes: normalizedScopes, // Keep for backwards compatibility
     });
   } catch (error) {
     console.error('Failed to fetch project scopes:', error);

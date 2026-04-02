@@ -122,12 +122,15 @@ function normalizeTaskForLongTerm(task: string | ScheduleTask): ScheduleTask | n
   if (typeof task === "object" && !Array.isArray(task)) {
     const name = String(task.name || "").trim();
     if (!name) return null;
+    const daysRaw = Number(task.days);
+    const manpowerRaw = Number(task.manpower);
+    const yardsRaw = Number(task.yards);
     return {
       name,
       startDate: String(task.startDate || "").trim(),
-      days: Number(task.days || 0) || null,
-      manpower: Number(task.manpower || 0) || null,
-      yards: Number(task.yards || 0) || null,
+      days: Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : null,
+      manpower: Number.isFinite(manpowerRaw) && manpowerRaw >= 0 ? manpowerRaw : null,
+      yards: Number.isFinite(yardsRaw) && yardsRaw >= 0 ? yardsRaw : null,
     };
   }
 

@@ -51,6 +51,12 @@ type SchedulingDiagnostics = {
   };
 };
 
+type ConcreteOrderSummary = {
+  jobKey: string;
+  date: string;
+  totalYards: number;
+};
+
 const monthLabel = (value: Date) =>
   value.toLocaleString("en-US", { month: "short", year: "2-digit" });
 
@@ -83,12 +89,44 @@ const lightenColor = (hex: string, percent: number): string => {
   return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 };
 
+const toNonNegativeNumber = (value: unknown): number | null => {
+  const numeric = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return numeric;
+};
+
+const hydrateTaskYards = (
+  tasks: Array<string | ScheduleTask> | undefined,
+  yardsByDate: Record<string, number>,
+): Array<string | ScheduleTask> => {
+  if (!Array.isArray(tasks)) return [];
+
+  return tasks.map((task) => {
+    if (!task || typeof task !== "object" || Array.isArray(task)) return task;
+
+    const existingYards = toNonNegativeNumber(task.yards);
+    if (existingYards !== null && existingYards > 0) return task;
+
+    const dateKey = String(task.startDate || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return task;
+
+    const hydratedYards = toNonNegativeNumber(yardsByDate[dateKey]);
+    if (hydratedYards === null || hydratedYards <= 0) return task;
+
+    return {
+      ...task,
+      yards: hydratedYards,
+    };
+  });
+};
+
 export default function ProjectSchedulePage() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null);
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"day" | "week" | "month">("month");
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [expandedScopes, setExpandedScopes] = useState<Set<string>>(new Set());
@@ -103,6 +141,12 @@ export default function ProjectSchedulePage() {
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const isSyncingScrollRef = useRef<"top" | "table" | null>(null);
   const [tableScrollWidth, setTableScrollWidth] = useState(0);
+
+  const openProjectScopesModal = (project: ProjectRow, scopeId: string | null = null, taskIndex: number | null = null) => {
+    setSelectedTaskIndex(taskIndex);
+    setSelectedScopeId(scopeId);
+    setSelectedProject(project);
+  };
 
   const toggleProjectCollapse = (projectId: string) => {
     const newCollapsed = new Set(collapsedProjects);
@@ -124,7 +168,7 @@ export default function ProjectSchedulePage() {
     setExpandedScopes(newExpanded);
   };
 
-  const parseTaskMetadata = (taskEntry: string | { name?: string; startDate?: string; days?: number | null }) => {
+  const parseTaskMetadata = (taskEntry: string | { name?: string; startDate?: string; days?: number | null; yards?: number | null }) => {
     if (taskEntry && typeof taskEntry === 'object' && !Array.isArray(taskEntry)) {
       const taskName = String(taskEntry.name || '').trim();
       const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(taskEntry.startDate || '').trim())
@@ -132,7 +176,9 @@ export default function ProjectSchedulePage() {
         : null;
       const daysRaw = Number(taskEntry.days || 0);
       const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.round(daysRaw) : 0;
-      return { taskName: taskName || 'Task', startDate, days };
+      const yardsRaw = Number(taskEntry.yards);
+      const yards = Number.isFinite(yardsRaw) && yardsRaw >= 0 ? yardsRaw : 0;
+      return { taskName: taskName || 'Task', startDate, days, yards };
     }
 
     const taskString = String(taskEntry || '');
@@ -147,7 +193,10 @@ export default function ProjectSchedulePage() {
     const startDate = parts[0] || null;
     const daysMatch = parts[1]?.match(/^(\d+)d?$/);
     const days = daysMatch ? parseInt(daysMatch[1]) : 0;
-    return { taskName, startDate, days };
+    const yardsPart = parts.find((part, idx) => idx > 1 && /(\d+(?:\.\d+)?)/.test(part));
+    const yardsMatch = yardsPart?.match(/(\d+(?:\.\d+)?)/);
+    const yards = yardsMatch ? Number.parseFloat(yardsMatch[1]) : 0;
+    return { taskName, startDate, days, yards: Number.isFinite(yards) && yards >= 0 ? yards : 0 };
   };
 
   const updateTableScrollWidth = useCallback(() => {
@@ -317,12 +366,14 @@ export default function ProjectSchedulePage() {
     setLoading(true);
     try {
       await fetch("/api/gantt-v2/setup", { method: "POST" });
-      const [ganttRes, metadataRes] = await Promise.all([
+      const [ganttRes, metadataRes, concreteOrdersRes] = await Promise.all([
         fetch("/api/gantt-v2/projects"),
         fetch("/api/project-scopes"),
+        fetch("/api/project-schedule/concrete-yards"),
       ]);
       const json = await ganttRes.json();
       const metadataJson = await metadataRes.json().catch(() => ({ success: false, data: [] }));
+      const concreteOrdersJson = await concreteOrdersRes.json().catch(() => ({ success: false, data: [] }));
 
       const projectsData: ProjectRow[] = json?.data || [];
       const metadataScopes: Array<{
@@ -333,6 +384,7 @@ export default function ProjectSchedulePage() {
         endDate?: string | null;
         tasks?: Array<string | ScheduleTask>;
       }> = Array.isArray(metadataJson?.data) ? metadataJson.data : [];
+      const concreteOrders: ConcreteOrderSummary[] = Array.isArray(concreteOrdersJson?.data) ? concreteOrdersJson.data : [];
 
       const normalized = (value: unknown) =>
         String(value || "")
@@ -349,9 +401,22 @@ export default function ProjectSchedulePage() {
         metadataByJobKey.set(key, bucket);
       });
 
+      const concreteYardsByJobKey = new Map<string, Record<string, number>>();
+      concreteOrders.forEach((order) => {
+        const jobKey = String(order?.jobKey || "").trim();
+        const dateKey = String(order?.date || "").trim();
+        const totalYards = toNonNegativeNumber(order?.totalYards);
+        if (!jobKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || totalYards === null || totalYards <= 0) return;
+
+        const current = concreteYardsByJobKey.get(jobKey) || {};
+        current[dateKey] = (current[dateKey] || 0) + totalYards;
+        concreteYardsByJobKey.set(jobKey, current);
+      });
+
       const mergedProjects = projectsData.map((project) => {
         const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
         const metadataForProject = metadataByJobKey.get(jobKey) || [];
+        const yardsByDate = concreteYardsByJobKey.get(jobKey) || {};
 
         const mergedScopes = (project.scopes || []).map((scope) => {
           const titleKey = normalized(scope.title);
@@ -369,7 +434,7 @@ export default function ProjectSchedulePage() {
 
           return {
             ...scope,
-            tasks: Array.isArray(matched?.tasks) ? matched!.tasks : (scope.tasks || []),
+            tasks: hydrateTaskYards(Array.isArray(matched?.tasks) ? matched!.tasks : (scope.tasks || []), yardsByDate),
           };
         });
 
@@ -618,10 +683,7 @@ export default function ProjectSchedulePage() {
                             </svg>
                           </button>
                           <div
-                            onClick={() => {
-                              setSelectedScopeId(null);
-                              setSelectedProject(project);
-                            }}
+                            onClick={() => openProjectScopesModal(project)}
                             className="cursor-pointer"
                           >
                             <div className="text-sm font-bold text-gray-900">{project.projectName}</div>
@@ -633,7 +695,7 @@ export default function ProjectSchedulePage() {
                         </div>
                         <div className="mt-2 ml-6 flex gap-2">
                           <button
-                            onClick={() => setSelectedProject(project)}
+                            onClick={() => openProjectScopesModal(project)}
                             className="text-xs px-2 py-1 rounded border border-orange-300 text-orange-700 hover:bg-orange-50"
                           >
                             Manage Scopes
@@ -688,10 +750,7 @@ export default function ProjectSchedulePage() {
                           <div className="grid border-t border-gray-100" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
                             <div className="sticky left-0 z-20 bg-white border-r border-gray-200 px-3 py-2 ml-6">
                               <div
-                                onClick={() => {
-                                  setSelectedScopeId(null);
-                                  setSelectedProject(project);
-                                }}
+                                    onClick={() => openProjectScopesModal(project)}
                                 className="text-xs font-medium text-gray-700 truncate cursor-pointer hover:text-blue-700"
                               >
                                 Unscoped Allocation
@@ -782,10 +841,7 @@ export default function ProjectSchedulePage() {
                                     {!scope.tasks || scope.tasks.length === 0 ? <div className="w-3.5" /> : null}
                                     <div className="flex-1 min-w-0">
                                       <div
-                                        onClick={() => {
-                                          setSelectedScopeId(scope.id);
-                                          setSelectedProject(project);
-                                        }}
+                                            onClick={() => openProjectScopesModal(project, scope.id)}
                                         className="text-xs font-medium text-gray-700 cursor-pointer hover:text-blue-700 whitespace-normal break-words leading-tight"
                                       >
                                         {scope.title}
@@ -808,10 +864,7 @@ export default function ProjectSchedulePage() {
                                 {/* If scope has dates, show date-based bar */}
                                 {hasDates && hasBar && (
                                   <div
-                                    onClick={() => {
-                                      setSelectedScopeId(scope.id);
-                                      setSelectedProject(project);
-                                    }}
+                                    onClick={() => openProjectScopesModal(project, scope.id)}
                                     className="absolute top-1.5 h-6 rounded text-white text-xs font-semibold px-2 flex items-center cursor-pointer"
                                     style={{
                                       backgroundColor: SCOPE_LINE_COLOR,
@@ -875,7 +928,7 @@ export default function ProjectSchedulePage() {
                             {expandedScopes.has(scope.id) && scope.tasks && scope.tasks.length > 0 && (
                               <>
                                 {scope.tasks.map((taskString, taskIdx) => {
-                                  const { taskName, startDate, days } = parseTaskMetadata(taskString);
+                                  const { taskName, startDate, days, yards } = parseTaskMetadata(taskString);
                                   const taskStart = asDate(startDate);
                                   const taskEnd = taskStart && days > 0
                                     ? new Date(taskStart.getTime() + (days - 1) * 24 * 60 * 60 * 1000)
@@ -886,7 +939,10 @@ export default function ProjectSchedulePage() {
                                   return (
                                     <div key={`${scope.id}-task-${taskIdx}`} className="grid border-t border-gray-200" style={{ gridTemplateColumns: `320px repeat(${totalTimelineColumns}, ${getColumnWidth()})` }}>
                                       <div className="sticky left-0 z-20 bg-gray-50 border-r border-gray-200 px-3 py-2 ml-12">
-                                        <div className="text-xs text-gray-600 whitespace-normal break-words leading-tight">
+                                        <div
+                                            onClick={() => openProjectScopesModal(project, scope.id, taskIdx)}
+                                          className="text-xs text-gray-600 whitespace-normal break-words leading-tight cursor-pointer hover:text-blue-700"
+                                        >
                                           {taskName}
                                         </div>
                                         {startDate && days > 0 && (
@@ -899,6 +955,9 @@ export default function ProjectSchedulePage() {
                                             {startDate}
                                           </div>
                                         )}
+                                        <div className="text-[10px] text-gray-500 mt-0.5">
+                                          {yards.toFixed(1)} yd
+                                        </div>
                                       </div>
 
                                       <div className="col-span-full relative" style={{ gridColumn: `2 / span ${timeline.length}` }}>
@@ -910,7 +969,8 @@ export default function ProjectSchedulePage() {
 
                                         {taskHasBar && taskStart && (
                                           <div
-                                            className="absolute top-1.5 h-5 rounded text-white text-[10px] font-semibold px-1.5 flex items-center"
+                                            onClick={() => openProjectScopesModal(project, scope.id, taskIdx)}
+                                            className="absolute top-1.5 h-5 rounded text-white text-[10px] font-semibold px-1.5 flex items-center cursor-pointer"
                                             style={{
                                               backgroundColor: TASK_LINE_COLOR,
                                               left: `calc(${(taskStartIdx / timeline.length) * 100}% + 4px)`,
@@ -955,9 +1015,11 @@ export default function ProjectSchedulePage() {
           project={selectedProjectInfo}
           scopes={selectedProjectScopes}
           selectedScopeId={selectedScopeId}
+          selectedTaskIndex={selectedTaskIndex}
           onClose={() => {
             setSelectedProject(null);
             setSelectedScopeId(null);
+            setSelectedTaskIndex(null);
           }}
           onScopesUpdated={() => {
             loadProjects();
