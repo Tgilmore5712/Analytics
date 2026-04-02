@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import styles from "./dispatch-responsive.module.css";
 
-import { Scope, Project, Holiday } from "@/types";
-import { getEnrichedScopes, getProjectKey } from "@/utils/projectUtils";
+import { Project, Holiday } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { loadActiveScheduleForDateRange } from "@/utils/activeScheduleLoader";
 import { addDays, formatDateInput, parseDateInput } from "@/utils/dateUtils";
@@ -86,6 +85,24 @@ const formatDateKey = (date: Date) => {
 
 const DISPATCH_TIME_ZONE = "America/New_York";
 const DISPATCH_ROLLOVER_HOUR = 12;
+
+function normalizePersonToken(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function isForemanLikeTitle(jobTitle?: string): boolean {
+  const title = normalizePersonToken(jobTitle || "");
+  return (
+    title === "foreman" ||
+    title === "forman" ||
+    title === "lead foreman" ||
+    title === "lead foreman / project manager" ||
+    title.includes("foreman")
+  );
+}
 
 function getTimeZoneParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -389,34 +406,30 @@ function DailyCrewDispatchBoardContent() {
 
       // Check cache for static data
       let cachedEmployees: Employee[] | null = getCache('dispatch_employees');
-      let cachedScopes = getCache('dispatch_projectScopes');
       let cachedHolidays = getCache('dispatch_holidays');
       
       // Fetch data from API endpoints instead of the database
       const safeJsonFetch = async (url: string) => {
-        try {
-          const res = await fetch(url);
-          if (!res.ok) {
-            console.warn(`[DispatchBoard] API endpoint not available: ${url}`);
-            return null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const res = await fetch(url, { cache: 'no-store', credentials: 'include' });
+            if (res.ok) return await res.json();
+            console.warn(`[DispatchBoard] API endpoint not available: ${url} (status ${res.status})`);
+          } catch (error) {
+            console.warn(`[DispatchBoard] Error fetching ${url}:`, error);
           }
-          return await res.json();
-        } catch (error) {
-          console.warn(`[DispatchBoard] Error fetching ${url}:`, error);
-          return null;
         }
+        return null;
       };
 
       const [
         employeesPayload,
-        projectScopesPayload,
         projectsPayload,
         timeOffPayload,
         holidaysPayload,
         crewsPayload
       ] = await Promise.all([
-        cachedEmployees ? Promise.resolve(cachedEmployees) : safeJsonFetch('/api/employees'),
-        cachedScopes ? Promise.resolve(cachedScopes) : safeJsonFetch('/api/project-scopes'),
+        cachedEmployees ? Promise.resolve(cachedEmployees) : safeJsonFetch('/api/employees?isActive=true&pageSize=500'),
         safeJsonFetch('/api/projects'),
         safeJsonFetch('/api/time-off'),
         cachedHolidays ? Promise.resolve(cachedHolidays) : safeJsonFetch('/api/holidays'),
@@ -425,10 +438,7 @@ function DailyCrewDispatchBoardContent() {
 
       const employeesData = Array.isArray(employeesPayload)
         ? employeesPayload
-        : (employeesPayload?.data || []);
-      const projectScopesData = Array.isArray(projectScopesPayload)
-        ? projectScopesPayload
-        : (projectScopesPayload?.scopes || projectScopesPayload?.data || []);
+        : (employeesPayload?.data || employeesPayload?.employees || []);
       const projectsData = Array.isArray(projectsPayload)
         ? projectsPayload
         : (projectsPayload?.data || []);
@@ -453,17 +463,19 @@ function DailyCrewDispatchBoardContent() {
       if (!cachedEmployees) setCache('dispatch_employees', allEmps);
       
       setAllEmployees(allEmps);
-      const foremenList = allEmps.filter((emp: any) => emp.isActive && (emp.jobTitle === "Foreman" || emp.jobTitle === "Forman" || emp.jobTitle === "Lead Foreman" || emp.jobTitle === "Lead foreman" || emp.jobTitle === "Lead Foreman / Project Manager"));
+      let foremenList = allEmps.filter((emp: any) => emp.isActive && isForemanLikeTitle(emp.jobTitle));
       setForemen(foremenList);
       const foremanIdSet = new Set(foremenList.map((f: any) => f.id));
       const foremanNameToId = new Map(
-        foremenList.map((f: any) => [`${f.firstName} ${f.lastName}`.trim().toLowerCase(), f.id])
+        foremenList.map((f: any) => [normalizePersonToken(`${f.firstName} ${f.lastName}`), f.id])
       );
 
       const resolveForemanId = (rawForeman?: string) => {
         if (!rawForeman) return "";
-        if (foremanIdSet.has(rawForeman)) return rawForeman;
-        return foremanNameToId.get(rawForeman.trim().toLowerCase()) || "";
+        const candidate = String(rawForeman).trim();
+        if (!candidate) return "";
+        if (foremanIdSet.has(candidate)) return candidate;
+        return foremanNameToId.get(normalizePersonToken(candidate)) || "";
       };
 
       const requests = (timeOffData || []) as TimeOffRequest[];
@@ -478,18 +490,6 @@ function DailyCrewDispatchBoardContent() {
         p.projectArchived !== true
       ) as Project[];
       
-      const rawScopes = cachedScopes || (projectScopesData || []);
-      if (!cachedScopes && projectScopesData) setCache('dispatch_projectScopes', rawScopes);
-      
-      const enrichedScopes = getEnrichedScopes(rawScopes, projs);
-      const scopesObj: Record<string, Scope[]> = {};
-      enrichedScopes.forEach(scope => {
-        if (scope.jobKey) {
-          if (!scopesObj[scope.jobKey]) scopesObj[scope.jobKey] = [];
-          scopesObj[scope.jobKey].push(scope);
-        }
-      });
-
       const displayDate = parseDateInput(dispatchDateKey) || new Date(`${dispatchDateKey}T00:00:00`);
       displayDate.setHours(0, 0, 0, 0);
       const localDateKey = formatDateKey(displayDate);
@@ -515,6 +515,32 @@ function DailyCrewDispatchBoardContent() {
         ...(projectsByDate[localDateKey] || []),
         ...(utcDateKey !== localDateKey ? (projectsByDate[utcDateKey] || []) : []),
       ];
+
+      if (foremenList.length === 0 && activeScheduleProjects.length > 0) {
+        const fallbackForemen = Array.from(
+          new Set(
+            activeScheduleProjects
+              .map((p: any) => String(p?.foreman || '').trim())
+              .filter(Boolean)
+          )
+        ).map((nameOrId) => ({
+          id: nameOrId,
+          firstName: nameOrId,
+          lastName: '',
+          jobTitle: 'Foreman',
+          isActive: true,
+        }));
+
+        if (fallbackForemen.length > 0) {
+          foremenList = fallbackForemen as any[];
+          setForemen(foremenList as any);
+          foremenList.forEach((f: any) => {
+            foremanIdSet.add(f.id);
+            foremanNameToId.set(normalizePersonToken(`${f.firstName} ${f.lastName}`), f.id);
+          });
+        }
+      }
+
       projectsByDay[dateKey] = activeScheduleProjects.map(p => ({
         jobKey: p.jobKey,
         customer: p.customer,

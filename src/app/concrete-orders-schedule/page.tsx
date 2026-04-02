@@ -108,7 +108,7 @@ export default function ConcreteOrdersSchedulePage() {
 
       const res = await fetch(
         `/api/short-term-schedule?action=active-schedule&startDate=${startDate}&endDate=${endDate}`,
-        { cache: "no-store" }
+        { cache: "no-store", credentials: "include" }
       );
 
       if (!res.ok) {
@@ -120,7 +120,13 @@ export default function ConcreteOrdersSchedulePage() {
 
       const entries = allEntries.filter((entry) => {
         const source = (entry.source || "").toLowerCase();
-        return source === "gantt" || source === "wip-page";
+        return (
+          source === "gantt" ||
+          source === "wip-page" ||
+          source === "short-term-schedule" ||
+          source === "crew-dispatch" ||
+          source === ""
+        );
       });
 
       const rowMap = new Map<string, ConcreteRow>();
