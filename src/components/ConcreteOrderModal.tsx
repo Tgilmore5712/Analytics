@@ -17,6 +17,7 @@ export type ConcreteOrder = {
   date: string;
   time: string;
   totalYards: number;
+  concreteConfirmed?: boolean | null;
 };
 
 type ConcreteOrderModalProps = {
@@ -352,6 +353,17 @@ export function ConcreteOrderModal({
                       {order.date} at {order.time}
                       <span className="mx-1 text-gray-300">|</span>
                       {order.totalYards} yards
+                      {typeof order.concreteConfirmed === "boolean" ? (
+                        <span
+                          className={`ml-2 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-black border align-middle ${
+                            order.concreteConfirmed
+                              ? "bg-green-100 text-green-700 border-green-200"
+                              : "bg-red-100 text-red-700 border-red-200"
+                          }`}
+                        >
+                          {order.concreteConfirmed ? "Confirmed" : "Not Confirmed"}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button

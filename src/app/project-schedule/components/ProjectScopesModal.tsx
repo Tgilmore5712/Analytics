@@ -114,6 +114,7 @@ type ParsedTaskEntry = {
   days: number | null;
   manpower: number | null;
   yards: number | null;
+  concreteConfirmed: boolean;
 };
 type ConcreteOrderSummary = {
   jobKey: string;
@@ -164,13 +165,14 @@ const parseTaskEntry = (taskEntry: string | ScheduleTask): ParsedTaskEntry => {
       days: toPositiveWholeDays(taskEntry.days),
       manpower: toOptionalPositiveNumber(taskEntry.manpower),
       yards: toOptionalPositiveNumber(taskEntry.yards),
+      concreteConfirmed: Boolean(taskEntry.concreteConfirmed),
     };
   }
 
   const taskString = String(taskEntry || '').trim();
   const match = taskString.match(LEGACY_TASK_REGEX);
   if (!match) {
-    return { name: taskString, startDate: '', days: null, manpower: null, yards: null };
+    return { name: taskString, startDate: '', days: null, manpower: null, yards: null, concreteConfirmed: false };
   }
 
   const prefix = match[1] || '';
@@ -185,14 +187,16 @@ const parseTaskEntry = (taskEntry: string | ScheduleTask): ParsedTaskEntry => {
     days,
     manpower: null,
     yards,
+    concreteConfirmed: false,
   };
 };
 
-const formatTaskEntry = ({ name, startDate, days, manpower, yards }: ParsedTaskEntry): ScheduleTask => {
+const formatTaskEntry = ({ name, startDate, days, manpower, yards, concreteConfirmed }: ParsedTaskEntry): ScheduleTask => {
   const taskName = String(name || '').trim();
   const parsedDays = toPositiveWholeDays(days);
   const parsedManpower = toOptionalPositiveNumber(manpower);
   const parsedYards = toOptionalPositiveNumber(yards);
+  const hasYards = Number.isFinite(parsedYards || 0) && (parsedYards || 0) > 0;
 
   return {
     name: taskName,
@@ -200,6 +204,7 @@ const formatTaskEntry = ({ name, startDate, days, manpower, yards }: ParsedTaskE
     days: parsedDays,
     manpower: parsedManpower,
     yards: parsedYards,
+    concreteConfirmed: hasYards ? Boolean(concreteConfirmed) : false,
   };
 };
 
@@ -980,6 +985,7 @@ export function ProjectScopesModal({
       days: toPositiveWholeDays(newTaskDays),
       manpower: toOptionalPositiveNumber(newTaskManpower),
       yards: toOptionalPositiveNumber(newTaskYards),
+      concreteConfirmed: false,
     });
 
     const existingTasks = normalizeTaskEntries(scopeDetail.tasks);
@@ -1040,6 +1046,10 @@ export function ProjectScopesModal({
         name: typeof next.name === 'string' ? next.name : parsed.name,
         manpower: next.manpower === undefined ? parsed.manpower : next.manpower,
         yards: next.yards === undefined ? parsed.yards : next.yards,
+        concreteConfirmed:
+          next.concreteConfirmed === undefined
+            ? (next.yards !== undefined ? false : parsed.concreteConfirmed)
+            : next.concreteConfirmed,
       };
 
       const calcEndDate = (task: ParsedTaskEntry): string | null => {
@@ -1627,7 +1637,7 @@ export function ProjectScopesModal({
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900">
+      <div className="bg-white rounded-lg shadow-xl max-w-[70rem] w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900">
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="text-lg font-bold">{project.projectName}</div>
@@ -2156,7 +2166,7 @@ export function ProjectScopesModal({
                               : 'border-gray-200'
                         }`}
                       >
-                        <div className="grid min-w-[860px] grid-cols-[18px_1fr_120px_80px_90px_95px_80px_auto] items-end gap-2">
+                        <div className="grid min-w-[980px] grid-cols-[18px_1fr_120px_80px_90px_95px_250px] items-end gap-2">
                           <span className="text-xs text-gray-400 pb-2">☰</span>
                           <input
                             type="text"
@@ -2206,25 +2216,45 @@ export function ProjectScopesModal({
                             className="px-2 py-1 border rounded text-xs bg-gray-100 text-gray-600"
                             placeholder="Auto hours"
                           />
-                          <input
-                            type="text"
-                            readOnly
-                            value={parsedTask.yards ?? ''}
-                            onClick={() => openConcreteOrderModal({
-                              mode: "existing-task",
-                              taskIndex: index,
-                              taskLabel: parsedTask.name,
-                              date: parsedTask.startDate,
-                              yards: parsedTask.yards,
-                            })}
-                            className="px-2 py-1 border rounded text-xs cursor-pointer bg-white"
-                            placeholder="Click for order"
-                          />
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-end gap-1.5 overflow-hidden">
+                            <input
+                              type="text"
+                              readOnly
+                              value={parsedTask.yards ?? ''}
+                              onClick={() => openConcreteOrderModal({
+                                mode: "existing-task",
+                                taskIndex: index,
+                                taskLabel: parsedTask.name,
+                                date: parsedTask.startDate,
+                                yards: parsedTask.yards,
+                              })}
+                              className="w-[72px] px-2 py-1 border rounded text-xs cursor-pointer bg-white shrink-0"
+                              placeholder="Click"
+                            />
+                            {(parsedTask.yards || 0) > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateTaskDateMeta(index, {
+                                    concreteConfirmed: !parsedTask.concreteConfirmed,
+                                  })
+                                }
+                                className={`w-[96px] px-1.5 py-1 rounded text-[11px] font-semibold border whitespace-nowrap shrink-0 ${
+                                  parsedTask.concreteConfirmed
+                                    ? 'bg-green-600 border-green-700 text-white hover:bg-green-700'
+                                    : 'bg-red-600 border-red-700 text-white hover:bg-red-700'
+                                }`}
+                              >
+                                {parsedTask.concreteConfirmed ? 'Confirmed' : 'Not Confirmed'}
+                              </button>
+                            ) : (
+                              <div className="w-[96px] shrink-0" />
+                            )}
                             <button
                               type="button"
                               onClick={() => handleRemoveTask(index)}
-                              className="text-red-500 hover:text-red-700 font-bold px-2 py-1"
+                              className="text-red-500 hover:text-red-700 font-bold px-1 py-1 leading-none"
+                              aria-label="Delete task"
                             >
                               x
                             </button>
@@ -2276,6 +2306,7 @@ export function ProjectScopesModal({
           updateTaskDateMeta(concreteModalTarget.taskIndex, {
             yards: saved.totalYards,
             startDate: concreteModalTarget.date || saved.date,
+            concreteConfirmed: false,
           });
         }
 

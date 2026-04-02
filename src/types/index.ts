@@ -49,6 +49,7 @@ export interface ScheduleTask {
   days?: number | null;
   manpower?: number | null;
   yards?: number | null;
+  concreteConfirmed?: boolean;
 }
 
 export interface Holiday {

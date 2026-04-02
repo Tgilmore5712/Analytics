@@ -76,6 +76,7 @@ type ConcreteOrder = {
   date: string;
   time: string;
   totalYards: number;
+  concreteConfirmed?: boolean | null;
 };
 
 type PMAssignment = {
@@ -1408,6 +1409,17 @@ function HomeContent() {
                       {concreteOrders.slice(0, 8).map((pour) => (
                         <div key={pour.id} className="text-xs md:text-sm text-white/90">
                           <span className="font-black">{formatDayLabel(pour.date)}</span> • {pour.projectName || "Project"} • {Number(pour.totalYards || 0).toFixed(1)} yd
+                          {typeof pour.concreteConfirmed === "boolean" ? (
+                            <span
+                              className={`ml-2 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-black border align-middle ${
+                                pour.concreteConfirmed
+                                  ? "bg-green-100 text-green-700 border-green-200"
+                                  : "bg-red-100 text-red-700 border-red-200"
+                              }`}
+                            >
+                              {pour.concreteConfirmed ? "Confirmed" : "Not Confirmed"}
+                            </span>
+                          ) : null}
                         </div>
                       ))}
                     </div>

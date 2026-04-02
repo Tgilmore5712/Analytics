@@ -12,6 +12,12 @@ type ActiveScheduleEntry = {
 };
 
 type ConcreteRow = ConcreteOrderProjectRef;
+type ConcreteOrderCellSummary = {
+  count: number;
+  totalYards: number;
+  knownConfirmations: number;
+  confirmedCount: number;
+};
 
 function getCurrentWeekMonday(): Date {
   const today = new Date();
@@ -160,14 +166,18 @@ export default function ConcreteOrdersSchedulePage() {
   }, [orders]);
 
   const ordersByProjectDate = useMemo(() => {
-    const summary: Record<string, { count: number; totalYards: number }> = {};
+    const summary: Record<string, ConcreteOrderCellSummary> = {};
 
     orders.forEach((order) => {
       const key = `${order.jobKey}__${order.date}`;
-      const current = summary[key] || { count: 0, totalYards: 0 };
+      const current = summary[key] || { count: 0, totalYards: 0, knownConfirmations: 0, confirmedCount: 0 };
       summary[key] = {
         count: current.count + 1,
         totalYards: current.totalYards + Number(order.totalYards || 0),
+        knownConfirmations:
+          current.knownConfirmations + (typeof order.concreteConfirmed === "boolean" ? 1 : 0),
+        confirmedCount:
+          current.confirmedCount + (order.concreteConfirmed === true ? 1 : 0),
       };
     });
 
@@ -252,7 +262,24 @@ export default function ConcreteOrdersSchedulePage() {
                             key={`${row.jobKey}-${dateKey}`}
                             className={`text-center py-3 px-2 text-xs border-r border-gray-100 font-black uppercase tracking-wider ${summary ? "bg-orange-50/40 text-orange-700" : "text-gray-300"}`}
                           >
-                            {summary ? `${summary.totalYards.toFixed(1)} YD` : "-"}
+                            {summary ? (
+                              <div className="flex flex-col items-center gap-1">
+                                <span>{`${summary.totalYards.toFixed(1)} YD`}</span>
+                                {summary.knownConfirmations > 0 ? (
+                                  <span
+                                    className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] border ${
+                                      summary.confirmedCount === summary.knownConfirmations
+                                        ? "bg-green-100 text-green-700 border-green-200"
+                                        : "bg-red-100 text-red-700 border-red-200"
+                                    }`}
+                                  >
+                                    {summary.confirmedCount === summary.knownConfirmations
+                                      ? "Confirmed"
+                                      : "Not Confirmed"}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : "-"}
                           </td>
                         );
                       })}

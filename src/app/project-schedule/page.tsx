@@ -168,7 +168,7 @@ export default function ProjectSchedulePage() {
     setExpandedScopes(newExpanded);
   };
 
-  const parseTaskMetadata = (taskEntry: string | { name?: string; startDate?: string; days?: number | null; yards?: number | null }) => {
+  const parseTaskMetadata = (taskEntry: string | { name?: string; startDate?: string; days?: number | null; yards?: number | null; concreteConfirmed?: boolean }) => {
     if (taskEntry && typeof taskEntry === 'object' && !Array.isArray(taskEntry)) {
       const taskName = String(taskEntry.name || '').trim();
       const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(taskEntry.startDate || '').trim())
@@ -178,7 +178,8 @@ export default function ProjectSchedulePage() {
       const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.round(daysRaw) : 0;
       const yardsRaw = Number(taskEntry.yards);
       const yards = Number.isFinite(yardsRaw) && yardsRaw >= 0 ? yardsRaw : 0;
-      return { taskName: taskName || 'Task', startDate, days, yards };
+      const concreteConfirmed = Boolean(taskEntry.concreteConfirmed);
+      return { taskName: taskName || 'Task', startDate, days, yards, concreteConfirmed };
     }
 
     const taskString = String(taskEntry || '');
@@ -196,7 +197,13 @@ export default function ProjectSchedulePage() {
     const yardsPart = parts.find((part, idx) => idx > 1 && /(\d+(?:\.\d+)?)/.test(part));
     const yardsMatch = yardsPart?.match(/(\d+(?:\.\d+)?)/);
     const yards = yardsMatch ? Number.parseFloat(yardsMatch[1]) : 0;
-    return { taskName, startDate, days, yards: Number.isFinite(yards) && yards >= 0 ? yards : 0 };
+    return {
+      taskName,
+      startDate,
+      days,
+      yards: Number.isFinite(yards) && yards >= 0 ? yards : 0,
+      concreteConfirmed: false,
+    };
   };
 
   const updateTableScrollWidth = useCallback(() => {
@@ -928,7 +935,7 @@ export default function ProjectSchedulePage() {
                             {expandedScopes.has(scope.id) && scope.tasks && scope.tasks.length > 0 && (
                               <>
                                 {scope.tasks.map((taskString, taskIdx) => {
-                                  const { taskName, startDate, days, yards } = parseTaskMetadata(taskString);
+                                  const { taskName, startDate, days, yards, concreteConfirmed } = parseTaskMetadata(taskString);
                                   const taskStart = asDate(startDate);
                                   const taskEnd = taskStart && days > 0
                                     ? new Date(taskStart.getTime() + (days - 1) * 24 * 60 * 60 * 1000)
@@ -958,6 +965,19 @@ export default function ProjectSchedulePage() {
                                         <div className="text-[10px] text-gray-500 mt-0.5">
                                           {yards.toFixed(1)} yd
                                         </div>
+                                        {yards > 0 && (
+                                          <div className="mt-1">
+                                            <span
+                                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                                concreteConfirmed
+                                                  ? 'bg-green-100 text-green-700 border border-green-200'
+                                                  : 'bg-red-100 text-red-700 border border-red-200'
+                                              }`}
+                                            >
+                                              {concreteConfirmed ? 'Confirmed' : 'Not Confirmed'}
+                                            </span>
+                                          </div>
+                                        )}
                                       </div>
 
                                       <div className="col-span-full relative" style={{ gridColumn: `2 / span ${timeline.length}` }}>

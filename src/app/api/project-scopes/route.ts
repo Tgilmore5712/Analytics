@@ -16,6 +16,7 @@ type ScopeTaskEntry = {
   days?: number | null;
   manpower?: number | null;
   yards?: number | null;
+  concreteConfirmed?: boolean;
 };
 
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -77,6 +78,7 @@ function normalizeScopeTasks(value: unknown): ScopeTaskEntry[] | null | undefine
       ...(startDate ? { startDate } : {}),
       ...(Number.isFinite(daysValue || 0) && (daysValue || 0) > 0 ? { days: Math.round(daysValue as number) } : {}),
       ...(Number.isFinite(yardsValue || 0) && (yardsValue || 0) >= 0 ? { yards: yardsValue as number } : {}),
+      ...(Number.isFinite(yardsValue || 0) && (yardsValue || 0) > 0 ? { concreteConfirmed: false } : {}),
     };
   };
 
@@ -97,6 +99,8 @@ function normalizeScopeTasks(value: unknown): ScopeTaskEntry[] | null | undefine
       const daysRaw = Number(row.days);
       const manpowerRaw = Number(row.manpower);
       const yardsRaw = Number(row.yards);
+      const concreteConfirmedRaw = row.concreteConfirmed;
+      const concreteConfirmed = concreteConfirmedRaw === true;
 
       return {
         name,
@@ -104,6 +108,7 @@ function normalizeScopeTasks(value: unknown): ScopeTaskEntry[] | null | undefine
         ...(Number.isFinite(daysRaw) && daysRaw > 0 ? { days: Math.round(daysRaw) } : {}),
         ...(Number.isFinite(manpowerRaw) && manpowerRaw >= 0 ? { manpower: manpowerRaw } : {}),
         ...(Number.isFinite(yardsRaw) && yardsRaw >= 0 ? { yards: yardsRaw } : {}),
+        ...(Number.isFinite(yardsRaw) && yardsRaw > 0 ? { concreteConfirmed } : {}),
       };
     })
     .filter((entry): entry is ScopeTaskEntry => Boolean(entry));

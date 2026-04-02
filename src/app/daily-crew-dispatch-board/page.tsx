@@ -168,7 +168,7 @@ function DailyCrewDispatchBoardContent() {
   }, [user, allEmployees]);
 
   // Early Pour sidebar (from concrete orders local storage)
-  const [earlyPourOrders, setEarlyPourOrders] = useState<Array<{ id: string; projectName: string; date: string; time: string; totalYards: number }>>([]);
+  const [earlyPourOrders, setEarlyPourOrders] = useState<Array<{ id: string; projectName: string; date: string; time: string; totalYards: number; concreteConfirmed?: boolean | null }>>([]);
   const earlyPourRequestSeq = React.useRef(0);
 
   const effectiveDispatchDateKey = React.useMemo(() => {
@@ -1335,7 +1335,20 @@ function DailyCrewDispatchBoardContent() {
                       <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg whitespace-nowrap ${isTomorrow ? "bg-orange-400/20 text-orange-300" : "bg-orange-100 text-orange-700"}`}>
                         {new Date(`2000-01-01T${order.time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
                       </span>
-                      <span className={`text-[11px] font-black whitespace-nowrap ${isTomorrow ? "text-white/80" : "text-stone-600"}`}>{order.totalYards} YD</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[11px] font-black whitespace-nowrap ${isTomorrow ? "text-white/80" : "text-stone-600"}`}>{order.totalYards} YD</span>
+                        {typeof order.concreteConfirmed === "boolean" ? (
+                          <span
+                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black border whitespace-nowrap ${
+                              order.concreteConfirmed
+                                ? (isTomorrow ? "bg-green-200/25 text-green-200 border-green-300/40" : "bg-green-100 text-green-700 border-green-200")
+                                : (isTomorrow ? "bg-red-200/25 text-red-200 border-red-300/40" : "bg-red-100 text-red-700 border-red-200")
+                            }`}
+                          >
+                            {order.concreteConfirmed ? "Confirmed" : "Not Confirmed"}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className={`text-[10px] font-bold uppercase italic leading-tight truncate mt-1 ${isTomorrow ? "text-white/50" : "text-gray-400"}`}>{order.projectName}</div>
                   </div>

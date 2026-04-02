@@ -40,7 +40,100 @@ type ConcreteOrderRow = {
   created_at: Date;
 };
 
-function toResponseShape(row: ConcreteOrderRow) {
+type ProjectScopeTaskRow = {
+  jobKey: string;
+  tasks: unknown;
+};
+
+type ConcreteConfirmationTotals = {
+  total: number;
+  confirmed: number;
+};
+
+const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function getTaskConcreteSnapshot(task: unknown): { date: string; confirmed: boolean } | null {
+  if (!task) return null;
+
+  if (typeof task === 'string') {
+    const trimmed = task.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/^\[([^\]]+)\]\s*(.+)$/);
+    if (!match) return null;
+
+    const parts = String(match[1] || '')
+      .split('|')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    const date = parts.find((part) => DATE_KEY_REGEX.test(part));
+    if (!date) return null;
+
+    let yardsValue: number | null = null;
+    for (const part of parts) {
+      if (DATE_KEY_REGEX.test(part)) continue;
+      if (/\d+\s*d$/i.test(part)) continue;
+      const numericMatch = part.match(/(\d+(?:\.\d+)?)/);
+      if (!numericMatch) continue;
+      const parsed = Number.parseFloat(numericMatch[1]);
+      if (!Number.isFinite(parsed) || parsed < 0) continue;
+      yardsValue = parsed;
+      break;
+    }
+
+    if (!Number.isFinite(yardsValue || 0) || (yardsValue || 0) <= 0) return null;
+    return { date, confirmed: false };
+  }
+
+  if (typeof task !== 'object' || Array.isArray(task)) return null;
+
+  const row = task as Record<string, unknown>;
+  const date = String(row.startDate || '').trim();
+  if (!DATE_KEY_REGEX.test(date)) return null;
+
+  const yards = Number(row.yards);
+  if (!Number.isFinite(yards) || yards <= 0) return null;
+
+  return {
+    date,
+    confirmed: row.concreteConfirmed === true,
+  };
+}
+
+function buildConcreteConfirmationByJobDate(rows: ProjectScopeTaskRow[]): Map<string, ConcreteConfirmationTotals> {
+  const totals = new Map<string, ConcreteConfirmationTotals>();
+
+  for (const row of rows) {
+    const jobKey = String(row.jobKey || '').trim();
+    if (!jobKey) continue;
+    if (!Array.isArray(row.tasks)) continue;
+
+    for (const task of row.tasks) {
+      const snapshot = getTaskConcreteSnapshot(task);
+      if (!snapshot) continue;
+
+      const key = `${jobKey}__${snapshot.date}`;
+      const current = totals.get(key) || { total: 0, confirmed: 0 };
+      current.total += 1;
+      if (snapshot.confirmed) current.confirmed += 1;
+      totals.set(key, current);
+    }
+  }
+
+  return totals;
+}
+
+function toResponseShape(
+  row: ConcreteOrderRow,
+  confirmationByJobDate?: Map<string, ConcreteConfirmationTotals>
+) {
+  const confirmationKey = `${row.job_key}__${row.date}`;
+  const totals = confirmationByJobDate?.get(confirmationKey);
+  const concreteConfirmed =
+    totals && totals.total > 0
+      ? totals.confirmed === totals.total
+      : null;
+
   return {
     id: row.id,
     jobKey: row.job_key,
@@ -49,6 +142,7 @@ function toResponseShape(row: ConcreteOrderRow) {
     date: row.date,
     time: row.time,
     totalYards: Number(row.total_yards || 0),
+    concreteConfirmed,
     createdAt: row.created_at,
   };
 }
@@ -74,9 +168,28 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
+    const relevantJobKeys = Array.from(new Set(filtered.map((row) => String(row.job_key || '').trim()).filter(Boolean)));
+    let confirmationByJobDate = new Map<string, ConcreteConfirmationTotals>();
+
+    if (relevantJobKeys.length > 0) {
+      try {
+        const scopeRows = await prisma.projectScope.findMany({
+          where: { jobKey: { in: relevantJobKeys } },
+          select: {
+            jobKey: true,
+            tasks: true,
+          },
+        }) as unknown as ProjectScopeTaskRow[];
+
+        confirmationByJobDate = buildConcreteConfirmationByJobDate(scopeRows);
+      } catch (error) {
+        console.warn('Failed to enrich concrete order confirmation status:', error);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: filtered.map(toResponseShape),
+      data: filtered.map((row) => toResponseShape(row, confirmationByJobDate)),
     });
   } catch (error) {
     console.error('Failed to fetch concrete orders:', error);
