@@ -123,6 +123,7 @@ const hydrateTaskYards = (
 export default function ProjectSchedulePage() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null);
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
@@ -371,16 +372,37 @@ export default function ProjectSchedulePage() {
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      await fetch("/api/gantt-v2/setup", { method: "POST" });
+      await fetch("/api/gantt-v2/setup", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+      });
       const [ganttRes, metadataRes, concreteOrdersRes] = await Promise.all([
-        fetch("/api/gantt-v2/projects"),
-        fetch("/api/project-scopes"),
-        fetch("/api/project-schedule/concrete-yards"),
+        fetch("/api/gantt-v2/projects", { cache: "no-store", credentials: "include" }),
+        fetch("/api/project-scopes", { cache: "no-store", credentials: "include" }),
+        fetch("/api/project-schedule/concrete-yards", { cache: "no-store", credentials: "include" }),
       ]);
-      const json = await ganttRes.json();
-      const metadataJson = await metadataRes.json().catch(() => ({ success: false, data: [] }));
-      const concreteOrdersJson = await concreteOrdersRes.json().catch(() => ({ success: false, data: [] }));
+
+      const parseSafeJson = async (response: Response) => {
+        return response.json().catch(() => ({ success: false }));
+      };
+
+      const json = await parseSafeJson(ganttRes);
+      const metadataJson = metadataRes.ok ? await parseSafeJson(metadataRes) : { success: false, data: [] };
+      const concreteOrdersJson = concreteOrdersRes.ok ? await parseSafeJson(concreteOrdersRes) : { success: false, data: [] };
+
+      if (!ganttRes.ok || !json?.success) {
+        const status = ganttRes.status;
+        const message =
+          status === 401
+            ? "Not authenticated. Refresh or sign in again."
+            : status === 403
+            ? "No permission to load Project Gantt on this account."
+            : (json?.error || `Failed to load projects (HTTP ${status || "unknown"}).`);
+        throw new Error(message);
+      }
 
       const projectsData: ProjectRow[] = json?.data || [];
       const metadataScopes: Array<{
@@ -454,6 +476,10 @@ export default function ProjectSchedulePage() {
       setProjects(mergedProjects);
       // Collapse all projects by default
       setCollapsedProjects(new Set(mergedProjects.map((p: ProjectRow) => p.id)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load projects.";
+      setLoadError(message);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -650,6 +676,10 @@ export default function ProjectSchedulePage() {
 
               {loading ? (
                 <div className="p-4 text-sm text-gray-500">Loading...</div>
+              ) : loadError ? (
+                <div className="p-4 text-sm text-red-600">
+                  {loadError}
+                </div>
               ) : filteredProjects.length === 0 ? (
                 <div className="p-4 text-sm text-gray-500">
                   {searchTerm.trim() ? "No projects match your search." : "No projects yet."}

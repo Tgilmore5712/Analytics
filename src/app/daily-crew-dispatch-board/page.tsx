@@ -994,6 +994,7 @@ function DailyCrewDispatchBoardContent() {
   const globalCapacityHours = isPaidHoliday ? 0 : ((foremen.length + fieldWorkers.length) * 10) - totalHoursOff;
   const globalAssignedCount = getAssignedEmployeesForDate(dateKey).length;
   const globalActualHours = (foremen.length + globalAssignedCount) * 10; // foremen + crew members
+  const unassignedProjectsForDate = (foremanDateProjects.__unassigned__?.[dateKey] || []).filter((p) => p.hours > 0);
 
   return (
     <main className={`${styles.dispatchResponsive} h-screen bg-neutral-100 p-2 md:p-4 lg:p-6 font-sans text-slate-900 overflow-hidden flex flex-col`}>
@@ -1097,6 +1098,27 @@ function DailyCrewDispatchBoardContent() {
 
         <div className="md:hidden flex-1 overflow-auto p-3 bg-gray-50 custom-scrollbar">
           <div className="space-y-4">
+            {foremen.length === 0 && unassignedProjectsForDate.length > 0 && (
+              <div className="bg-white rounded-3xl border border-orange-200 shadow-xl overflow-hidden">
+                <div className="px-5 py-4 bg-orange-50 border-b border-orange-100">
+                  <div className="text-base font-black uppercase italic tracking-tight text-orange-700">Unassigned Projects</div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-orange-500 mt-1">Foremen data unavailable for this browser session</div>
+                </div>
+                <div className="p-5 space-y-3">
+                  {unassignedProjectsForDate.map((p, pIdx) => (
+                    <Link
+                      key={pIdx}
+                      href={`/short-term-schedule?search=${encodeURIComponent(p.projectName)}`}
+                      className="bg-white border border-orange-200 rounded-xl px-3 py-2 flex items-center justify-between gap-3 shadow-sm hover:border-orange-500 transition-colors"
+                    >
+                      <span className="text-xs font-black text-gray-800">{p.projectName}</span>
+                      <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-1.5 rounded-lg">{p.hours.toFixed(0)}h</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {foremen.map((foreman) => {
               const projects = (foremanDateProjects[foreman.id]?.[dateKey] || []).filter(p => p.hours > 0);
               const scheduledHrs = projects.reduce((sum, p) => sum + p.hours, 0);
@@ -1163,11 +1185,11 @@ function DailyCrewDispatchBoardContent() {
               );
             })}
 
-            {foremanDateProjects.__unassigned__?.[dateKey]?.filter(p => p.hours > 0).length > 0 && (
+            {unassignedProjectsForDate.length > 0 && (
               <div className="p-3 bg-orange-50 border border-orange-100 rounded-2xl">
                 <div className="text-[10px] font-black uppercase tracking-widest text-orange-600 mb-2">Unassigned</div>
                 <div className="flex flex-col gap-2">
-                  {foremanDateProjects.__unassigned__[dateKey].filter(p => p.hours > 0).map((p, pIdx) => (
+                  {unassignedProjectsForDate.map((p, pIdx) => (
                     <Link 
                       key={pIdx} 
                       href={`/short-term-schedule?search=${encodeURIComponent(p.projectName)}`}
@@ -1186,6 +1208,26 @@ function DailyCrewDispatchBoardContent() {
         {/* Dispatch Grid - Compressed "No-Scroll" Layout */}
         <div className="hidden md:flex flex-1 overflow-hidden bg-gray-50 gap-0">
           <div className="flex-1 overflow-hidden p-2">
+          {foremen.length === 0 && unassignedProjectsForDate.length > 0 ? (
+            <div className="h-full rounded-2xl border-2 border-orange-200 bg-white shadow-xl overflow-hidden flex flex-col">
+              <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
+                <div className="text-lg font-black uppercase italic tracking-tight text-orange-700">Unassigned Projects</div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-orange-500 mt-1">Foremen data unavailable for this browser session</div>
+              </div>
+              <div className="p-3 space-y-2 overflow-y-auto no-scrollbar">
+                {unassignedProjectsForDate.map((p, pIdx) => (
+                  <Link
+                    key={pIdx}
+                    href={`/short-term-schedule?search=${encodeURIComponent(p.projectName)}`}
+                    className="bg-white border border-orange-200 rounded-xl px-3 py-2 flex items-center justify-between gap-3 shadow-sm hover:border-orange-500 transition-colors"
+                  >
+                    <span className="text-sm font-black text-gray-800 uppercase italic tracking-tight truncate">{p.projectName}</span>
+                    <span className="text-[11px] font-black text-orange-600 bg-orange-50 px-2 py-0.5 rounded-lg whitespace-nowrap">{p.hours.toFixed(0)}h</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : (
           <div 
             className="grid grid-rows-2 grid-flow-col gap-2 h-full"
             style={{ gridTemplateColumns: `repeat(${Math.ceil(foremen.length / 2)}, minmax(0, 1fr))` }}
@@ -1327,6 +1369,7 @@ function DailyCrewDispatchBoardContent() {
               );
             })}
           </div>
+          )}
           </div>
 
           {/* Early Pours Sidebar */}
@@ -1386,11 +1429,11 @@ function DailyCrewDispatchBoardContent() {
         </div>
 
         {/* Unassigned Projects tray */}
-        {foremanDateProjects.__unassigned__?.[dateKey]?.filter(p => p.hours > 0).length > 0 && (
+        {unassignedProjectsForDate.length > 0 && (
           <div className="hidden md:flex px-6 py-2.5 bg-stone-50 border-t border-stone-200 items-center gap-4">
             <span className="text-[9px] font-black uppercase tracking-[0.2em] bg-stone-800 text-white px-3 py-1 rounded-lg shadow-md italic">Unassigned Projects</span>
             <div className="flex-1 flex gap-3 overflow-x-auto no-scrollbar py-1">
-              {foremanDateProjects.__unassigned__[dateKey].filter(p => p.hours > 0).map((p, pIdx) => (
+              {unassignedProjectsForDate.map((p, pIdx) => (
                 <Link 
                   key={pIdx} 
                   href={`/short-term-schedule?search=${encodeURIComponent(p.projectName)}`}
