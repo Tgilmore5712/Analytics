@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ensureGanttV2Schema, getGanttV2ProjectsWithScopes } from '@/lib/ganttV2Db';
-import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
+import { getErrorMessage, shouldFallbackToEmptyRead, withDatabaseRetry } from '@/lib/dbResilience';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    await ensureGanttV2Schema();
-    const projects = await getGanttV2ProjectsWithScopes();
+    const projects = await withDatabaseRetry(async () => {
+      await ensureGanttV2Schema();
+      return getGanttV2ProjectsWithScopes();
+    });
     return NextResponse.json({ success: true, data: projects });
   } catch (error) {
     if (shouldFallbackToEmptyRead(error)) {
@@ -24,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    await ensureGanttV2Schema();
+    await withDatabaseRetry(() => ensureGanttV2Schema());
     const body = await request.json();
 
     const projectName = (body?.projectName || '').toString().trim();

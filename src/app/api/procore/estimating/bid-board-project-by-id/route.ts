@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function unwrapProjectList(payload: unknown): UnknownRecord[] | null {
+  if (Array.isArray(payload)) {
+    return payload.filter(isRecord);
+  }
+
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const candidates = [
+    payload.data,
+    payload.projects,
+    payload.bid_board_projects,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter(isRecord);
+    }
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -51,7 +81,6 @@ export async function POST(request: NextRequest) {
     for (const host of hosts) {
       try {
         let page = 1;
-        let foundPage = false;
 
         while (true) {
           const url = `${host}/rest/v2.0/companies/${companyId}/estimating/bid_board_projects?page=${page}&per_page=100`;
@@ -83,10 +112,10 @@ export async function POST(request: NextRequest) {
           }
 
           const text = await response.text();
-          let data: any;
+          let data: unknown;
           try {
             data = JSON.parse(text);
-          } catch (e) {
+          } catch {
             attempts.push({
               host,
               status: response.status,
@@ -95,25 +124,17 @@ export async function POST(request: NextRequest) {
             break;
           }
 
-          if (!Array.isArray(data)) {
-            // Check if it's the specific format we sometimes see: { data: [...] } or { projects: [...] }
-            if (data && typeof data === 'object' && Array.isArray((data as any).data)) {
-              data = (data as any).data;
-            } else if (data && typeof data === 'object' && Array.isArray((data as any).projects)) {
-              data = (data as any).projects;
-            } else if (data && typeof data === 'object' && Array.isArray((data as any).bid_board_projects)) {
-              data = (data as any).bid_board_projects;
-            } else {
-              attempts.push({
-                host,
-                status: response.status,
-                error: `Response is not an array. Keys: ${Object.keys(data || {}).join(', ')}`,
-              });
-              break;
-            }
+          const pageItems = unwrapProjectList(data);
+          if (!pageItems) {
+            attempts.push({
+              host,
+              status: response.status,
+              error: `Response is not an array. Keys: ${isRecord(data) ? Object.keys(data).join(', ') : 'none'}`,
+            });
+            break;
           }
 
-          if (data.length === 0) {
+          if (pageItems.length === 0) {
             if (page === 1) {
               attempts.push({
                 host,
@@ -123,7 +144,7 @@ export async function POST(request: NextRequest) {
             break;
           }
 
-          allProjects.push(...data);
+          allProjects.push(...pageItems);
 
           page++;
         }
@@ -144,20 +165,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const projectIdNumber = Number.parseInt(String(projectId), 10);
     // Find the matching project
     const matchingProject = allProjects.find(
-      (p: Record<string, unknown>) =>
-        p.id === parseInt(projectId) ||
-        p.project_id === parseInt(projectId) ||
+      (p) =>
         p.id === projectId ||
-        p.project_id === projectId
+        p.project_id === projectId ||
+        (!Number.isNaN(projectIdNumber) &&
+          (p.id === projectIdNumber || p.project_id === projectIdNumber))
     );
 
     return NextResponse.json({
       found: !!matchingProject,
       project: matchingProject || null,
       totalProjectsFetched: allProjects.length,
-      allProjectInfo: allProjects.map((p: any) => ({
+      allProjectInfo: allProjects.map((p) => ({
         id: p.id,
         project_id: p.project_id,
         name: p.name || p.display_name,

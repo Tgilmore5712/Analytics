@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { procoreConfig } from "@/lib/procore";
+import { getPrimaryAllowedProcoreOrigin, buildAllowedProcoreHostCandidates } from "@/lib/procoreHosts";
 
 function parseBids(json: unknown): Record<string, unknown>[] {
   if (Array.isArray(json)) return json as Record<string, unknown>[];
@@ -122,16 +123,13 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const cookieStore = await cookies();
 
-    const accessToken =
-      searchParams.get("accessToken") || cookieStore.get("procore_access_token")?.value || "";
+    const accessToken = cookieStore.get("procore_access_token")?.value || "";
     const projectId = String(searchParams.get("projectId") || "").trim();
     const page = Math.max(Number(searchParams.get("page")) || 1, 1);
     const perPage = Math.min(Math.max(Number(searchParams.get("perPage")) || 100, 1), 200);
     const fetchAll = searchParams.get("fetchAll") === "true";
     const maxPages = Math.min(Math.max(Number(searchParams.get("maxPages")) || 1, 1), 200);
-    const baseUrl = String(searchParams.get("baseUrl") || procoreConfig.apiUrl || "https://api.procore.com")
-      .trim()
-      .replace(/\/$/, "");
+    const baseUrl = getPrimaryAllowedProcoreOrigin(procoreConfig.apiUrl);
     const companyId = String(
       searchParams.get("companyId") || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ''
     ).trim();
@@ -198,9 +196,10 @@ export async function POST(request: Request) {
     const perPage = Math.min(Math.max(Number(body.perPage) || 100, 1), 200);
     const fetchAll = body.fetchAll === true;
     const maxPages = Math.min(Math.max(Number(body.maxPages) || 1, 1), 200);
-    const baseUrl = String(body.baseUrl || procoreConfig.apiUrl || "https://api.procore.com")
-      .trim()
-      .replace(/\/$/, "");
+    const hostCandidates = buildAllowedProcoreHostCandidates({
+      requestedOrigin: body.baseUrl,
+      extraOrigins: [procoreConfig.apiUrl],
+    });
     const companyId = String(
       body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || ''
     ).trim();
@@ -216,6 +215,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing projectId." }, { status: 400 });
     }
 
+    if (hostCandidates.error) {
+      return NextResponse.json({ error: hostCandidates.error }, { status: 400 });
+    }
+
     const result = await fetchProjectBids({
       accessToken,
       projectId,
@@ -223,7 +226,7 @@ export async function POST(request: Request) {
       perPage,
       fetchAll,
       maxPages,
-      baseUrl,
+      baseUrl: hostCandidates.candidates[0] || getPrimaryAllowedProcoreOrigin(procoreConfig.apiUrl),
       companyId: companyId || undefined,
     });
 

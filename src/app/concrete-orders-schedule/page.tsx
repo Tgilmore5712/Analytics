@@ -18,6 +18,13 @@ type ConcreteOrderCellSummary = {
   knownConfirmations: number;
   confirmedCount: number;
 };
+type TaskConcreteSummary = {
+  jobKey: string;
+  date: string;
+  totalYards: number;
+  knownConfirmations: number;
+  confirmedCount: number;
+};
 
 function getCurrentWeekMonday(): Date {
   const today = new Date();
@@ -48,6 +55,7 @@ export default function ConcreteOrdersSchedulePage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ConcreteRow[]>([]);
   const [orders, setOrders] = useState<ConcreteOrder[]>([]);
+  const [taskSummaries, setTaskSummaries] = useState<TaskConcreteSummary[]>([]);
   const [activeProject, setActiveProject] = useState<ConcreteRow | null>(null);
 
   useEffect(() => {
@@ -69,7 +77,9 @@ export default function ConcreteOrdersSchedulePage() {
 
       const json = await response.json();
       const data = Array.isArray(json?.data) ? json.data : [];
+      const summaries = Array.isArray(json?.taskSummaries) ? json.taskSummaries : [];
       setOrders(data);
+      setTaskSummaries(summaries);
 
       // One-time migration for historical local orders.
       const raw = localStorage.getItem(ORDER_STORAGE_KEY);
@@ -90,6 +100,7 @@ export default function ConcreteOrdersSchedulePage() {
       const refreshed = await fetch("/api/concrete-orders", { cache: "no-store" });
       const refreshedJson = await refreshed.json();
       setOrders(Array.isArray(refreshedJson?.data) ? refreshedJson.data : []);
+      setTaskSummaries(Array.isArray(refreshedJson?.taskSummaries) ? refreshedJson.taskSummaries : []);
     } catch (error) {
       console.error("Failed to load concrete orders:", error);
     }
@@ -166,10 +177,15 @@ export default function ConcreteOrdersSchedulePage() {
   }
 
   const dateColumns = useMemo(() => {
-    return Array.from(new Set(orders.map((order) => order.date))).sort((a, b) =>
+    return Array.from(
+      new Set([
+        ...orders.map((order) => order.date),
+        ...taskSummaries.map((summary) => summary.date),
+      ])
+    ).sort((a, b) =>
       a.localeCompare(b)
     );
-  }, [orders]);
+  }, [orders, taskSummaries]);
 
   const ordersByProjectDate = useMemo(() => {
     const summary: Record<string, ConcreteOrderCellSummary> = {};
@@ -190,6 +206,22 @@ export default function ConcreteOrdersSchedulePage() {
     return summary;
   }, [orders]);
 
+  const taskSummaryByProjectDate = useMemo(() => {
+    const summary: Record<string, ConcreteOrderCellSummary> = {};
+
+    taskSummaries.forEach((taskSummary) => {
+      const key = `${taskSummary.jobKey}__${taskSummary.date}`;
+      summary[key] = {
+        count: 0,
+        totalYards: Number(taskSummary.totalYards || 0),
+        knownConfirmations: Number(taskSummary.knownConfirmations || 0),
+        confirmedCount: Number(taskSummary.confirmedCount || 0),
+      };
+    });
+
+    return summary;
+  }, [taskSummaries]);
+
   const orderCountByProject = useMemo(() => {
     const counts: Record<string, number> = {};
     orders.forEach((order) => {
@@ -197,6 +229,38 @@ export default function ConcreteOrdersSchedulePage() {
     });
     return counts;
   }, [orders]);
+
+  const displayRows = useMemo(() => {
+    const rowMap = new Map<string, ConcreteRow>();
+
+    rows.forEach((row) => {
+      rowMap.set(row.jobKey, row);
+    });
+
+    orders.forEach((order) => {
+      if (rowMap.has(order.jobKey)) return;
+      const [customer = "", projectNumber = "", parsedProjectName = ""] = String(order.jobKey || "").split("~");
+      rowMap.set(order.jobKey, {
+        jobKey: order.jobKey,
+        customer,
+        projectNumber,
+        projectName: order.projectName || parsedProjectName || "Project",
+      });
+    });
+
+    taskSummaries.forEach((summary) => {
+      if (rowMap.has(summary.jobKey)) return;
+      const [customer = "", projectNumber = "", projectName = ""] = String(summary.jobKey || "").split("~");
+      rowMap.set(summary.jobKey, {
+        jobKey: summary.jobKey,
+        customer,
+        projectNumber,
+        projectName: projectName || "Project",
+      });
+    });
+
+    return Array.from(rowMap.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
+  }, [orders, rows, taskSummaries]);
 
   return (
     <main className="min-h-screen bg-neutral-100 p-2 md:p-4 font-sans text-slate-900">
@@ -211,7 +275,7 @@ export default function ConcreteOrdersSchedulePage() {
           <div className="bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 p-12 text-center">
             <p className="text-gray-400 font-black uppercase tracking-[0.2em]">Loading Concrete Orders...</p>
           </div>
-        ) : rows.length === 0 ? (
+        ) : displayRows.length === 0 ? (
           <div className="bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 p-12 text-center">
             <p className="text-gray-400 font-black uppercase tracking-[0.2em]">No Scheduled Projects Found</p>
           </div>
@@ -244,7 +308,7 @@ export default function ConcreteOrdersSchedulePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, idx) => (
+                  {displayRows.map((row, idx) => (
                     <tr
                       key={row.jobKey}
                       className={`border-b border-gray-50 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
@@ -262,7 +326,10 @@ export default function ConcreteOrdersSchedulePage() {
                         </button>
                       </td>
                       {dateColumns.map((dateKey) => {
-                        const summary = ordersByProjectDate[`${row.jobKey}__${dateKey}`];
+                        const orderSummary = ordersByProjectDate[`${row.jobKey}__${dateKey}`];
+                        const taskSummary = taskSummaryByProjectDate[`${row.jobKey}__${dateKey}`];
+                        const summary = orderSummary || taskSummary;
+                        const confirmationSummary = taskSummary || orderSummary;
                         return (
                           <td
                             key={`${row.jobKey}-${dateKey}`}
@@ -271,15 +338,15 @@ export default function ConcreteOrdersSchedulePage() {
                             {summary ? (
                               <div className="flex flex-col items-center gap-1">
                                 <span>{`${summary.totalYards.toFixed(1)} YD`}</span>
-                                {summary.knownConfirmations > 0 ? (
+                                {confirmationSummary && confirmationSummary.knownConfirmations > 0 ? (
                                   <span
                                     className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] border ${
-                                      summary.confirmedCount === summary.knownConfirmations
+                                      confirmationSummary.confirmedCount === confirmationSummary.knownConfirmations
                                         ? "bg-green-100 text-green-700 border-green-200"
                                         : "bg-red-100 text-red-700 border-red-200"
                                     }`}
                                   >
-                                    {summary.confirmedCount === summary.knownConfirmations
+                                    {confirmationSummary.confirmedCount === confirmationSummary.knownConfirmations
                                       ? "Confirmed"
                                       : "Not Confirmed"}
                                   </span>

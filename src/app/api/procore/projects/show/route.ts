@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { Prisma } from "@prisma/client";
 import { makeRequest, procoreConfig } from "@/lib/procore";
 import { prisma } from "@/lib/prisma";
 import { unpackProjectPayload } from "@/lib/procoreProjectPayloadUnpack";
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     const endpoint = `/rest/v1.0/projects/${encodeURIComponent(projectId)}?${qs.toString()}`;
     const rawPayload = await makeRequest(endpoint, accessToken, undefined, companyId);
     const payload = rawPayload as ProcoreProject;
+    const payloadJson = payload as Prisma.InputJsonValue;
 
     // Extract key fields for indexed queries
     const projectOwnerType = payload?.project_owner_type?.name ?? null;
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
             status: payload?.status ?? null,
             createdAt,
             updatedAt,
-            payload: payload as any,
+            payload: payloadJson,
             syncedAt: new Date(),
           },
         });
@@ -107,7 +109,7 @@ export async function POST(request: Request) {
             status: payload?.status ?? null,
             createdAt,
             updatedAt,
-            payload: payload as any,
+            payload: payloadJson,
           },
         });
       }

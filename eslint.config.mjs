@@ -12,6 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Non-runtime assets and one-off tooling should not drown out app lint signal.
+    "public/**",
+    "data/**",
+    "logs/**",
+    "snapshots/**",
+    "scripts/**",
+    "scripts-archived-firebase/**",
+    "utils/**",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.sql",
   ]),
 ]);
 

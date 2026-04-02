@@ -1,9 +1,40 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { procoreConfig } from "@/lib/procore";
+import { buildAllowedProcoreHostCandidates } from "@/lib/procoreHosts";
 
 const DEFAULT_ESTIMATING_BASE_URL =
   "https://estimating-esticom-829a58c093c92de.na-east-01-tugboat.procoretech-qa.com";
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function unwrapBidBoardProjects(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!isRecord(payload)) {
+    return [];
+  }
+
+  const candidates = [
+    payload.data,
+    payload.projects,
+    payload.bid_board_projects,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  return [];
+}
 
 export async function POST(request: Request) {
   try {
@@ -42,22 +73,24 @@ export async function POST(request: Request) {
     const safePerPage = Math.min(Math.max(Number(perPage) || 100, 1), 200);
     let currentPage = Math.max(Number(page) || 1, 1);
 
-    const hostCandidates = Array.from(
-      new Set(
-        [
-          String(baseUrl || "").trim(),
-          String(process.env.PROCORE_ESTIMATING_API_URL || "").trim(),
-          DEFAULT_ESTIMATING_BASE_URL,
-          "https://api.procore.com",
-        ].filter(Boolean)
-      )
-    );
+    const hostCandidates = buildAllowedProcoreHostCandidates({
+      requestedOrigin: baseUrl,
+      extraOrigins: [
+        process.env.PROCORE_ESTIMATING_API_URL,
+        DEFAULT_ESTIMATING_BASE_URL,
+        "https://api.procore.com",
+      ],
+    });
+
+    if (hostCandidates.error) {
+      return NextResponse.json({ error: hostCandidates.error }, { status: 400 });
+    }
 
     let allProjects: unknown[] = [];
     let successfulHost = "";
     const attempts: Array<{ host: string; status: number; message: string }> = [];
 
-    for (const host of hostCandidates) {
+    for (const host of hostCandidates.candidates) {
       const hostRows: unknown[] = [];
       currentPage = Math.max(Number(page) || 1, 1);
       let hostWorked = false;
@@ -97,16 +130,8 @@ export async function POST(request: Request) {
         }
 
         hostWorked = true;
-        const data = await response.json();
-        
-        // Use the same smart unwrapping logic from our successful search-by-id endpoint
-        let pageItems: any[] = [];
-        if (Array.isArray(data)) {
-          pageItems = data;
-        } else if (data && typeof data === 'object') {
-          // Check for common Procore API wrapper keys
-          pageItems = (data as any).data || (data as any).projects || (data as any).bid_board_projects || [];
-        }
+        const data: unknown = await response.json();
+        const pageItems = unwrapBidBoardProjects(data);
 
         hostRows.push(...pageItems);
 
@@ -147,7 +172,7 @@ export async function POST(request: Request) {
       companyId,
       source: "estimating.bid_board_projects",
       baseUrl: successfulHost,
-      attemptedHosts: hostCandidates,
+      attemptedHosts: hostCandidates.candidates,
       fetchAll,
       startPage: Math.max(Number(page) || 1, 1),
       perPage: safePerPage,

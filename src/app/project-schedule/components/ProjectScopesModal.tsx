@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import { ConcreteOrderModal, type ConcreteOrderProjectRef } from "@/components/ConcreteOrderModal";
 import { ProjectInfo, Scope, ScheduleTask } from "@/types";
+import { readJsonResponse } from "@/utils/readJsonResponse";
 
 type GanttProjectResponse = {
   id: string;
@@ -21,6 +22,15 @@ type GanttProjectResponse = {
 };
 
 const NEW_SCOPE_ID = '__new_scope__';
+
+const isCanonicalScopeId = (value: string | null | undefined) =>
+  Boolean(
+    value &&
+    value !== NEW_SCOPE_ID &&
+    !value.startsWith('fallback-') &&
+    !value.startsWith('virtual-') &&
+    !value.startsWith('generated-')
+  );
 
 interface ProjectScopesModalProps {
   project: ProjectInfo;
@@ -266,6 +276,15 @@ const calculateTaskDateRange = (tasks: Array<string | ScheduleTask>): { startDat
 
   if (!minStart || !maxEnd) return null;
   return { startDate: minStart, endDate: maxEnd };
+};
+
+const getTaskIdentityKey = (task: ScheduleTask): string => {
+  const parsed = parseTaskEntry(task);
+  return [
+    String(parsed.name || '').trim().toLowerCase(),
+    String(parsed.startDate || '').trim(),
+    String(parsed.days ?? ''),
+  ].join('|');
 };
 
 export function ProjectScopesModal({
@@ -522,9 +541,127 @@ export function ProjectScopesModal({
       selectedDays: [],
     }));
 
+  const loadPersistedProjectScopes = async (): Promise<Scope[]> => {
+    if (!resolvedJobKey) return [];
+
+    const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey)}`);
+    if (!projectScopesRes.ok) return [];
+
+    const projectScopesJson = await readJsonResponse<{ data?: Scope[]; scopes?: Scope[] }>(projectScopesRes, {
+      label: "Project scopes",
+      fallback: { data: [], scopes: [] },
+    });
+
+    let persistedScopes: Scope[] = Array.isArray(projectScopesJson?.data)
+      ? projectScopesJson.data
+      : (Array.isArray(projectScopesJson?.scopes) ? projectScopesJson.scopes : []);
+
+    if (persistedScopes.length > 0) {
+      return persistedScopes;
+    }
+
+    const allScopesRes = await fetch('/api/project-scopes');
+    if (!allScopesRes.ok) return [];
+
+    const allScopesJson = await readJsonResponse<{ data?: Scope[]; scopes?: Scope[] }>(allScopesRes, {
+      label: "All project scopes",
+      fallback: { data: [], scopes: [] },
+    });
+    const allScopes: Scope[] = Array.isArray(allScopesJson?.data)
+      ? allScopesJson.data
+      : (Array.isArray(allScopesJson?.scopes) ? allScopesJson.scopes : []);
+
+    const normalizedCustomer = normalize(project.customer);
+    const normalizedProjectNumber = normalize(project.projectNumber);
+    const normalizedProjectName = normalize(project.projectName);
+
+    return allScopes.filter((scope) => {
+      const [scopeCustomer = '', scopeProjectNumber = '', scopeProjectName = ''] = String(scope.jobKey || '').split('~');
+      const customerMatch = normalize(scopeCustomer) === normalizedCustomer;
+      const projectNumberMatch = normalize(scopeProjectNumber) === normalizedProjectNumber;
+      const projectNameMatch = normalize(scopeProjectName) === normalizedProjectName;
+      return customerMatch && projectNumberMatch && projectNameMatch;
+    });
+  };
+
+  const mergePersistedScopeMetadata = async (scopes: Scope[]): Promise<Scope[]> => {
+    try {
+      const persistedScopes = await loadPersistedProjectScopes();
+      if (persistedScopes.length === 0) {
+        return scopes;
+      }
+
+      const persistedByComposite = new Map<string, Scope[]>();
+      const persistedByTitle = new Map<string, Scope[]>();
+      persistedScopes.forEach((scope) => {
+        const titleKey = normalize(scope?.title || '');
+        if (!titleKey) return;
+
+        const compositeKey = scopeMatchKey(scope.title, scope.startDate, scope.endDate);
+        const compositeBucket = persistedByComposite.get(compositeKey) || [];
+        compositeBucket.push(scope);
+        persistedByComposite.set(compositeKey, compositeBucket);
+
+        const titleBucket = persistedByTitle.get(titleKey) || [];
+        titleBucket.push(scope);
+        persistedByTitle.set(titleKey, titleBucket);
+      });
+
+      return scopes.map((scope) => {
+        const compositeMatches = persistedByComposite.get(scopeMatchKey(scope.title, scope.startDate, scope.endDate)) || [];
+        const titleMatches = persistedByTitle.get(normalize(scope.title || '')) || [];
+        const persisted =
+          compositeMatches[0] ||
+          (titleMatches.length === 1 ? titleMatches[0] : undefined);
+
+        if (!persisted) return scope;
+
+        return {
+          ...scope,
+          description: persisted.description || scope.description || '',
+          tasks: Array.isArray(persisted.tasks) ? persisted.tasks : (scope.tasks || []),
+          schedulingMode: persisted.schedulingMode === 'specific-days' ? 'specific-days' : (scope.schedulingMode || 'contiguous'),
+          selectedDays: Array.isArray(persisted.selectedDays) ? persisted.selectedDays : (scope.selectedDays || []),
+          color: persisted.color || scope.color || null,
+          taskColors: (persisted.taskColors && typeof persisted.taskColors === 'object' ? persisted.taskColors : null) || scope.taskColors || null,
+        };
+      });
+    } catch (error) {
+      console.warn('Failed to merge project-scope metadata into canonical scopes:', error);
+      return scopes;
+    }
+  };
+
+  const loadScopesForGanttProject = async (projectId: string): Promise<Scope[] | null> => {
+    const response = await fetch(`/api/gantt-v2/projects/${projectId}/scopes`);
+    const result = await readJsonResponse<{ success?: boolean; data?: NonNullable<GanttProjectResponse["scopes"]> }>(response, {
+      label: "Gantt V2 project scopes",
+      fallback: { success: false, data: [] },
+    });
+
+    if (!response.ok || !result?.success || !Array.isArray(result?.data)) {
+      return null;
+    }
+
+    const mergedScopes = await mergePersistedScopeMetadata(mapGanttScopes(result.data));
+    setGanttProjectId(projectId);
+    setCanonicalScopes(mergedScopes);
+    return mergedScopes;
+  };
+
   const loadCanonicalScopes = async (): Promise<Scope[] | null> => {
+    if (ganttProjectId) {
+      const projectScopes = await loadScopesForGanttProject(ganttProjectId);
+      if (projectScopes) {
+        return projectScopes;
+      }
+    }
+
     const response = await fetch('/api/gantt-v2/projects');
-    const result = await response.json();
+    const result = await readJsonResponse<{ success?: boolean; data?: GanttProjectResponse[] }>(response, {
+      label: "Gantt V2 projects",
+      fallback: { success: false, data: [] },
+    });
     if (!response.ok || !result?.success || !Array.isArray(result?.data)) {
       setGanttProjectId(null);
       setCanonicalScopes(null);
@@ -541,84 +678,10 @@ export function ProjectScopesModal({
       return null;
     }
 
-    let mappedScopes = mapGanttScopes(match.scopes || []);
-
-    // Merge persisted metadata from project-scopes so description/tasks survive refresh
-    // even when the canonical source comes from gantt-v2.
-    try {
-      if (resolvedJobKey) {
-        const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey)}`);
-        if (projectScopesRes.ok) {
-          const projectScopesJson = await projectScopesRes.json();
-          let persistedScopes: Scope[] = Array.isArray(projectScopesJson?.data)
-            ? projectScopesJson.data
-            : (Array.isArray(projectScopesJson?.scopes) ? projectScopesJson.scopes : []);
-
-          // Fallback for jobKey format drift: match by project identity from scope.jobKey parts.
-          if (persistedScopes.length === 0) {
-            const allScopesRes = await fetch('/api/project-scopes');
-            if (allScopesRes.ok) {
-              const allScopesJson = await allScopesRes.json();
-              const allScopes: Scope[] = Array.isArray(allScopesJson?.data)
-                ? allScopesJson.data
-                : (Array.isArray(allScopesJson?.scopes) ? allScopesJson.scopes : []);
-
-              const normalizedCustomer = normalize(project.customer);
-              const normalizedProjectNumber = normalize(project.projectNumber);
-              const normalizedProjectName = normalize(project.projectName);
-
-              persistedScopes = allScopes.filter((scope) => {
-                const [scopeCustomer = '', scopeProjectNumber = '', scopeProjectName = ''] = String(scope.jobKey || '').split('~');
-                const customerMatch = normalize(scopeCustomer) === normalizedCustomer;
-                const projectNumberMatch = normalize(scopeProjectNumber) === normalizedProjectNumber;
-                const projectNameMatch = normalize(scopeProjectName) === normalizedProjectName;
-                return customerMatch && projectNumberMatch && projectNameMatch;
-              });
-            }
-          }
-
-          const persistedByComposite = new Map<string, Scope[]>();
-          const persistedByTitle = new Map<string, Scope[]>();
-          persistedScopes.forEach((scope) => {
-            const titleKey = normalize(scope?.title || '');
-            if (!titleKey) return;
-
-            const compositeKey = scopeMatchKey(scope.title, scope.startDate, scope.endDate);
-            const compositeBucket = persistedByComposite.get(compositeKey) || [];
-            compositeBucket.push(scope);
-            persistedByComposite.set(compositeKey, compositeBucket);
-
-            const titleBucket = persistedByTitle.get(titleKey) || [];
-            titleBucket.push(scope);
-            persistedByTitle.set(titleKey, titleBucket);
-          });
-
-          mappedScopes = mappedScopes.map((scope) => {
-            const compositeMatches = persistedByComposite.get(scopeMatchKey(scope.title, scope.startDate, scope.endDate)) || [];
-            const titleMatches = persistedByTitle.get(normalize(scope.title || '')) || [];
-            const persisted =
-              compositeMatches[0] ||
-              (titleMatches.length === 1 ? titleMatches[0] : undefined);
-            if (!persisted) return scope;
-            return {
-              ...scope,
-              description: persisted.description || scope.description || '',
-              tasks: Array.isArray(persisted.tasks) ? persisted.tasks : (scope.tasks || []),
-              schedulingMode: persisted.schedulingMode === 'specific-days' ? 'specific-days' : (scope.schedulingMode || 'contiguous'),
-              selectedDays: Array.isArray(persisted.selectedDays) ? persisted.selectedDays : (scope.selectedDays || []),
-              color: persisted.color || scope.color || null,
-              taskColors: (persisted.taskColors && typeof persisted.taskColors === 'object' ? persisted.taskColors : null) || scope.taskColors || null,
-            };
-          });
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to merge project-scope metadata into canonical scopes:', error);
-    }
-
+    const mergedScopes = await mergePersistedScopeMetadata(mapGanttScopes(match.scopes || []));
     setGanttProjectId(match.id);
-    setCanonicalScopes(mappedScopes);
-    return mappedScopes;
+    setCanonicalScopes(mergedScopes);
+    return mergedScopes;
   };
 
   const upsertProjectScopeMetadata = async (
@@ -927,22 +990,52 @@ export function ProjectScopesModal({
     const fallbackManpower = toOptionalPositiveNumber(scope.manpower);
     const fallbackHours = getEffectiveScopeHours(scope);
 
-    setScopeDetail({
-      title: scope.title || "",
-      predecessorScopeId: scope.predecessorScopeId || null,
-      startDate: scope.startDate || "",
-      endDate: scope.endDate || "",
-      manpower: canUseTaskRollups && taskRollups.manpower > 0 ? taskRollups.manpower : (fallbackManpower ?? undefined),
-      hours:
-        normalizedSchedulingMode === 'specific-days' && dayEditMode && selectedDayEntry
-          ? Number(selectedDayEntry.hours || 0)
-          : (canUseTaskRollups && taskRollups.hours > 0 ? taskRollups.hours : fallbackHours),
-      description: scope.description || "",
-      tasks: hydratedTasks,
-      color: scope.color,
-      taskColors: (scope.taskColors as Record<string, string>) || {},
-      schedulingMode: normalizedSchedulingMode,
-      selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
+    setScopeDetail((prev) => {
+      const previousTasks = normalizeTaskEntries(prev.tasks);
+      const previousTaskMap = new Map(
+        previousTasks.map((task) => [getTaskIdentityKey(task), task])
+      );
+
+      const mergedTasks = hydratedTasks.map((task) => {
+        const previousTask = previousTaskMap.get(getTaskIdentityKey(task));
+        if (!previousTask) return task;
+
+        // Preserve unsaved local task edits when async hydration completes later.
+        return {
+          ...task,
+          yards:
+            toOptionalPositiveNumber(previousTask.yards) !== null
+              ? previousTask.yards
+              : task.yards,
+          concreteConfirmed:
+            typeof previousTask.concreteConfirmed === 'boolean'
+              ? previousTask.concreteConfirmed
+              : task.concreteConfirmed,
+        };
+      });
+
+      const mergedRollups = calculateTaskRollups(mergedTasks);
+
+      return {
+        title: scope.title || "",
+        predecessorScopeId: scope.predecessorScopeId || null,
+        startDate: scope.startDate || "",
+        endDate: scope.endDate || "",
+        manpower:
+          canUseTaskRollups && mergedRollups.manpower > 0
+            ? mergedRollups.manpower
+            : (fallbackManpower ?? undefined),
+        hours:
+          normalizedSchedulingMode === 'specific-days' && dayEditMode && selectedDayEntry
+            ? Number(selectedDayEntry.hours || 0)
+            : (canUseTaskRollups && mergedRollups.hours > 0 ? mergedRollups.hours : fallbackHours),
+        description: scope.description || "",
+        tasks: mergedTasks,
+        color: scope.color,
+        taskColors: (scope.taskColors as Record<string, string>) || {},
+        schedulingMode: normalizedSchedulingMode,
+        selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
+      };
     });
   }, [activeScopeId, concreteYardsByDate, isCreatingNewScope, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
 
@@ -1370,7 +1463,7 @@ export function ProjectScopesModal({
       const isNewScope = isCreatingNewScope || activeScopeId === NEW_SCOPE_ID;
       if (isNewScope && visibleScopes.length > 0) {
         // New scopes get the last scope as their predecessor
-        const nonNewScopes = visibleScopes.filter(s => s.id !== NEW_SCOPE_ID);
+        const nonNewScopes = visibleScopes.filter((s) => isCanonicalScopeId(s.id));
         if (nonNewScopes.length > 0) {
           payload.predecessorScopeId = nonNewScopes[nonNewScopes.length - 1].id;
         } else {
@@ -1378,7 +1471,13 @@ export function ProjectScopesModal({
         }
       } else if (!isNewScope && activeScope) {
         // Existing scopes keep their current predecessor (only change via drag-drop)
-        payload.predecessorScopeId = activeScope.predecessorScopeId || null;
+        payload.predecessorScopeId = isCanonicalScopeId(activeScope.predecessorScopeId)
+          ? activeScope.predecessorScopeId
+          : null;
+      }
+
+      if (!isCanonicalScopeId(payload.predecessorScopeId) || payload.predecessorScopeId === activeScopeId) {
+        payload.predecessorScopeId = null;
       }
 
       payload.startDate = dateKey(payload.startDate);
@@ -1430,8 +1529,10 @@ export function ProjectScopesModal({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(ganttPayload),
           });
-          const result = await response.json();
-          if (!result.success) {
+          const result = await readJsonResponse<{ success?: boolean; error?: string; data?: { id?: string } }>(response, {
+            label: 'Update Gantt scope',
+          });
+          if (!response.ok || !result.success) {
             const isScopeMissing =
               response.status === 404 ||
               String(result?.error || '').toLowerCase().includes('scope not found');
@@ -1443,9 +1544,11 @@ export function ProjectScopesModal({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(ganttPayload),
               });
-              const createResult = await createResponse.json();
-              if (!createResult.success) {
-                throw new Error(createResult.error || 'Failed to recover missing scope');
+              const createResult = await readJsonResponse<{ success?: boolean; error?: string; data?: { id?: string } }>(createResponse, {
+                label: 'Recover Gantt scope',
+              });
+              if (!createResponse.ok || !createResult.success) {
+                throw new Error(createResult.error || `Failed to recover missing scope (HTTP ${createResponse.status})`);
               }
               savedScope = createResult.data;
               if (savedScope?.id) {
@@ -1453,7 +1556,7 @@ export function ProjectScopesModal({
                 setActiveScopeId(savedScope.id);
               }
             } else {
-              throw new Error(result.error || 'Failed to update scope');
+              throw new Error(result.error || `Failed to update scope (HTTP ${response.status})`);
             }
           }
         } else {
@@ -1462,8 +1565,12 @@ export function ProjectScopesModal({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(ganttPayload),
           });
-          const result = await response.json();
-          if (!result.success) throw new Error(result.error || 'Failed to create scope');
+          const result = await readJsonResponse<{ success?: boolean; error?: string; data?: { id?: string } }>(response, {
+            label: 'Create Gantt scope',
+          });
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || `Failed to create scope (HTTP ${response.status})`);
+          }
           savedScope = result.data;
           if (savedScope?.id) {
             setIsCreatingNewScope(false);
@@ -1483,8 +1590,12 @@ export function ProjectScopesModal({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: activeScopeId, ...payload }),
           });
-          const result = await response.json();
-          if (!result.success) throw new Error(result.error || 'Failed to update scope');
+          const result = await readJsonResponse<{ success?: boolean; error?: string; data?: Scope }>(response, {
+            label: 'Update scope metadata',
+          });
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || `Failed to update scope metadata (HTTP ${response.status})`);
+          }
           savedScope = result.data;
           const updatedScopes = effectiveScopes.map((scope) =>
             scope.id === activeScopeId ? { ...scope, ...savedScope } : scope
@@ -1496,8 +1607,12 @@ export function ProjectScopesModal({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          const result = await response.json();
-          if (!result.success) throw new Error(result.error || 'Failed to create scope');
+          const result = await readJsonResponse<{ success?: boolean; error?: string; data?: Scope }>(response, {
+            label: 'Create scope metadata',
+          });
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || `Failed to create scope metadata (HTTP ${response.status})`);
+          }
           savedScope = result.data;
           const newScope: Scope = { ...savedScope } as Scope;
 
@@ -1613,9 +1728,11 @@ export function ProjectScopesModal({
           }),
         });
         
-        const result = await res.json().catch(() => ({}));
+        const result = await readJsonResponse<{ success?: boolean; error?: string; cascadeUpdates?: unknown[] }>(res, {
+          label: `Update scope dependency for ${scope.title}`,
+        });
         if (!res.ok || !result?.success) {
-          throw new Error(result?.error || `Failed to update scope dependency for ${scope.title}`);
+          throw new Error(result?.error || `Failed to update scope dependency for ${scope.title} (HTTP ${res.status})`);
         }
         
         return result?.cascadeUpdates || [];
@@ -1627,6 +1744,7 @@ export function ProjectScopesModal({
       const updatedScopes = await loadCanonicalScopes();
       if (updatedScopes) {
         setCanonicalScopes(updatedScopes);
+        onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

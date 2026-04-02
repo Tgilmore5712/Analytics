@@ -15,6 +15,7 @@ import {
   parseDateInput, 
   formatDateInput 
 } from "@/utils/dateUtils";
+import { readJsonResponse } from "@/utils/readJsonResponse";
 import { ProjectScopesModal } from "@/app/project-schedule/components/ProjectScopesModal";
 
 interface ProjectGanttDrawerProps {
@@ -59,8 +60,14 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
         fetch(`/api/project-schedule?jobKey=${encodeURIComponent(jobKey)}`)
       ]);
 
-      const scopesData = await scopesRes.json();
-      const scheduleData = await scheduleRes.json();
+      const scopesData = await readJsonResponse<{ data?: Scope[] }>(scopesRes, {
+        label: "Project scopes",
+        fallback: { data: [] },
+      });
+      const scheduleData = await readJsonResponse<{ data?: { shortTermData?: Record<string, unknown>; longTermData?: Record<string, unknown> } }>(scheduleRes, {
+        label: "Project schedule",
+        fallback: { data: {} },
+      });
 
       // 1. Process Scopes
       const formalScopes = (scopesData.data || []) as Scope[];

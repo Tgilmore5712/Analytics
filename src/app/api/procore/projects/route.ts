@@ -6,8 +6,6 @@ import { makeRequest, procoreConfig } from "@/lib/procore";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = searchParams.get("page") || 1;
-    const perPage = searchParams.get("perPage") || 100;
     const fetchAll = searchParams.get("fetchAll") !== "false";
     const companyIdFromUrl = searchParams.get("companyId");
 
@@ -19,7 +17,7 @@ export async function GET(request: Request) {
     }
 
     const companyId = String(companyIdFromUrl || procoreConfig.companyId || '').trim();
-    const allProjects: any[] = [];
+    const allProjects: unknown[] = [];
     const safePerPage = 100;
     let currentPage = 1;
 
@@ -34,7 +32,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(allProjects);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Failed to fetch" }, { status: 500 });
   }
 }
@@ -75,7 +73,7 @@ export async function POST(request: Request) {
 
     const safePerPage = Math.min(Math.max(Number(perPage) || 100, 1), 100);
     let currentPage = Math.max(Number(page) || 1, 1);
-    const allProjects: any[] = [];
+    const allProjects: unknown[] = [];
 
     console.log(
       `Fetching Procore projects (company ${companyId}, fetchAll: ${fetchAll})`

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { makeRequest, procoreConfig } from "@/lib/procore";
 import { denyDiagnosticsInProduction } from "@/lib/diagnosticsGate";
+import { buildAllowedProcoreHostCandidates } from "@/lib/procoreHosts";
 
 const DEFAULT_ESTIMATING_BASE_URL =
   "https://estimating-esticom-829a58c093c92de.na-east-01-tugboat.procoretech-qa.com";
@@ -76,22 +77,24 @@ export async function POST(request: Request) {
     }
 
     // Fetch all v2 bid board rows with host fallback
-    const hostCandidates = Array.from(
-      new Set(
-        [
-          String(baseUrl || "").trim(),
-          String(process.env.PROCORE_ESTIMATING_API_URL || "").trim(),
-          DEFAULT_ESTIMATING_BASE_URL,
-          "https://api.procore.com",
-        ].filter(Boolean)
-      )
-    );
+    const hostCandidates = buildAllowedProcoreHostCandidates({
+      requestedOrigin: baseUrl,
+      extraOrigins: [
+        process.env.PROCORE_ESTIMATING_API_URL,
+        DEFAULT_ESTIMATING_BASE_URL,
+        "https://api.procore.com",
+      ],
+    });
+
+    if (hostCandidates.error) {
+      return NextResponse.json({ error: hostCandidates.error }, { status: 400 });
+    }
 
     const attempts: Array<{ host: string; status: number; message: string }> = [];
     let successfulHost = "";
     const bidBoardIds = new Set<string>();
 
-    for (const host of hostCandidates) {
+    for (const host of hostCandidates.candidates) {
       let page = 1;
       let hostWorked = false;
       const hostIds = new Set<string>();
@@ -186,7 +189,7 @@ export async function POST(request: Request) {
       success: true,
       companyId,
       successfulBidBoardHost: successfulHost || null,
-      attemptedHosts: hostCandidates,
+      attemptedHosts: hostCandidates.candidates,
       attempts,
       counts: {
         allProjectsV1: allProjectIds.size,

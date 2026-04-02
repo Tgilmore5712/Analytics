@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { procoreConfig } from "@/lib/procore";
+import { buildAllowedProcoreHostCandidates } from "@/lib/procoreHosts";
 
 const DEFAULT_ESTIMATING_BASE_URL =
   "https://estimating-esticom-ccbd079470ce2b6.na-east-01-tugboat.procoretech-qa.com";
@@ -84,25 +85,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const baseUrl = String(body.baseUrl || process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL)
-      .trim()
-      .replace(/\/$/, "");
+    const hostCandidates = buildAllowedProcoreHostCandidates({
+      requestedOrigin: body.baseUrl,
+      extraOrigins: [
+        process.env.PROCORE_ESTIMATING_API_URL,
+        DEFAULT_ESTIMATING_BASE_URL,
+        FALLBACK_ESTIMATING_BASE_URL,
+        "https://qa-estimating.procore.com",
+        procoreConfig.apiUrl,
+        "https://api.procore.com",
+      ],
+    });
 
-    const hostCandidates = Array.from(
-      new Set(
-        [
-          baseUrl,
-          String(process.env.PROCORE_ESTIMATING_API_URL || "").trim(),
-          DEFAULT_ESTIMATING_BASE_URL,
-          FALLBACK_ESTIMATING_BASE_URL,
-          "https://qa-estimating.procore.com",
-          String(procoreConfig.apiUrl || "").trim(),
-          "https://api.procore.com",
-        ]
-          .map((host) => host.replace(/\/$/, ""))
-          .filter(Boolean)
-      )
-    );
+    if (hostCandidates.error) {
+      return NextResponse.json({ error: hostCandidates.error }, { status: 400 });
+    }
 
     const headers = {
       Authorization: `Bearer ${String(accessToken).trim()}`,
@@ -112,7 +109,7 @@ export async function POST(request: Request) {
 
     const attempted: Array<{ host: string; url: string; status?: number; error?: string }> = [];
 
-    for (const host of hostCandidates) {
+    for (const host of hostCandidates.candidates) {
       const endpointBases = [
         `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs`,
         `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog`,

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,18 +11,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing id query param" }, { status: 400 });
     }
 
-    const whereSource = source ? `AND source = '${source.replace(/'/g, "''")}'` : "";
-    const rows = await prisma.$queryRawUnsafe(
-      `
-      SELECT *
-      FROM procore_project_staging
-      WHERE external_id = $1 OR procore_project_id = $1
-      ${whereSource}
-      ORDER BY synced_at DESC
-      LIMIT 20
-      `,
-      id
-    );
+    const rows = await prisma.procoreProjectStaging.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { externalId: id },
+              { procoreProjectId: id },
+            ],
+          },
+          ...(source ? [{ source }] : []),
+        ],
+      },
+      orderBy: { syncedAt: "desc" },
+      take: 20,
+    });
 
     return NextResponse.json({
       success: true,

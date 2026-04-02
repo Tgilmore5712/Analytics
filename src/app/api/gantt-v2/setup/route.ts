@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { ensureGanttV2Schema } from '@/lib/ganttV2Db';
-import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
+import { getErrorMessage, shouldFallbackToEmptyRead, withDatabaseRetry } from '@/lib/dbResilience';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST() {
   try {
-    await ensureGanttV2Schema();
+    await withDatabaseRetry(() => ensureGanttV2Schema());
     return NextResponse.json({ success: true });
   } catch (error) {
     if (shouldFallbackToEmptyRead(error)) {

@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
+import { readJsonResponse } from "@/utils/readJsonResponse";
 
 type Project = {
   id: string;
@@ -198,7 +199,14 @@ function SchedulingContent() {
         throw new Error(`Failed to fetch ${baseUrl} (page ${page})`);
       }
 
-      const json = await res.json();
+      const json = await readJsonResponse<{
+        data?: T[];
+        hasNextPage?: boolean;
+        totalPages?: number;
+      }>(res, {
+        label: `${baseUrl} page ${page}`,
+        fallback: { data: [] },
+      });
       const pageData: T[] = Array.isArray(json.data) ? json.data : [];
       allData.push(...pageData);
 
@@ -302,21 +310,26 @@ function SchedulingContent() {
         try {
           const scopesRes = await fetch("/api/gantt-v2/projects");
           if (!scopesRes.ok) throw new Error("Failed to fetch Gantt V2 scopes");
-          const scopesJson = await scopesRes.json();
+          const scopesJson = await readJsonResponse<{ data?: Array<Record<string, unknown>> }>(scopesRes, {
+            label: "Gantt V2 projects",
+          });
           const ganttProjects = scopesJson.data || [];
           const scopesMap: Record<string, ApiScope[]> = {};
           
-          ganttProjects.forEach((project: any) => {
-            const jobKey = `${project.customer || ''}~${project.projectNumber || ''}~${project.projectName || ''}`;
+          ganttProjects.forEach((project) => {
+            const jobKey = `${String(project.customer || '')}~${String(project.projectNumber || '')}~${String(project.projectName || '')}`;
             
             if (project.scopes && Array.isArray(project.scopes)) {
-              scopesMap[jobKey] = project.scopes.map((scope: any) => ({
+              scopesMap[jobKey] = project.scopes.map((scope) => ({
                 jobKey,
-                title: scope.title,
-                startDate: scope.startDate,
-                endDate: scope.endDate,
-                hours: typeof scope.scheduledHours === "number" ? scope.scheduledHours : 0,
-                description: scope.notes || '',
+                title: String((scope as Record<string, unknown>).title || ""),
+                startDate: String((scope as Record<string, unknown>).startDate || ""),
+                endDate: String((scope as Record<string, unknown>).endDate || ""),
+                hours:
+                  typeof (scope as Record<string, unknown>).scheduledHours === "number"
+                    ? ((scope as Record<string, unknown>).scheduledHours as number)
+                    : 0,
+                description: String((scope as Record<string, unknown>).notes || ''),
                 tasks: [],
               }));
             }

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { syncProjectScopeToActiveSchedule, deleteProjectScopeFromActiveSchedule } from '@/utils/syncActiveSchedule';
+import { getErrorMessage, withDatabaseRetry } from '@/lib/dbResilience';
 
 export const dynamic = 'force-dynamic';
 
@@ -364,20 +365,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const scope = await prisma.projectScope.create({
-      data: {
-        jobKey,
-        title: title.trim() || 'Scope',
-        startDate: startDate || null,
-        endDate: endDate || null,
-        manpower: manpower !== undefined && manpower !== null ? manpower : null,
-        hours: hours && hours > 0 ? hours : null,
-        description: description || null,
-        tasks: normalizedTasks,
-        schedulingMode: normalizedSchedulingMode,
-        selectedDays: normalizedSelectedDays,
-      } as any,
-    });
+    const scope = await withDatabaseRetry(() =>
+      prisma.projectScope.create({
+        data: {
+          jobKey,
+          title: title.trim() || 'Scope',
+          startDate: startDate || null,
+          endDate: endDate || null,
+          manpower: manpower !== undefined && manpower !== null ? manpower : null,
+          hours: hours && hours > 0 ? hours : null,
+          description: description || null,
+          tasks: normalizedTasks,
+          schedulingMode: normalizedSchedulingMode,
+          selectedDays: normalizedSelectedDays,
+        } as any,
+      })
+    );
 
     // Update color and taskColors with raw SQL - handle them separately for clarity
     try {
@@ -417,7 +420,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Failed to create scope:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create scope' },
+      { success: false, error: `Failed to create scope: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }
@@ -460,13 +463,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.projectScope.findUnique({
-      where: { id },
-      select: {
-        schedulingMode: true,
-        selectedDays: true,
-      },
-    });
+    const existing = await withDatabaseRetry(() =>
+      prisma.projectScope.findUnique({
+        where: { id },
+        select: {
+          schedulingMode: true,
+          selectedDays: true,
+        },
+      })
+    );
 
     const effectiveSchedulingMode = normalizedSchedulingMode ?? (existing?.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous');
     const effectiveSelectedDays = normalizedSelectedDays === undefined
@@ -481,20 +486,22 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const scope = await prisma.projectScope.update({
-      where: { id },
-      data: {
-        ...(title !== undefined && { title: title.trim() || 'Scope' }),
-        ...(startDate !== undefined && { startDate: startDate || null }),
-        ...(endDate !== undefined && { endDate: endDate || null }),
-        ...(manpower !== undefined && { manpower: manpower !== null ? manpower : null }),
-        ...(hours !== undefined && { hours: hours && hours > 0 ? hours : null }),
-        ...(description !== undefined && { description: description || null }),
-        ...(tasks !== undefined && { tasks: normalizedTasks ?? null }),
-        ...(normalizedSchedulingMode !== undefined && { schedulingMode: normalizedSchedulingMode }),
-        ...(normalizedSelectedDays !== undefined && { selectedDays: normalizedSelectedDays }),
-      } as any,
-    });
+    const scope = await withDatabaseRetry(() =>
+      prisma.projectScope.update({
+        where: { id },
+        data: {
+          ...(title !== undefined && { title: title.trim() || 'Scope' }),
+          ...(startDate !== undefined && { startDate: startDate || null }),
+          ...(endDate !== undefined && { endDate: endDate || null }),
+          ...(manpower !== undefined && { manpower: manpower !== null ? manpower : null }),
+          ...(hours !== undefined && { hours: hours && hours > 0 ? hours : null }),
+          ...(description !== undefined && { description: description || null }),
+          ...(tasks !== undefined && { tasks: normalizedTasks ?? null }),
+          ...(normalizedSchedulingMode !== undefined && { schedulingMode: normalizedSchedulingMode }),
+          ...(normalizedSelectedDays !== undefined && { selectedDays: normalizedSelectedDays }),
+        } as any,
+      })
+    );
 
     // Update color and taskColors with raw SQL
     if (color !== undefined || taskColors !== undefined) {
@@ -551,7 +558,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error('Failed to update scope:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update scope' },
+      { success: false, error: `Failed to update scope: ${getErrorMessage(error)}` },
       { status: 500 }
     );
   }

@@ -1,3 +1,5 @@
+import { readJsonResponse } from "@/utils/readJsonResponse";
+
 type FetchJsonWithRetryOptions<T> = {
   fallback: T;
   init?: RequestInit;
@@ -34,7 +36,7 @@ export async function fetchJsonWithRetry<T>(
         throw new Error(`HTTP ${response.status}`);
       }
 
-      return (await response.json()) as T;
+      return await readJsonResponse<T>(response, { label: label || url });
     } catch (error) {
       const name = label || url;
       const message = error instanceof Error ? error.message : String(error);

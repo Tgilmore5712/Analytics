@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { makeRequest, procoreConfig } from "@/lib/procore";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { extractCustomerFromCustomFields, isMeaningfulCustomer } from "@/lib/procoreProjectFeed";
-
-const prisma = new PrismaClient();
 
 async function ensureProcoreStagingTable() {
   return;

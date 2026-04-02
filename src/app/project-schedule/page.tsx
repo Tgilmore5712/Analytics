@@ -76,6 +76,63 @@ const asDate = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const buildProjectJobKey = (project: Pick<ProjectRow, "customer" | "projectNumber" | "projectName">) =>
+  `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
+
+const isDateKey = (value: string | null | undefined): value is string =>
+  /^\d{4}-\d{2}-\d{2}$/.test(String(value || "").trim());
+
+const summarizeProjectScopes = (project: ProjectRow, scopes: Scope[]): ProjectRow => {
+  const previousScopeMetrics = new Map(
+    (project.scopes || []).map((scope) => [
+      scope.id,
+      {
+        scheduledHours: Number(scope.scheduledHours || 0),
+      },
+    ])
+  );
+
+  const nextScopes: ScopeRow[] = scopes.map((scope) => {
+    const scheduledHours = previousScopeMetrics.get(scope.id)?.scheduledHours || 0;
+    const totalHours = Number(scope.hours || 0);
+
+    return {
+      id: scope.id,
+      projectId: project.id,
+      predecessorScopeId: scope.predecessorScopeId || null,
+      title: scope.title || "Scope",
+      startDate: scope.startDate || null,
+      endDate: scope.endDate || null,
+      totalHours: Number.isFinite(totalHours) ? totalHours : 0,
+      crewSize: scope.manpower ?? null,
+      notes: scope.description || null,
+      tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
+      color: scope.color,
+      taskColors: scope.taskColors,
+      scheduledHours,
+      remainingHours: Math.max((Number.isFinite(totalHours) ? totalHours : 0) - scheduledHours, 0),
+    };
+  });
+
+  const startDates = nextScopes
+    .map((scope) => scope.startDate)
+    .filter(isDateKey)
+    .sort();
+  const endDates = nextScopes
+    .map((scope) => scope.endDate)
+    .filter(isDateKey)
+    .sort();
+
+  return {
+    ...project,
+    scopes: nextScopes,
+    scopeCount: nextScopes.length,
+    scopedHours: nextScopes.reduce((sum, scope) => sum + Number(scope.totalHours || 0), 0),
+    startDate: startDates[0] || null,
+    endDate: endDates[endDates.length - 1] || null,
+  };
+};
+
 const SCOPE_LINE_COLOR = "#6B7280"; // mid gray
 const TASK_LINE_COLOR = "#EA580C"; // orange
 
@@ -148,6 +205,28 @@ export default function ProjectSchedulePage() {
     setSelectedScopeId(scopeId);
     setSelectedProject(project);
   };
+
+  const handleScopesUpdated = useCallback((jobKey: string, updatedScopes: Scope[]) => {
+    let updatedProject: ProjectRow | null = null;
+
+    setProjects((currentProjects) =>
+      currentProjects.map((project) => {
+        const matchesSelectedProject = selectedProject ? project.id === selectedProject.id : false;
+        const matchesJobKey = !selectedProject && buildProjectJobKey(project) === jobKey;
+
+        if (!matchesSelectedProject && !matchesJobKey) {
+          return project;
+        }
+
+        updatedProject = summarizeProjectScopes(project, updatedScopes);
+        return updatedProject;
+      })
+    );
+
+    if (updatedProject) {
+      setSelectedProject(updatedProject);
+    }
+  }, [selectedProject]);
 
   const toggleProjectCollapse = (projectId: string) => {
     const newCollapsed = new Set(collapsedProjects);
@@ -551,7 +630,7 @@ export default function ProjectSchedulePage() {
   const selectedProjectInfo = useMemo<ProjectInfo | null>(() => {
     if (!selectedProject) return null;
     return {
-      jobKey: `${selectedProject.customer || ""}~${selectedProject.projectNumber || ""}~${selectedProject.projectName || ""}`,
+      jobKey: buildProjectJobKey(selectedProject),
       customer: selectedProject.customer || "",
       projectNumber: selectedProject.projectNumber || "",
       projectName: selectedProject.projectName || "",
@@ -564,7 +643,7 @@ export default function ProjectSchedulePage() {
     return selectedProject.scopes.map((scope) => ({
       id: scope.id,
       predecessorScopeId: scope.predecessorScopeId || null,
-      jobKey: `${selectedProject.customer || ""}~${selectedProject.projectNumber || ""}~${selectedProject.projectName || ""}`,
+      jobKey: buildProjectJobKey(selectedProject),
       title: scope.title,
       startDate: scope.startDate || "",
       endDate: scope.endDate || "",
@@ -1071,9 +1150,7 @@ export default function ProjectSchedulePage() {
             setSelectedScopeId(null);
             setSelectedTaskIndex(null);
           }}
-          onScopesUpdated={() => {
-            loadProjects();
-          }}
+          onScopesUpdated={handleScopesUpdated}
         />
       )}
     </main>

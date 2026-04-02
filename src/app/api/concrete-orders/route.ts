@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getErrorMessage, shouldFallbackToEmptyRead } from '@/lib/dbResilience';
+import {
+  buildConcreteConfirmationByJobDate,
+  type ConcreteConfirmationTotals,
+  type ProjectScopeTaskRow,
+} from '@/lib/concreteTaskSummary';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,89 +44,6 @@ type ConcreteOrderRow = {
   total_yards: number;
   created_at: Date;
 };
-
-type ProjectScopeTaskRow = {
-  jobKey: string;
-  tasks: unknown;
-};
-
-type ConcreteConfirmationTotals = {
-  total: number;
-  confirmed: number;
-};
-
-const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
-function getTaskConcreteSnapshot(task: unknown): { date: string; confirmed: boolean } | null {
-  if (!task) return null;
-
-  if (typeof task === 'string') {
-    const trimmed = task.trim();
-    if (!trimmed) return null;
-    const match = trimmed.match(/^\[([^\]]+)\]\s*(.+)$/);
-    if (!match) return null;
-
-    const parts = String(match[1] || '')
-      .split('|')
-      .map((part) => part.trim())
-      .filter(Boolean);
-
-    const date = parts.find((part) => DATE_KEY_REGEX.test(part));
-    if (!date) return null;
-
-    let yardsValue: number | null = null;
-    for (const part of parts) {
-      if (DATE_KEY_REGEX.test(part)) continue;
-      if (/\d+\s*d$/i.test(part)) continue;
-      const numericMatch = part.match(/(\d+(?:\.\d+)?)/);
-      if (!numericMatch) continue;
-      const parsed = Number.parseFloat(numericMatch[1]);
-      if (!Number.isFinite(parsed) || parsed < 0) continue;
-      yardsValue = parsed;
-      break;
-    }
-
-    if (!Number.isFinite(yardsValue || 0) || (yardsValue || 0) <= 0) return null;
-    return { date, confirmed: false };
-  }
-
-  if (typeof task !== 'object' || Array.isArray(task)) return null;
-
-  const row = task as Record<string, unknown>;
-  const date = String(row.startDate || '').trim();
-  if (!DATE_KEY_REGEX.test(date)) return null;
-
-  const yards = Number(row.yards);
-  if (!Number.isFinite(yards) || yards <= 0) return null;
-
-  return {
-    date,
-    confirmed: row.concreteConfirmed === true,
-  };
-}
-
-function buildConcreteConfirmationByJobDate(rows: ProjectScopeTaskRow[]): Map<string, ConcreteConfirmationTotals> {
-  const totals = new Map<string, ConcreteConfirmationTotals>();
-
-  for (const row of rows) {
-    const jobKey = String(row.jobKey || '').trim();
-    if (!jobKey) continue;
-    if (!Array.isArray(row.tasks)) continue;
-
-    for (const task of row.tasks) {
-      const snapshot = getTaskConcreteSnapshot(task);
-      if (!snapshot) continue;
-
-      const key = `${jobKey}__${snapshot.date}`;
-      const current = totals.get(key) || { total: 0, confirmed: 0 };
-      current.total += 1;
-      if (snapshot.confirmed) current.confirmed += 1;
-      totals.set(key, current);
-    }
-  }
-
-  return totals;
-}
 
 function toResponseShape(
   row: ConcreteOrderRow,
@@ -190,6 +112,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: filtered.map((row) => toResponseShape(row, confirmationByJobDate)),
+      taskSummaries: Array.from(confirmationByJobDate.entries()).map(([key, totals]) => {
+        const [jobKey, date] = key.split('__');
+        return {
+          jobKey,
+          date,
+          totalYards: Number(totals.totalYards || 0),
+          knownConfirmations: totals.total,
+          confirmedCount: totals.confirmed,
+        };
+      }),
     });
   } catch (error) {
     console.error('Failed to fetch concrete orders:', error);

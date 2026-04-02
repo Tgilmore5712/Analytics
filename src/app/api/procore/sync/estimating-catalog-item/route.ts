@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { procoreConfig } from "@/lib/procore";
+import { buildAllowedProcoreHostCandidates } from "@/lib/procoreHosts";
 
 const DEFAULT_ESTIMATING_BASE_URL =
   "https://estimating-esticom-ccbd079470ce2b6.na-east-01-tugboat.procoretech-qa.com";
@@ -117,24 +118,18 @@ export async function POST(request: Request) {
     const accessToken = body.accessToken || cookieStore.get("procore_access_token")?.value;
     const companyId = String(body.companyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || '').trim();
     const itemId = String(body.itemId || "").trim();
-    const baseUrl = String(body.baseUrl || process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL)
-      .trim()
-      .replace(/\/$/, "");
-    const hostCandidates = Array.from(
-      new Set(
-        [
-          baseUrl,
-          String(process.env.PROCORE_ESTIMATING_API_URL || "").trim(),
-          DEFAULT_ESTIMATING_BASE_URL,
-          FALLBACK_ESTIMATING_BASE_URL,
-          "https://qa-estimating.procore.com",
-          String(procoreConfig.apiUrl || "").trim(),
-          "https://api.procore.com",
-        ]
-          .map((host) => host.replace(/\/$/, ""))
-          .filter(Boolean)
-      )
-    );
+    const hostCandidates = buildAllowedProcoreHostCandidates({
+      requestedOrigin: body.baseUrl,
+      extraOrigins: [
+        process.env.PROCORE_ESTIMATING_API_URL,
+        DEFAULT_ESTIMATING_BASE_URL,
+        FALLBACK_ESTIMATING_BASE_URL,
+        "https://qa-estimating.procore.com",
+        procoreConfig.apiUrl,
+        "https://api.procore.com",
+      ],
+    });
+    const storageBaseUrl = hostCandidates.candidates[0] || DEFAULT_ESTIMATING_BASE_URL;
     const startPage = Math.max(Number(body.page) || 1, 1);
     const perPage = Math.min(Math.max(Number(body.perPage) || 100, 1), 200);
     const maxPages = Math.min(Math.max(Number(body.maxPages) || 50, 1), 200);
@@ -157,6 +152,10 @@ export async function POST(request: Request) {
         { error: "Missing companyId. Set PROCORE_COMPANY_ID or provide companyId in request body." },
         { status: 400 }
       );
+    }
+
+    if (hostCandidates.error) {
+      return NextResponse.json({ error: hostCandidates.error }, { status: 400 });
     }
 
     await ensureEstimatingCatalogItemStagingTable();
@@ -226,7 +225,7 @@ export async function POST(request: Request) {
 
     // Single-item sync path
     if (itemId) {
-      const itemCandidates = hostCandidates.flatMap((host) => [
+      const itemCandidates = hostCandidates.candidates.flatMap((host) => [
         `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs/items/${encodeURIComponent(itemId)}`,
         `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog_items/${encodeURIComponent(itemId)}`,
         `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog/items/${encodeURIComponent(itemId)}`,
@@ -359,7 +358,7 @@ export async function POST(request: Request) {
       let pageItems: Record<string, unknown>[] = [];
 
       if (listMode === "global-list") {
-          const listCandidates = hostCandidates.flatMap((host) => [
+          const listCandidates = hostCandidates.candidates.flatMap((host) => [
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs/items`,
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog_items`,
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog/items`,
@@ -425,7 +424,7 @@ export async function POST(request: Request) {
 
       if (listMode === "catalog-scoped") {
         if (!catalogIds) {
-          const catalogCandidates = hostCandidates.flatMap((host) => [
+          const catalogCandidates = hostCandidates.candidates.flatMap((host) => [
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs`,
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog`,
             `${host}/rest/v1.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs`,
@@ -497,7 +496,7 @@ export async function POST(request: Request) {
         }
 
         for (const catalogId of catalogIds) {
-          const scopedCandidates = hostCandidates.flatMap((host) => [
+          const scopedCandidates = hostCandidates.candidates.flatMap((host) => [
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs/${encodeURIComponent(catalogId)}/items`,
             `${host}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/catalog/${encodeURIComponent(catalogId)}/items`,
             `${host}/rest/v1.0/companies/${encodeURIComponent(companyId)}/estimating/catalogs/${encodeURIComponent(catalogId)}/items`,
@@ -600,7 +599,7 @@ export async function POST(request: Request) {
         await upsertEstimatingCatalogItem({
           companyId,
           itemId: resolvedItemId,
-          baseUrl,
+          baseUrl: storageBaseUrl,
           name,
           code,
           costCodeId,
@@ -636,7 +635,7 @@ export async function POST(request: Request) {
           AND base_url = $2
       `,
       companyId,
-      baseUrl
+      storageBaseUrl
     );
 
     return NextResponse.json({
@@ -652,10 +651,10 @@ export async function POST(request: Request) {
       matchedExactCostCode,
       listMode,
       discoveredListUrl,
-      attemptedHosts: hostCandidates,
+      attemptedHosts: hostCandidates.candidates,
       table: "procore_estimating_catalog_item_staging",
       companyId,
-      baseUrl,
+      baseUrl: storageBaseUrl,
       pagesFetched,
       totalFetched: allItems.length,
       totalKept: keptItems,

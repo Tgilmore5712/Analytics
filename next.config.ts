@@ -10,6 +10,14 @@ const frameAncestors = [
     .filter(Boolean),
 ].join(" ");
 
+const isProduction = process.env.NODE_ENV === "production";
+const scriptSources = [
+  "'self'",
+  "'unsafe-inline'",
+  ...(isProduction ? [] : ["'unsafe-eval'"]),
+  "https://cdn.jsdelivr.net",
+].join(" ");
+
 const nextConfig: NextConfig = {
   reactCompiler: true,
   images: {
@@ -39,7 +47,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors ${frameAncestors};`,
+              `default-src 'self'; base-uri 'self'; object-src 'none'; script-src ${scriptSources}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors ${frameAncestors};`,
           },
           {
             key: "Permissions-Policy",

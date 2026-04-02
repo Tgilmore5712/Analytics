@@ -99,7 +99,10 @@ export function getUserAssignedPermissions(userEmail: string | null): string[] {
 }
 
 const PATH_PERMISSION_RULES: Array<{ prefix: string; permission: string }> = [
+  { prefix: '/auth0-test', permission: 'diagnostics' },
+  { prefix: '/procore/test', permission: 'diagnostics' },
   { prefix: '/seed-kpi-cards', permission: 'admin' },
+  { prefix: '/test-schedules', permission: 'diagnostics' },
   { prefix: '/debug-cookies', permission: 'diagnostics' },
   { prefix: '/dev-login', permission: 'diagnostics' },
   { prefix: '/diagnostics', permission: 'diagnostics' },

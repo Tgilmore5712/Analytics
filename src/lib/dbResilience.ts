@@ -3,6 +3,20 @@ export function getErrorMessage(error: unknown): string {
   return String(error || 'Unknown database error');
 }
 
+export function isTransientDatabaseConnectionError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+
+  if (message.includes("can't reach database server")) return true;
+  if (message.includes("connection")) return true;
+  if (message.includes("timeout")) return true;
+  if (message.includes("timed out")) return true;
+  if (message.includes("econnreset")) return true;
+  if (message.includes("econnrefused")) return true;
+  if (message.includes("too many connections")) return true;
+
+  return false;
+}
+
 export function shouldFallbackToEmptyRead(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();
 
@@ -17,4 +31,37 @@ export function shouldFallbackToEmptyRead(error: unknown): boolean {
   if (message.includes('insufficient privilege')) return true;
 
   return false;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function withDatabaseRetry<T>(
+  operation: () => Promise<T>,
+  options?: {
+    retries?: number;
+    delayMs?: number;
+  }
+): Promise<T> {
+  const retries = options?.retries ?? 2;
+  const delayMs = options?.delayMs ?? 250;
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= retries || !isTransientDatabaseConnectionError(error)) {
+        throw error;
+      }
+
+      await delay(delayMs * (attempt + 1));
+    }
+  }
+
+  throw lastError;
 }

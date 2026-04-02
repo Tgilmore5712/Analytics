@@ -39,29 +39,31 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { scopeId } = await params;
     const body = await request.json();
 
-    const title = (body?.title || '').toString().trim();
-    const startDate = (body?.startDate || '').toString().trim() || null;
-    const endDate = (body?.endDate || '').toString().trim() || null;
-    const totalHours = Number(body?.totalHours || 0);
-    const crewSize = body?.crewSize === '' || body?.crewSize === undefined || body?.crewSize === null
-      ? null
-      : Number(body.crewSize);
-    const notes = (body?.notes || '').toString().trim() || null;
-    const predecessorScopeId = body?.predecessorScopeId
-      ? String(body.predecessorScopeId).trim()
-      : null;
-
-    if (!title) {
-      return NextResponse.json({ success: false, error: 'title is required' }, { status: 400 });
-    }
-
     // Get projectId before updating
     const existingScope = await prisma.$queryRawUnsafe<Array<{
       project_id: string;
+      title: string;
       start_date: Date | null;
       end_date: Date | null;
+      total_hours: number;
+      crew_size: number | null;
+      notes: string | null;
+      predecessor_scope_id: string | null;
     }>>(
-      `SELECT project_id, start_date, end_date FROM gantt_v2_scopes WHERE id = $1 LIMIT 1`,
+      `
+        SELECT
+          project_id,
+          title,
+          start_date,
+          end_date,
+          total_hours,
+          crew_size,
+          notes,
+          predecessor_scope_id
+        FROM gantt_v2_scopes
+        WHERE id = $1
+        LIMIT 1
+      `,
       scopeId
     );
 
@@ -70,6 +72,33 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const projectId = existingScope[0].project_id;
+    const title = (body?.title ?? existingScope[0].title ?? '').toString().trim();
+    const startDate = body?.startDate === undefined
+      ? (existingScope[0].start_date ? existingScope[0].start_date.toISOString().slice(0, 10) : null)
+      : ((body?.startDate || '').toString().trim() || null);
+    const endDate = body?.endDate === undefined
+      ? (existingScope[0].end_date ? existingScope[0].end_date.toISOString().slice(0, 10) : null)
+      : ((body?.endDate || '').toString().trim() || null);
+    const totalHours = body?.totalHours === undefined
+      ? Number(existingScope[0].total_hours || 0)
+      : Number(body?.totalHours || 0);
+    const crewSize = body?.crewSize === undefined
+      ? existingScope[0].crew_size
+      : (body?.crewSize === '' || body?.crewSize === null
+          ? null
+          : Number(body.crewSize));
+    const notes = body?.notes === undefined
+      ? (existingScope[0].notes ?? null)
+      : ((body?.notes || '').toString().trim() || null);
+    const predecessorScopeId = body?.predecessorScopeId === undefined
+      ? (existingScope[0].predecessor_scope_id ?? null)
+      : (body?.predecessorScopeId
+          ? String(body.predecessorScopeId).trim()
+          : null);
+
+    if (!title) {
+      return NextResponse.json({ success: false, error: 'title is required' }, { status: 400 });
+    }
 
     if (predecessorScopeId === scopeId) {
       return NextResponse.json({ success: false, error: 'Scope cannot depend on itself' }, { status: 400 });
