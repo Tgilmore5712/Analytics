@@ -1,9 +1,9 @@
 // Get current user info from Procore (requires authentication)
 import { NextResponse } from "next/server";
-import { makeRequest } from "@/lib/procore";
+import { procoreConfig } from "@/lib/procore";
 import { cookies } from "next/headers";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("procore_access_token")?.value;
@@ -15,8 +15,24 @@ export async function GET(request: Request) {
       );
     }
 
-    // Fetch current user info
-    const user = await makeRequest("/rest/v1.0/me", accessToken);
+    const response = await fetch(`${procoreConfig.apiUrl}/rest/v1.0/me`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const details = await response.text();
+      return NextResponse.json(
+        { error: "Failed to fetch user info", details: `Procore API error ${response.status}: ${details}` },
+        { status: response.status }
+      );
+    }
+
+    const user = await response.json();
 
     return NextResponse.json({
       success: true,
