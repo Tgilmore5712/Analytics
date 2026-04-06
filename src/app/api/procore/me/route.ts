@@ -7,6 +7,10 @@ export async function GET() {
   try {
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("procore_access_token")?.value;
+    const cookieCompanyId = String(cookieStore.get("procore_company_id")?.value || "").trim();
+    const envCompanyId = String(procoreConfig.companyId || "").trim();
+    const resolvedCompanyId = cookieCompanyId || envCompanyId || null;
+    const companyIdSource = cookieCompanyId ? "cookie" : envCompanyId ? "env" : null;
 
     if (!accessToken) {
       return NextResponse.json(
@@ -37,6 +41,8 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       user,
+      companyId: resolvedCompanyId,
+      companyIdSource,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

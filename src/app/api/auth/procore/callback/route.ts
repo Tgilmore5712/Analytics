@@ -53,6 +53,19 @@ export async function GET(request: Request) {
       });
     }
 
+    const grantedScope = String(tokenResponse.scope || "").trim();
+    if (grantedScope) {
+      cookieStore.set("procore_scope", grantedScope, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: tokenResponse.expires_in || 7200,
+      });
+    } else {
+      cookieStore.delete("procore_scope");
+    }
+
     console.log("OK Successfully authenticated with Procore");
 
     cookieStore.delete("procore_oauth_return_to");

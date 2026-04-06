@@ -9,6 +9,7 @@ function buildLogoutCookieResponse() {
     'procore_access_token',
     'procore_refresh_token',
     'procore_company_id',
+    'procore_scope',
   ];
 
   cookieNames.forEach((cookieName) => {
