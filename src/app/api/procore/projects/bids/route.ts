@@ -118,6 +118,46 @@ async function fetchProjectBids(params: {
   };
 }
 
+function toProjectBidsErrorResponse(result: {
+  status: number;
+  error: string;
+  url: string;
+  rateLimit?: {
+    retryAfterSeconds: number | null;
+    resetEpochSeconds: number | null;
+    remaining: string | null;
+    limit: string | null;
+  };
+}) {
+  const accessDenied =
+    result.status === 403 &&
+    /sufficient access|forbidden|not authorized|permission/i.test(result.error);
+
+  return NextResponse.json(
+    {
+      error:
+        result.status === 429
+          ? "Rate limited by Procore"
+          : accessDenied
+          ? "Access denied by Procore for project bids"
+          : "Failed to fetch project bids",
+      details:
+        result.status === 429
+          ? "Procore rate limit exceeded. Wait for retryAfterSeconds/resetEpochSeconds before retrying."
+          : accessDenied
+          ? "Your token is valid, but Procore denied access to the Bids resource for this project. Check that the project has Bidding enabled and that your Procore user/app has permission to view bids for this project."
+          : result.error,
+      hint: accessDenied
+        ? "Try another project with known bidding access, or verify project-level Bidding tool permissions in Procore."
+        : null,
+      url: result.url,
+      upstreamError: result.error,
+      rateLimit: result.rateLimit ?? null,
+    },
+    { status: result.status }
+  );
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -157,19 +197,7 @@ export async function GET(request: Request) {
     });
 
     if (!result.ok) {
-      return NextResponse.json(
-        {
-          error: result.status === 429 ? "Rate limited by Procore" : "Failed to fetch project bids",
-          details:
-            result.status === 429
-              ? "Procore rate limit exceeded. Wait for retryAfterSeconds/resetEpochSeconds before retrying."
-              : result.error,
-          url: result.url,
-          upstreamError: result.error,
-          rateLimit: result.rateLimit ?? null,
-        },
-        { status: result.status }
-      );
+      return toProjectBidsErrorResponse(result as Extract<Awaited<ReturnType<typeof fetchProjectBids>>, { ok: false }>);
     }
 
     return NextResponse.json({ success: true, source: "projects.bids", ...result });
@@ -231,19 +259,7 @@ export async function POST(request: Request) {
     });
 
     if (!result.ok) {
-      return NextResponse.json(
-        {
-          error: result.status === 429 ? "Rate limited by Procore" : "Failed to fetch project bids",
-          details:
-            result.status === 429
-              ? "Procore rate limit exceeded. Wait for retryAfterSeconds/resetEpochSeconds before retrying."
-              : result.error,
-          url: result.url,
-          upstreamError: result.error,
-          rateLimit: result.rateLimit ?? null,
-        },
-        { status: result.status }
-      );
+      return toProjectBidsErrorResponse(result as Extract<Awaited<ReturnType<typeof fetchProjectBids>>, { ok: false }>);
     }
 
     return NextResponse.json({ success: true, source: "projects.bids", ...result });

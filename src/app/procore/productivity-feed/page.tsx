@@ -298,10 +298,32 @@ type BidFormPatchTestResponse = {
   data?: unknown;
 };
 
+type ProjectBidsLookupResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  hint?: string | null;
+  source?: string;
+  projectId?: string;
+  page?: number;
+  perPage?: number;
+  pagesFetched?: number;
+  count?: number;
+  bids?: Array<Record<string, unknown>>;
+  url?: string;
+  upstreamError?: string;
+  rateLimit?: {
+    retryAfterSeconds: number | null;
+    resetEpochSeconds: number | null;
+    remaining: string | null;
+    limit: string | null;
+  } | null;
+};
+
 export default function ProcoreProductivityFeedPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [procoreConnected, setProcoreConnected] = useState(false);
-  const [companyId, setCompanyId] = useState("");
+  const [companyId, setCompanyId] = useState("598134325658789");
   const [logDate, setLogDate] = useState("");
   const [startDate, setStartDate] = useState("2025-08-01");
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
@@ -378,6 +400,10 @@ export default function ProcoreProductivityFeedPage() {
   const [projectShowResponse, setProjectShowResponse] = useState<ProjectShowResponse | null>(null);
   const [singleBidId, setSingleBidId] = useState("");
   const [singleBidFormId, setSingleBidFormId] = useState("");
+  const [projectBidsProjectId, setProjectBidsProjectId] = useState("598134326376806");
+  const [projectBidsLoading, setProjectBidsLoading] = useState(false);
+  const [projectBidsError, setProjectBidsError] = useState<string | null>(null);
+  const [projectBidsResponse, setProjectBidsResponse] = useState<ProjectBidsLookupResponse | null>(null);
   const [budgetLineItemId, setBudgetLineItemId] = useState("");
   const [budgetLineItemProjectId, setBudgetLineItemProjectId] = useState("");
   const [budgetLineItemLoading, setBudgetLineItemLoading] = useState(false);
@@ -654,6 +680,49 @@ export default function ProcoreProductivityFeedPage() {
       setBidFormsResponse(null);
     } finally {
       setBidFormsLoading(false);
+    }
+  }
+
+  async function fetchProjectBidsLookup() {
+    const projectId = projectBidsProjectId.trim();
+    if (!projectId) {
+      setProjectBidsError("Enter a Project ID.");
+      setProjectBidsResponse(null);
+      return;
+    }
+
+    setProjectBidsLoading(true);
+    setProjectBidsError(null);
+
+    try {
+      const payload = {
+        companyId: companyId.trim() || undefined,
+        projectId,
+        page: 1,
+        perPage: 25,
+      };
+
+      const res = await fetch("/api/procore/projects/bids", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = (await res.json()) as ProjectBidsLookupResponse;
+      if (!res.ok || !json.success) {
+        setProjectBidsError(json.error || "Failed to fetch project bids");
+        if (res.status === 401) setProcoreConnected(false);
+        setProjectBidsResponse(json);
+        return;
+      }
+
+      setProjectBidsResponse(json);
+    } catch (err) {
+      setProjectBidsError(err instanceof Error ? err.message : "Unknown error");
+      setProjectBidsResponse(null);
+    } finally {
+      setProjectBidsLoading(false);
     }
   }
 
@@ -1439,6 +1508,77 @@ export default function ProcoreProductivityFeedPage() {
               </div>
             )}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 mb-6">
+          <h2 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-4">
+            Project Bids Lookup
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Company ID
+              <input
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Project ID
+              <input
+                value={projectBidsProjectId}
+                onChange={(e) => setProjectBidsProjectId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <button
+              onClick={fetchProjectBidsLookup}
+              disabled={projectBidsLoading || checkingAuth || !procoreConnected}
+              className="px-4 py-2 rounded-xl bg-sky-700 text-white font-black text-xs uppercase tracking-widest hover:bg-sky-800 disabled:opacity-50"
+            >
+              {projectBidsLoading ? "Fetching..." : "Fetch Project Bids"}
+            </button>
+            <a
+              href={`/api/procore/projects/bids?projectId=${encodeURIComponent(projectBidsProjectId)}&companyId=${encodeURIComponent(companyId)}&page=1&perPage=25`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-xl border border-sky-300 bg-white text-sky-800 font-black text-xs uppercase tracking-widest hover:bg-sky-50"
+            >
+              Open Raw Endpoint
+            </a>
+          </div>
+
+          {projectBidsError && (
+            <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              {projectBidsError}
+            </div>
+          )}
+
+          {projectBidsResponse && (
+            <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                <div>Company: <span className="font-bold">{companyId || "-"}</span></div>
+                <div>Project ID: <span className="font-bold">{projectBidsProjectId || "-"}</span></div>
+                <div>Fetched: <span className="font-bold">{projectBidsResponse.count ?? 0}</span></div>
+                <div>Pages Fetched: <span className="font-bold">{projectBidsResponse.pagesFetched ?? 0}</span></div>
+              </div>
+
+              {projectBidsResponse.details ? (
+                <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+                  {projectBidsResponse.details}
+                  {projectBidsResponse.hint ? ` ${projectBidsResponse.hint}` : ""}
+                </div>
+              ) : null}
+
+              <pre className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[11px] leading-relaxed text-gray-800">
+                {JSON.stringify(projectBidsResponse, null, 2)}
+              </pre>
+            </div>
+          )}
         </section>
 
         {/* ─── Company-Wide Bid Forms Section ─── */}

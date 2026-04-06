@@ -232,8 +232,18 @@ export async function POST(request: Request) {
     let bidFormId = firstText(body.bidFormId);
 
     if (!bidPackageId) {
+      const packageQuery = `project_id=${encodeURIComponent(projectId)}&page=1&per_page=50`;
+      const packageQueryWithCompany = companyId
+        ? `${packageQuery}&company_id=${encodeURIComponent(companyId)}`
+        : packageQuery;
+
       const pkg = await tryGet(accessToken, [
-        `/rest/v1.0/bid_packages?project_id=${encodeURIComponent(projectId)}&page=1&per_page=50`,
+        `/rest/v1.0/bid_packages?${packageQueryWithCompany}`,
+        `/rest/v1.1/bid_packages?${packageQueryWithCompany}`,
+        `/rest/v1.0/projects/${encodeURIComponent(projectId)}/bid_packages?page=1&per_page=50`,
+        `/rest/v1.1/projects/${encodeURIComponent(projectId)}/bid_packages?page=1&per_page=50`,
+        `/rest/v1.0/bid_packages?${packageQuery}`,
+        `/rest/v1.1/bid_packages?${packageQuery}`,
       ]);
       const pkgRows = asArray(pkg.data);
       if (pkgRows.length === 0) {
@@ -242,6 +252,7 @@ export async function POST(request: Request) {
             error: "No bid packages found for the project.",
             projectId,
             attemptedEndpoint: pkg.endpoint,
+            hint: "This project may not have the Bidding tool enabled, may have no bid packages, or your Procore user/app may not have project-level Bidding access.",
           },
           { status: 404 }
         );
@@ -371,12 +382,24 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    const allGetFailed = /All GET endpoints failed:/i.test(message);
+    const allPatchFailed = /All PATCH endpoints failed:/i.test(message);
+    const contains404 = /(?:^|\D)404(?:\D|$)/.test(message);
+
+    const status = allGetFailed && contains404 ? 404 : 500;
+    const hint = allGetFailed
+      ? "Unable to discover bid packages/forms for this project. Confirm the project has Bidding enabled and that your user/app has project-level Bidding permissions. You can also provide bidPackageId and bidFormId directly if known."
+      : allPatchFailed
+      ? "Read access may be working, but write access failed across all PATCH endpoints. This usually indicates missing write permission for bid forms."
+      : null;
+
     return NextResponse.json(
       {
         error: "Bid form PATCH test failed",
         details: message,
+        hint,
       },
-      { status: 500 }
+      { status }
     );
   }
 }
