@@ -9,7 +9,10 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+let tableEnsured = false;
+
 async function ensureConcreteOrdersTable() {
+  if (tableEnsured) return;
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS concrete_orders (
       id TEXT PRIMARY KEY,
@@ -32,6 +35,7 @@ async function ensureConcreteOrdersTable() {
     CREATE INDEX IF NOT EXISTS concrete_orders_job_key_idx
     ON concrete_orders (job_key)
   `);
+  tableEnsured = true;
 }
 
 type ConcreteOrderRow = {
