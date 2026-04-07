@@ -31,6 +31,7 @@ const navLinks: NavLink[] = [
   { href: "/procore/projects-feed-tools", label: "Procore Feed", page: "procore" },
   { href: "/procore/productivity-feed", label: "Prod Feed", page: "procore" },
   { href: "/procore/timecard-entries", label: "Timecards", page: "procore" },
+  { href: "/reporting", label: "Reporting", page: "reporting" },
   { href: "/onboarding/submissions", label: "Onboarding", page: "employees" },
   { href: "/employees/handbook", label: "Handbook", page: "handbook" },
   { href: "/kpi-cards-management", label: "Manage", page: "kpi-cards-management" },

@@ -94,6 +94,40 @@ export async function getAccessToken(code: string): Promise<ProcoreTokenResponse
   }
 }
 
+// Get a service-account token using client_credentials grant.
+// This token has company-level access to all projects (vs. user OAuth which is scoped to the user's memberships).
+let _cachedServiceToken: { token: string; expiresAt: number } | null = null;
+export async function getClientCredentialsToken(): Promise<string> {
+  if (_cachedServiceToken && Date.now() < _cachedServiceToken.expiresAt - 30_000) {
+    return _cachedServiceToken.token;
+  }
+  const clientId = (procoreConfig.clientId || '').trim();
+  const clientSecret = (procoreConfig.clientSecret || '').trim();
+  if (!clientId || !clientSecret) {
+    throw new Error('PROCORE_CLIENT_ID and PROCORE_CLIENT_SECRET must be set to use client credentials');
+  }
+  const tokenUrl = (procoreConfig.tokenUrl || '').trim();
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+    }).toString(),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Client credentials token request failed (${response.status}): ${body}`);
+  }
+  const data = (await response.json()) as ProcoreTokenResponse;
+  _cachedServiceToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+  };
+  return data.access_token;
+}
+
 // Refresh access token using refresh token
 export async function refreshAccessToken(refreshToken: string): Promise<ProcoreTokenResponse> {
   try {

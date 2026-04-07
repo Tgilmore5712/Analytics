@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Navigation from "@/components/Navigation";
 
+const DEFAULT_PROCORE_COMPANY_ID = "598134325658789";
+
 type EntrySyncResponse = {
   success?: boolean;
   error?: string;
@@ -61,7 +63,7 @@ function ResultsCard({ label, value }: { label: string; value: number }) {
 export default function TimecardSyncDashboard() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [procoreConnected, setProcoreConnected] = useState(false);
-  const [companyId, setCompanyId] = useState("");
+  const [companyId, setCompanyId] = useState(DEFAULT_PROCORE_COMPANY_ID);
   const [perPage, setPerPage] = useState(100);
   const [persist, setPersist] = useState(true);
 
@@ -84,8 +86,13 @@ export default function TimecardSyncDashboard() {
     async function checkAuth() {
       try {
         const res = await fetch("/api/procore/auth-status", { credentials: "include" });
-        const json = (await res.json()) as { connected?: boolean };
-        if (!cancelled) setProcoreConnected(Boolean(json.connected));
+        const json = (await res.json()) as { connected?: boolean; companyId?: string | null };
+        if (!cancelled) {
+          setProcoreConnected(Boolean(json.connected));
+          if (json.companyId?.trim()) {
+            setCompanyId(json.companyId.trim());
+          }
+        }
       } catch {
         if (!cancelled) setProcoreConnected(false);
       } finally {
@@ -113,8 +120,11 @@ export default function TimecardSyncDashboard() {
       setCheckingAuth(true);
       fetch("/api/procore/auth-status", { credentials: "include" })
         .then((res) => res.json())
-        .then((json: { connected?: boolean }) => {
+        .then((json: { connected?: boolean; companyId?: string | null }) => {
           setProcoreConnected(Boolean(json.connected));
+          if (json.companyId?.trim()) {
+            setCompanyId(json.companyId.trim());
+          }
           if (json.connected) {
             window.history.replaceState({}, "", window.location.pathname);
             setEntriesError(null);

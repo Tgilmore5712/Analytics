@@ -366,29 +366,15 @@ export async function persistTimecardEntries(
       customFields: customFieldsPayload,
       updatedAt: new Date(),
     };
+    const deterministicId = `tc_${procoreId}_${params.projectId}`;
 
     try {
-      const existingEntry = await prisma.timecardEntry.findFirst({
-        where: {
-          procoreId,
-          procoreProjectId: params.projectId,
-        },
+      const savedEntry = await prisma.timecardEntry.upsert({
+        where: { id: deterministicId },
+        update: sharedFields,
+        create: { id: deterministicId, ...sharedFields },
         select: { id: true },
       });
-
-      let savedEntry: { id: string };
-      if (existingEntry) {
-        savedEntry = await prisma.timecardEntry.update({
-          where: { id: existingEntry.id },
-          data: sharedFields,
-          select: { id: true },
-        });
-      } else {
-        savedEntry = await prisma.timecardEntry.create({
-          data: { id: `tc_${procoreId}_${params.projectId}`, ...sharedFields },
-          select: { id: true },
-        });
-      }
 
       await syncUnpackedFieldsForEntry(savedEntry.id, unpacked.jsonFields);
       saved += 1;

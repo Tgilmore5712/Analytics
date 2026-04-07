@@ -20,6 +20,9 @@ const STATUS_NORMALIZATION: Record<string, string> = {
   estimating: 'Estimating',
   preconstruction: 'Estimating',
   pre_construction: 'Estimating',
+  course_of_construction: 'In Progress',
+  course_of_constructions: 'In Progress',
+  post_construction: 'Complete',
   lost: 'Lost',
   delayed: 'Delayed',
 };
@@ -92,6 +95,7 @@ export async function POST(request: Request) {
     const dryRun = body?.dryRun !== false;
     const includeLowConfidence = body?.includeLowConfidence === true;
     const allowStatusDowngrade = body?.allowStatusDowngrade === true;
+    const writeProjectStatus = body?.writeProjectStatus === true;
 
     const conditions: string[] = ['linked_project_id IS NOT NULL', 'soft_deleted = FALSE'];
     const params: unknown[] = [];
@@ -129,6 +133,7 @@ export async function POST(request: Request) {
     let skippedLowConfidence = 0;
     let skippedMissingProject = 0;
     let skippedDowngrade = 0;
+    let skippedPolicy = 0;
 
     const sampleApplied: Array<{
       feedId: string;
@@ -187,6 +192,23 @@ export async function POST(request: Request) {
       }
 
       eligible += 1;
+
+      // Policy: project.status is owned by canonical Procore endpoint sync.
+      // This route only writes status when explicitly requested.
+      if (!writeProjectStatus) {
+        skippedPolicy += 1;
+        if (quarantined.length < 50) {
+          quarantined.push({
+            feedId: normalizeId(row.id),
+            linkedProjectId: row.linked_project_id,
+            projectName: row.project_name,
+            reason: 'status_write_disabled',
+            rawStatus: row.status,
+            matchConfidence: row.match_confidence,
+          });
+        }
+        continue;
+      }
 
       const existing = await prisma.project.findUnique({
         where: { id: row.linked_project_id },
@@ -280,6 +302,8 @@ export async function POST(request: Request) {
         skippedLowConfidence,
         skippedMissingProject,
         skippedDowngrade,
+        skippedPolicy,
+        writeProjectStatus,
         allowStatusDowngrade,
         sampleApplied,
         quarantined,

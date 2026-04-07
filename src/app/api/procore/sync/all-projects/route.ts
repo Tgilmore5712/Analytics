@@ -1,11 +1,242 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { makeRequest, procoreConfig } from "@/lib/procore";
+import { makeRequest, procoreConfig, getClientCredentialsToken } from "@/lib/procore";
 import { prisma } from "@/lib/prisma";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { extractCustomerFromCustomFields, isMeaningfulCustomer } from "@/lib/procoreProjectFeed";
 
-async function ensureProcoreStagingTable() {
-  return;
+async function ensureEndpointLiveTables() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS procore_projects_v1_live (
+      procore_project_id TEXT PRIMARY KEY,
+      company_id TEXT,
+      name TEXT,
+      project_number TEXT,
+      status TEXT,
+      status_raw TEXT,
+      customer TEXT,
+      payload JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_projects_v1_live_status_idx
+      ON procore_projects_v1_live (status)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_projects_v1_live_synced_at_idx
+      ON procore_projects_v1_live (synced_at DESC)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS procore_bid_board_live (
+      bid_board_id TEXT PRIMARY KEY,
+      company_id TEXT,
+      procore_project_id TEXT,
+      name TEXT,
+      status TEXT,
+      status_raw TEXT,
+      customer TEXT,
+      payload JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_bid_board_live_procore_project_id_idx
+      ON procore_bid_board_live (procore_project_id)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_bid_board_live_status_idx
+      ON procore_bid_board_live (status)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_bid_board_live_synced_at_idx
+      ON procore_bid_board_live (synced_at DESC)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS procore_project_stages_live (
+      project_stage_id TEXT PRIMARY KEY,
+      company_id TEXT,
+      name TEXT,
+      category TEXT,
+      is_bidding_stage BOOLEAN,
+      default_stage BOOLEAN,
+      has_children BOOLEAN,
+      payload JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_project_stages_live_name_idx
+      ON procore_project_stages_live (name)
+  `);
+
+  // Add new columns if they don't exist yet (safe for existing tables)
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE procore_project_stages_live
+      ADD COLUMN IF NOT EXISTS default_stage BOOLEAN,
+      ADD COLUMN IF NOT EXISTS has_children BOOLEAN
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS procore_project_stages_live_synced_at_idx
+      ON procore_project_stages_live (synced_at DESC)
+  `);
+}
+
+async function upsertV1Live(params: {
+  companyId: string;
+  procoreProjectId: string;
+  name?: string | null;
+  projectNumber?: string | null;
+  status?: string | null;
+  statusRaw?: string | null;
+  customer?: string | null;
+  payload: unknown;
+}) {
+  const {
+    companyId,
+    procoreProjectId,
+    name,
+    projectNumber,
+    status,
+    statusRaw,
+    customer,
+    payload,
+  } = params;
+
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO procore_projects_v1_live
+        (procore_project_id, company_id, name, project_number, status, status_raw, customer, payload, synced_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
+      ON CONFLICT (procore_project_id)
+      DO UPDATE SET
+        company_id = EXCLUDED.company_id,
+        name = EXCLUDED.name,
+        project_number = EXCLUDED.project_number,
+        status = EXCLUDED.status,
+        status_raw = EXCLUDED.status_raw,
+        customer = EXCLUDED.customer,
+        payload = EXCLUDED.payload,
+        synced_at = NOW()
+    `,
+    procoreProjectId,
+    companyId,
+    name ?? null,
+    projectNumber ?? null,
+    status ?? null,
+    statusRaw ?? null,
+    customer ?? null,
+    JSON.stringify(payload)
+  );
+}
+
+async function upsertBidBoardLive(params: {
+  companyId: string;
+  bidBoardId: string;
+  procoreProjectId?: string | null;
+  name?: string | null;
+  status?: string | null;
+  statusRaw?: string | null;
+  customer?: string | null;
+  payload: unknown;
+}) {
+  const {
+    companyId,
+    bidBoardId,
+    procoreProjectId,
+    name,
+    status,
+    statusRaw,
+    customer,
+    payload,
+  } = params;
+
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO procore_bid_board_live
+        (bid_board_id, company_id, procore_project_id, name, status, status_raw, customer, payload, synced_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
+      ON CONFLICT (bid_board_id)
+      DO UPDATE SET
+        company_id = EXCLUDED.company_id,
+        procore_project_id = EXCLUDED.procore_project_id,
+        name = EXCLUDED.name,
+        status = EXCLUDED.status,
+        status_raw = EXCLUDED.status_raw,
+        customer = EXCLUDED.customer,
+        payload = EXCLUDED.payload,
+        synced_at = NOW()
+    `,
+    bidBoardId,
+    companyId,
+    procoreProjectId ?? null,
+    name ?? null,
+    status ?? null,
+    statusRaw ?? null,
+    customer ?? null,
+    JSON.stringify(payload)
+  );
+}
+
+async function upsertProjectStageLive(params: {
+  companyId: string;
+  projectStageId: string;
+  name?: string | null;
+  category?: string | null;
+  isBiddingStage?: boolean | null;
+  defaultStage?: boolean | null;
+  hasChildren?: boolean | null;
+  payload: unknown;
+}) {
+  const {
+    companyId,
+    projectStageId,
+    name,
+    category,
+    isBiddingStage,
+    defaultStage,
+    hasChildren,
+    payload,
+  } = params;
+
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO procore_project_stages_live
+        (project_stage_id, company_id, name, category, is_bidding_stage, default_stage, has_children, payload, synced_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
+      ON CONFLICT (project_stage_id)
+      DO UPDATE SET
+        company_id = EXCLUDED.company_id,
+        name = EXCLUDED.name,
+        category = EXCLUDED.category,
+        is_bidding_stage = EXCLUDED.is_bidding_stage,
+        default_stage = EXCLUDED.default_stage,
+        has_children = EXCLUDED.has_children,
+        payload = EXCLUDED.payload,
+        synced_at = NOW()
+    `,
+    projectStageId,
+    companyId,
+    name ?? null,
+    category ?? null,
+    typeof isBiddingStage === 'boolean' ? isBiddingStage : null,
+    typeof defaultStage === 'boolean' ? defaultStage : null,
+    typeof hasChildren === 'boolean' ? hasChildren : null,
+    JSON.stringify(payload)
+  );
 }
 
 async function upsertProcoreStaging(params: {
@@ -58,34 +289,527 @@ async function upsertProcoreStaging(params: {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { fetchAll = true, companyId: bodyCompanyId } = body;
+
+    const parseDebugIds = (input: unknown): string[] => {
+      if (Array.isArray(input)) {
+        return input.map((v) => String(v).trim()).filter(Boolean);
+      }
+      const text = String(input ?? '').trim();
+      if (!text) return [];
+      return text.split(',').map((v) => v.trim()).filter(Boolean);
+    };
+
+    const {
+      fetchAll = true,
+      includeInactiveV1 = true,
+      includeTestProjects = true,
+      includePrimeContractProjectBackfill = true,
+      usePrimeContractProjectIdsAsTruth = true,
+      seedFromFile = false,
+      primeByIdConcurrency: bodyPrimeByIdConcurrency,
+      maxPages: bodyMaxPages,
+      debugProjectIds: bodyDebugProjectIds,
+      companyId: bodyCompanyId,
+    } = body;
+    const debugProjectIds = parseDebugIds(bodyDebugProjectIds);
+    const parsedPrimeByIdConcurrency = Number.parseInt(String(bodyPrimeByIdConcurrency ?? '4'), 10);
+    const primeByIdConcurrency = Math.min(12, Math.max(1, Number.isFinite(parsedPrimeByIdConcurrency) ? parsedPrimeByIdConcurrency : 4));
+    const parsedMaxPages = Number.parseInt(String(bodyMaxPages ?? '1000'), 10);
+    const maxPages = fetchAll ? Math.min(5000, Math.max(1, Number.isFinite(parsedMaxPages) ? parsedMaxPages : 1000)) : 1;
 
     const cookieStore = await cookies();
-    const accessToken = cookieStore.get("procore_access_token")?.value;
+    const userAccessToken = cookieStore.get("procore_access_token")?.value;
     const companyId = String(bodyCompanyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || '').trim();
 
-    if (!accessToken) {
+    if (!userAccessToken && !procoreConfig.clientId) {
       return NextResponse.json({ error: "Missing access token. Please login via OAuth." }, { status: 401 });
+    }
+
+    // Prefer client_credentials (service account) so all company projects are visible.
+    // Client credentials have company-level access; user OAuth only sees projects where the user is a member.
+    let accessToken: string;
+    let tokenSource: string;
+    try {
+      accessToken = await getClientCredentialsToken();
+      tokenSource = 'client_credentials';
+    } catch {
+      if (!userAccessToken) {
+        return NextResponse.json({ error: "Missing access token. Please login via OAuth." }, { status: 401 });
+      }
+      accessToken = userAccessToken;
+      tokenSource = 'user_oauth';
+    }
+    console.log(`[Sync] Using token source: ${tokenSource}`);
+
+    function isAppOwnerForbidden(error: unknown): boolean {
+      const message = error instanceof Error ? error.message : String(error);
+      return /\b403\b/.test(message) && /Unpermitted access for the app owner/i.test(message);
+    }
+
+    async function makeProcoreRequestWithFallback(endpoint: string): Promise<unknown> {
+      try {
+        return await makeRequest(endpoint, accessToken, undefined, companyId);
+      } catch (error: unknown) {
+        if (tokenSource === 'client_credentials' && userAccessToken && isAppOwnerForbidden(error)) {
+          console.warn(`[Sync] client_credentials forbidden for endpoint ${endpoint}; retrying with user OAuth token.`);
+          accessToken = userAccessToken;
+          tokenSource = 'user_oauth_fallback';
+          return await makeRequest(endpoint, accessToken, undefined, companyId);
+        }
+        throw error;
+      }
     }
 
     console.log(`Starting full Procore sync for company ${companyId}`);
 
-    // 1. Fetch all V1 Projects (only first 2 pages for speed)
-    const allV1Projects: any[] = [];
-    let page = 1;
-    while (true) {
-      const endpoint = `/rest/v1.0/projects?company_id=${companyId}&page=${page}&per_page=100`;
-      const data = await makeRequest(endpoint, accessToken);
-      if (!Array.isArray(data) || data.length === 0) break;
-      allV1Projects.push(...data);
-      if (data.length < 100 || !fetchAll) break;
-      page++;
-      if (page > 3) break; // Reduced from 20
+    // 1. Fetch V1 Projects (active + optionally inactive + optionally test/demo)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function fetchV1Projects(filters?: { active?: boolean; isDemo?: boolean }): Promise<any[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const projects: any[] = [];
+      const { active, isDemo } = filters ?? {};
+      let page = 1;
+      while (true) {
+        const qs = new URLSearchParams({
+          company_id: companyId,
+          page: String(page),
+          per_page: '100',
+        });
+        if (typeof active === 'boolean') {
+          qs.set('filters[active]', active ? 'true' : 'false');
+        }
+        if (typeof isDemo === 'boolean') {
+          qs.set('filters[is_demo]', isDemo ? 'true' : 'false');
+        }
+        const endpoint = `/rest/v1.0/projects?${qs.toString()}`;
+        let data: unknown;
+        try {
+          data = await makeProcoreRequestWithFallback(endpoint);
+        } catch (error: unknown) {
+          // Some Procore tenants may not support filters[is_demo] on list endpoint.
+          // If that happens, skip this test/demo pass instead of failing entire sync.
+          const message = error instanceof Error ? error.message : String(error);
+          const isBadRequest = /\b400\b/.test(message);
+          if (typeof isDemo === 'boolean' && isBadRequest) {
+            console.warn(`Skipping demo-filtered V1 fetch; filter unsupported: ${message}`);
+            break;
+          }
+          throw error;
+        }
+        if (!Array.isArray(data) || data.length === 0) break;
+        projects.push(...data);
+        if (data.length < 100 || !fetchAll) break;
+        page++;
+        if (page > maxPages) break;
+      }
+      return projects;
+    }
+
+    async function fetchPrimeContractProjectIds(): Promise<{
+      ids: string[];
+      stats: {
+        distinctByProjectId: number;
+        distinctByProjectProcoreId: number;
+        distinctFromContractorProjectIds: number;
+        distinctFromVendorProjectIds: number;
+        distinctCoalesced: number;
+      };
+    }> {
+      try {
+        const statRows = await prisma.$queryRawUnsafe<Array<{
+          distinct_by_project_id: number;
+          distinct_by_project_procore_id: number;
+          distinct_from_contractor_project_ids: number;
+          distinct_from_vendor_project_ids: number;
+          distinct_coalesced: number;
+        }>>(
+          `
+            WITH source_ids AS (
+              SELECT NULLIF(BTRIM(project_id), '') AS pid
+              FROM procore_prime_contracts_live
+              UNION
+              SELECT NULLIF(BTRIM(project_procore_id), '') AS pid
+              FROM procore_prime_contracts_live
+              UNION
+              SELECT NULLIF(BTRIM(value), '') AS pid
+              FROM procore_prime_contracts_live
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                COALESCE(payload->'contractor'->'project_ids', '[]'::jsonb)
+              ) AS value
+              UNION
+              SELECT NULLIF(BTRIM(value), '') AS pid
+              FROM procore_prime_contracts_live
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                COALESCE(payload->'vendor'->'project_ids', '[]'::jsonb)
+              ) AS value
+            )
+            SELECT
+              (
+                SELECT COUNT(DISTINCT NULLIF(BTRIM(project_id), ''))::int
+                FROM procore_prime_contracts_live
+              ) AS distinct_by_project_id,
+              (
+                SELECT COUNT(DISTINCT NULLIF(BTRIM(project_procore_id), ''))::int
+                FROM procore_prime_contracts_live
+              ) AS distinct_by_project_procore_id,
+              (
+                SELECT COUNT(DISTINCT NULLIF(BTRIM(value), ''))::int
+                FROM procore_prime_contracts_live p1
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                  COALESCE(p1.payload->'contractor'->'project_ids', '[]'::jsonb)
+                ) AS value
+              ) AS distinct_from_contractor_project_ids,
+              (
+                SELECT COUNT(DISTINCT NULLIF(BTRIM(value), ''))::int
+                FROM procore_prime_contracts_live p2
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                  COALESCE(p2.payload->'vendor'->'project_ids', '[]'::jsonb)
+                ) AS value
+              ) AS distinct_from_vendor_project_ids,
+              (SELECT COUNT(DISTINCT pid)::int FROM source_ids WHERE pid IS NOT NULL) AS distinct_coalesced
+          `
+        );
+
+        const rows = await prisma.$queryRawUnsafe<Array<{ procore_project_id: string | null }>>(
+          `
+            WITH source_ids AS (
+              SELECT NULLIF(BTRIM(project_id), '') AS pid
+              FROM procore_prime_contracts_live
+              UNION
+              SELECT NULLIF(BTRIM(project_procore_id), '') AS pid
+              FROM procore_prime_contracts_live
+              UNION
+              SELECT NULLIF(BTRIM(value), '') AS pid
+              FROM procore_prime_contracts_live
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                COALESCE(payload->'contractor'->'project_ids', '[]'::jsonb)
+              ) AS value
+              UNION
+              SELECT NULLIF(BTRIM(value), '') AS pid
+              FROM procore_prime_contracts_live
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                COALESCE(payload->'vendor'->'project_ids', '[]'::jsonb)
+              ) AS value
+            )
+            SELECT DISTINCT pid AS procore_project_id
+            FROM source_ids
+            WHERE pid IS NOT NULL
+          `
+        );
+
+        const ids = rows
+          .map((row) => String(row.procore_project_id || '').trim())
+          .filter(Boolean);
+
+        const statsRow = statRows[0] || {
+          distinct_by_project_id: 0,
+          distinct_by_project_procore_id: 0,
+          distinct_from_contractor_project_ids: 0,
+          distinct_from_vendor_project_ids: 0,
+          distinct_coalesced: 0,
+        };
+
+        return {
+          ids,
+          stats: {
+            distinctByProjectId: Number(statsRow.distinct_by_project_id || 0),
+            distinctByProjectProcoreId: Number(statsRow.distinct_by_project_procore_id || 0),
+            distinctFromContractorProjectIds: Number(statsRow.distinct_from_contractor_project_ids || 0),
+            distinctFromVendorProjectIds: Number(statsRow.distinct_from_vendor_project_ids || 0),
+            distinctCoalesced: Number(statsRow.distinct_coalesced || 0),
+          },
+        };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/does not exist|relation|p2021|p2022/i.test(message)) {
+          console.warn(`Prime contracts table unavailable for project backfill: ${message}`);
+          return {
+            ids: [],
+            stats: {
+              distinctByProjectId: 0,
+              distinctByProjectProcoreId: 0,
+              distinctFromContractorProjectIds: 0,
+              distinctFromVendorProjectIds: 0,
+              distinctCoalesced: 0,
+            },
+          };
+        }
+        throw error;
+      }
+    }
+
+    async function mapWithConcurrency<T, R>(
+      items: T[],
+      limit: number,
+      worker: (item: T, index: number) => Promise<R>
+    ): Promise<R[]> {
+      const results: R[] = new Array(items.length);
+      let nextIndex = 0;
+
+      async function runner() {
+        while (true) {
+          const i = nextIndex++;
+          if (i >= items.length) return;
+          results[i] = await worker(items[i], i);
+        }
+      }
+
+      await Promise.all(
+        Array.from({ length: Math.max(1, Math.min(limit, items.length || 1)) }, () => runner())
+      );
+
+      return results;
+    }
+
+    const activeV1Projects = await fetchV1Projects({ active: true });
+    const inactiveV1Projects = includeInactiveV1 ? await fetchV1Projects({ active: false }) : [];
+    const testActiveV1Projects = includeTestProjects ? await fetchV1Projects({ active: true, isDemo: true }) : [];
+    const testInactiveV1Projects = includeTestProjects && includeInactiveV1
+      ? await fetchV1Projects({ active: false, isDemo: true })
+      : [];
+
+    const passIds = {
+      active: new Set(activeV1Projects.map((p: Record<string, unknown>) => String(p?.id ?? '')).filter(Boolean)),
+      inactive: new Set(inactiveV1Projects.map((p: Record<string, unknown>) => String(p?.id ?? '')).filter(Boolean)),
+      testActive: new Set(testActiveV1Projects.map((p: Record<string, unknown>) => String(p?.id ?? '')).filter(Boolean)),
+      testInactive: new Set(testInactiveV1Projects.map((p: Record<string, unknown>) => String(p?.id ?? '')).filter(Boolean)),
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const v1ById = new Map<string, any>();
+    for (const p of [
+      ...activeV1Projects,
+      ...inactiveV1Projects,
+      ...testActiveV1Projects,
+      ...testInactiveV1Projects,
+    ]) {
+      const row = p as Record<string, unknown>;
+      if (row?.id == null) continue;
+      v1ById.set(String(row.id), p);
+    }
+
+    const primeBackfillStats = {
+      enabled: Boolean(includePrimeContractProjectBackfill),
+      truthMode: Boolean(usePrimeContractProjectIdsAsTruth),
+      seedFromFile: Boolean(seedFromFile),
+      seedFileIds: 0,
+      sourceCounts: {
+        distinctByProjectId: 0,
+        distinctByProjectProcoreId: 0,
+        distinctCoalesced: 0,
+      },
+      idsFromPrimeContracts: 0,
+      requestedById: 0,
+      missingFromList: 0,
+      fetchedById: 0,
+      fetchErrors: 0,
+      failedById: [] as Array<{ id: string; error: string }>,
+    };
+
+    // Read seed IDs from Projects_test file if requested
+    let fileSeeds: string[] = [];
+    if (seedFromFile) {
+      try {
+        const filePath = join(process.cwd(), 'Projects_test');
+        const raw = readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(raw) as { response?: { results?: Array<{ id?: string }> } };
+        const results = parsed?.response?.results ?? [];
+        fileSeeds = results
+          .map((r) => String(r?.id ?? '').trim())
+          .filter(Boolean);
+        primeBackfillStats.seedFileIds = fileSeeds.length;
+        console.log(`Loaded ${fileSeeds.length} seed IDs from Projects_test`);
+      } catch (err) {
+        console.warn(`Could not read Projects_test for seed IDs: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    if (includePrimeContractProjectBackfill || fileSeeds.length > 0) {
+      const primeResult = await fetchPrimeContractProjectIds();
+      const primeIds = primeResult.ids;
+      primeBackfillStats.sourceCounts = primeResult.stats;
+      primeBackfillStats.idsFromPrimeContracts = primeIds.length;
+
+      // Merge prime contract IDs with file seed IDs (deduplicated)
+      const mergedIdSet = new Set([...primeIds, ...fileSeeds]);
+      const allIds = Array.from(mergedIdSet);
+      primeBackfillStats.requestedById = allIds.length;
+
+      const missingIds = allIds.filter((id) => !v1ById.has(id));
+      primeBackfillStats.missingFromList = missingIds.length;
+
+      if (allIds.length > 0) {
+        const fetchedRows = await mapWithConcurrency(allIds, primeByIdConcurrency, async (id) => {
+          try {
+            const endpoint = `/rest/v1.0/projects/${encodeURIComponent(id)}?company_id=${encodeURIComponent(companyId)}`;
+            const row = await makeProcoreRequestWithFallback(endpoint);
+            return { id, row, error: null as string | null };
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { id, row: null, error: message };
+          }
+        });
+
+        // Prime-contract IDs are authoritative when truth mode is enabled.
+        if (usePrimeContractProjectIdsAsTruth) {
+          v1ById.clear();
+        }
+
+        for (const result of fetchedRows) {
+          if (result.row && typeof result.row === 'object') {
+            const rowObj = result.row as Record<string, unknown>;
+            const rowId = String(rowObj.id ?? result.id).trim();
+            if (rowId) {
+              v1ById.set(rowId, result.row);
+              primeBackfillStats.fetchedById++;
+            }
+          } else {
+            primeBackfillStats.fetchErrors++;
+            if (primeBackfillStats.failedById.length < 50) {
+              primeBackfillStats.failedById.push({
+                id: result.id,
+                error: result.error || 'Unknown by-id fetch error',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const allV1Projects = Array.from(v1ById.values());
+
+    const debugComparison: Array<{
+      id: string;
+      inList: boolean;
+      inPasses: string[];
+      inDedupedV1: boolean;
+      inV11List?: boolean;
+      byIdOk: boolean;
+      byIdStatus: number;
+      byIdName?: string | null;
+      byIdProjectNumber?: string | null;
+      byIdActive?: boolean | null;
+      byIdIsDemo?: boolean | null;
+      byIdStage?: string | null;
+      byIdUpdatedAt?: string | null;
+      byIdFlags?: Record<string, unknown>;
+      byIdError?: string;
+    }> = [];
+
+    if (debugProjectIds.length > 0) {
+      const debugIdSet = new Set(debugProjectIds);
+      const v11Ids = new Set<string>();
+      let v11Page = 1;
+      while (true) {
+        const qs = new URLSearchParams({
+          company_id: companyId,
+          page: String(v11Page),
+          per_page: '100',
+        });
+        const endpoint = `/rest/v1.1/projects?${qs.toString()}`;
+        let v11Data: unknown;
+        try {
+          v11Data = await makeProcoreRequestWithFallback(endpoint);
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`Skipping v1.1 list debug scan: ${message}`);
+          break;
+        }
+
+        if (!Array.isArray(v11Data) || v11Data.length === 0) break;
+
+        for (const row of v11Data as Array<Record<string, unknown>>) {
+          const rowId = String(row?.id ?? '').trim();
+          if (!rowId) continue;
+          if (debugIdSet.has(rowId)) v11Ids.add(rowId);
+        }
+
+        if (v11Data.length < 100 || !fetchAll) break;
+        v11Page++;
+        if (v11Page > maxPages) break;
+      }
+
+      for (const id of debugProjectIds) {
+        const inPasses: string[] = [];
+        if (passIds.active.has(id)) inPasses.push('active');
+        if (passIds.inactive.has(id)) inPasses.push('inactive');
+        if (passIds.testActive.has(id)) inPasses.push('testActive');
+        if (passIds.testInactive.has(id)) inPasses.push('testInactive');
+
+        const inList = inPasses.length > 0;
+        const inDedupedV1 = v1ById.has(id);
+
+        try {
+          const endpoint = `/rest/v1.0/projects/${encodeURIComponent(id)}?company_id=${encodeURIComponent(companyId)}`;
+          const row = (await makeProcoreRequestWithFallback(endpoint)) as {
+            name?: string;
+            display_name?: string;
+            project_number?: string;
+            active?: boolean;
+            is_demo?: boolean;
+            stage?: string;
+            project_stage?: { name?: string };
+            updated_at?: string;
+          } & Record<string, unknown>;
+
+          const byIdFlags = {
+            active: row.active,
+            is_demo: row.is_demo,
+            stage: row.stage || row.project_stage?.name || null,
+            project_type: row.project_type ?? null,
+            project_state: row.project_state ?? null,
+            project_status_id: row.project_status_id ?? null,
+            project_stage_id: row.project_stage_id ?? null,
+            archived_at: row.archived_at ?? null,
+            deleted_at: row.deleted_at ?? null,
+            completed_at: row.completed_at ?? null,
+            closed_at: row.closed_at ?? null,
+            permissions_template_id: row.permissions_template_id ?? null,
+            program_id: row.program_id ?? null,
+            office_id: row.office_id ?? null,
+            project_region_id: row.project_region_id ?? null,
+            origin_id: row.origin_id ?? null,
+            parent_job_id: row.parent_job_id ?? null,
+            project_bid_type_id: row.project_bid_type_id ?? null,
+          };
+
+          debugComparison.push({
+            id,
+            inList,
+            inPasses,
+            inDedupedV1,
+            inV11List: v11Ids.has(id),
+            byIdOk: true,
+            byIdStatus: 200,
+            byIdName: row.name || row.display_name || null,
+            byIdProjectNumber: row.project_number || null,
+            byIdActive: typeof row.active === 'boolean' ? row.active : null,
+            byIdIsDemo: typeof row.is_demo === 'boolean' ? row.is_demo : null,
+            byIdStage: row.stage || row.project_stage?.name || null,
+            byIdUpdatedAt: row.updated_at || null,
+            byIdFlags,
+          });
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          const statusMatch = message.match(/\b(4\d\d|5\d\d)\b/);
+          const status = statusMatch ? Number.parseInt(statusMatch[1], 10) : 500;
+          debugComparison.push({
+            id,
+            inList,
+            inPasses,
+            inDedupedV1,
+            inV11List: v11Ids.has(id),
+            byIdOk: false,
+            byIdStatus: status,
+            byIdError: message,
+          });
+        }
+      }
     }
 
     // 2. Fetch all V2 Bid Board Projects (only first 2 pages for speed)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allBidBoardProjects: any[] = [];
-    page = 1;
+    let page = 1;
     while (true) {
       const url = `https://api.procore.com/rest/v2.0/companies/${companyId}/estimating/bid_board_projects?page=${page}&per_page=100`;
       const res = await fetch(url, {
@@ -101,7 +825,21 @@ export async function POST(request: Request) {
       allBidBoardProjects.push(...items);
       if (items.length < 100 || !fetchAll) break;
       page++;
-      if (page > 3) break; // Reduced from 20
+      if (page > maxPages) break;
+    }
+
+    // 2.25 Fetch Project Stages (company stage definitions)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allProjectStages: any[] = [];
+    page = 1;
+    while (true) {
+      const endpoint = `/rest/v1.0/companies/${companyId}/project_stages?page=${page}&per_page=100`;
+      const stageData = await makeProcoreRequestWithFallback(endpoint);
+      if (!Array.isArray(stageData) || stageData.length === 0) break;
+      allProjectStages.push(...stageData);
+      if (stageData.length < 100 || !fetchAll) break;
+      page++;
+      if (page > maxPages) break;
     }
 
     // 2.5 Fetch vendor map (used as fallback customer resolver)
@@ -110,7 +848,7 @@ export async function POST(request: Request) {
       let vendorPage = 1;
       while (true) {
         const endpoint = `/rest/v1.0/vendors?company_id=${companyId}&page=${vendorPage}&per_page=100`;
-        const vendorData = await makeRequest(endpoint, accessToken);
+        const vendorData = await makeProcoreRequestWithFallback(endpoint);
         if (!Array.isArray(vendorData) || vendorData.length === 0) break;
         for (const vendor of vendorData) {
           if (vendor?.id && vendor?.name) vendorMap[String(vendor.id)] = String(vendor.name);
@@ -123,16 +861,56 @@ export async function POST(request: Request) {
       console.warn("Vendor fallback map unavailable for this run.");
     }
 
-    await ensureProcoreStagingTable();
+    await ensureEndpointLiveTables();
 
-    console.log(`Syncing ${allV1Projects.length} V1 Projects and ${allBidBoardProjects.length} Bid Board items.`);
+    console.log(
+      `Syncing ${allV1Projects.length} V1 Projects, ${allBidBoardProjects.length} Bid Board items, and ${allProjectStages.length} Project Stages.`
+    );
 
     const results = {
       v1Synced: 0,
       bidBoardSynced: 0,
+      projectStagesSynced: 0,
       stagingSynced: 0,
       errors: [] as string[]
     };
+
+    const v1CustomerByProcoreId = new Map<string, string>();
+    const v1CustomerByName = new Map<string, string>();
+
+    function normalizeKey(value: unknown): string {
+      return String(value ?? '').trim().toLowerCase();
+    }
+
+    function pickCustomerFromUnknown(value: unknown): string {
+      if (typeof value === 'string') return value;
+      if (value && typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        if (typeof obj.name === 'string') return obj.name;
+        if (typeof obj.label === 'string') return obj.label;
+      }
+      return '';
+    }
+
+    for (const stage of allProjectStages) {
+      try {
+        const projectStageId = String(stage.id);
+        await upsertProjectStageLive({
+          companyId,
+          projectStageId,
+          name: stage.name || null,
+          category: stage.category || null,
+          isBiddingStage: typeof stage.is_bidding_stage === 'boolean' ? stage.is_bidding_stage : null,
+          defaultStage: typeof stage.default_stage === 'boolean' ? stage.default_stage : null,
+          hasChildren: typeof stage.project_stage_has_children === 'boolean' ? stage.project_stage_has_children : null,
+          payload: stage,
+        });
+        results.projectStagesSynced++;
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        results.errors.push(`Stage ${String(stage?.name || stage?.id || 'unknown')}: ${message}`);
+      }
+    }
 
     // 3. Process V1 Projects (Upsert into 'Project' table)
     // We use customFields to store the Procore ID to avoid breaking existing logic
@@ -150,12 +928,23 @@ export async function POST(request: Request) {
           customer = v1CustomFieldCustomer;
           console.log(`Resolved project ${name} customer via custom field label: ${customer}`);
         } else {
-          customer = p.customer_name || (p.company && p.company.name) || "";
+          customer =
+            p.customer_name ||
+            pickCustomerFromUnknown(p.customer) ||
+            pickCustomerFromUnknown(p.owner) ||
+            (p.company && p.company.name) ||
+            "";
         }
 
         // 2. Fallback to vendor map if still blank
         if (!isMeaningfulCustomer(customer) && p.company?.id && vendorMap[String(p.company.id)]) {
           customer = vendorMap[String(p.company.id)];
+        }
+
+        if (isMeaningfulCustomer(customer)) {
+          v1CustomerByProcoreId.set(procoreId, customer);
+          const nameKey = normalizeKey(name);
+          if (nameKey) v1CustomerByName.set(nameKey, customer);
         }
         
         // Match by procoreProjectId, projectNumber, or projectName
@@ -170,6 +959,18 @@ export async function POST(request: Request) {
         });
 
         const status = p.status || p.project_status?.name || p.project_stage?.name || "Active";
+        const statusRaw = p.status || p.project_status?.name || p.project_stage?.name || null;
+
+        await upsertV1Live({
+          companyId,
+          procoreProjectId: procoreId,
+          name,
+          projectNumber: number,
+          status,
+          statusRaw,
+          customer: isMeaningfulCustomer(customer) ? customer : null,
+          payload: p,
+        });
 
         await upsertProcoreStaging({
           source: "procore_v1_projects",
@@ -184,6 +985,11 @@ export async function POST(request: Request) {
         results.stagingSynced++;
 
         if (existing) {
+          const existingCustomFields =
+            existing.customFields && typeof existing.customFields === 'object' && !Array.isArray(existing.customFields)
+              ? (existing.customFields as Record<string, unknown>)
+              : {};
+
           await prisma.project.update({
             where: { id: existing.id },
             data: {
@@ -195,17 +1001,20 @@ export async function POST(request: Request) {
               customer: isMeaningfulCustomer(customer)
                 ? customer
                 : (existing.customer || customer || null),
-              status: existing.status || status,
+              // Authoritative: always refresh canonical project status from Procore V1.
+              status,
               customerSource: isMeaningfulCustomer(customer)
                 ? 'procore_v1'
                 : (existing.customerSource || null),
-              statusSource: existing.status ? (existing.statusSource || null) : 'procore_v1',
+              statusSource: 'procore_v1',
               customFields: {
-                ...(typeof existing.customFields === 'object' ? (existing.customFields as any) : {}),
+                ...existingCustomFields,
                 procoreId: procoreId, // Storing in JSON instead of new column for now
                 customerLabel: isMeaningfulCustomer(customer)
                   ? customer
-                  : ((existing.customFields as any)?.customerLabel || null),
+                  : ((existingCustomFields.customerLabel as string | null | undefined) || null),
+                statusRaw,
+                statusSyncedAt: new Date().toISOString(),
                 syncedFrom: 'procore_v1',
                 syncedAt: new Date().toISOString()
               }
@@ -232,8 +1041,9 @@ export async function POST(request: Request) {
           });
         }
         results.v1Synced++;
-      } catch (e: any) {
-        results.errors.push(`V1 ${p.name}: ${e.message}`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        results.errors.push(`V1 ${p.name}: ${message}`);
       }
     }
 
@@ -243,6 +1053,8 @@ export async function POST(request: Request) {
         const bidId = String(bb.id);
         const procoreProjectId = bb.project_id ? String(bb.project_id) : null;
         const name = bb.name || "Untitled Bid";
+        const bidStatus = bb.status || "Bidding";
+        const bidStatusRaw = bb.status || null;
         
         // Resolve customer: PRIORITIZE custom field label over standard fields
         let customer = "";
@@ -253,12 +1065,15 @@ export async function POST(request: Request) {
           customer = bbCustomFieldCustomer;
           console.log(`Resolved bid ${name} customer via custom field label: ${customer}`);
         } else {
-          customer = bb.customer_name ||
-                     bb.client?.name ||
-                     bb.company?.name ||
-                     (bb.raw && bb.raw.client && bb.raw.client.name) || 
-                     (bb.raw && bb.raw.company && bb.raw.company.name) || 
-                     (bb.raw && bb.raw.customer_name) || "";
+          customer =
+            bb.customer_name ||
+            pickCustomerFromUnknown(bb.customer_company) ||
+            bb.client?.name ||
+            bb.company?.name ||
+            pickCustomerFromUnknown(bb.raw?.customer_company) ||
+            (bb.raw && bb.raw.client && bb.raw.client.name) || 
+            (bb.raw && bb.raw.company && bb.raw.company.name) || 
+            (bb.raw && bb.raw.customer_name) || "";
         }
         
         // Fallback to vendor map if still blank
@@ -275,6 +1090,28 @@ export async function POST(request: Request) {
           customer = vendorMap[String(bb.raw.company.id)];
         }
 
+        if (!isMeaningfulCustomer(customer) && procoreProjectId && v1CustomerByProcoreId.has(procoreProjectId)) {
+          customer = v1CustomerByProcoreId.get(procoreProjectId) || '';
+        }
+
+        if (!isMeaningfulCustomer(customer)) {
+          const nameKey = normalizeKey(name);
+          if (nameKey && v1CustomerByName.has(nameKey)) {
+            customer = v1CustomerByName.get(nameKey) || '';
+          }
+        }
+
+        await upsertBidBoardLive({
+          companyId,
+          bidBoardId: bidId,
+          procoreProjectId,
+          name,
+          status: bidStatus,
+          statusRaw: bidStatusRaw,
+          customer: isMeaningfulCustomer(customer) ? customer : null,
+          payload: bb,
+        });
+
         // Match by customFields path instead of new columns
         const existing = await prisma.project.findFirst({
           where: {
@@ -288,23 +1125,32 @@ export async function POST(request: Request) {
         });
 
         if (existing) {
+          const existingCustomFields =
+            existing.customFields && typeof existing.customFields === 'object' && !Array.isArray(existing.customFields)
+              ? (existing.customFields as Record<string, unknown>)
+              : {};
+
           await prisma.project.update({
             where: { id: existing.id },
             data: {
               bidBoardId: bidId,
               procoreId: procoreProjectId || existing.procoreId,
               customer: isMeaningfulCustomer(customer) ? customer : (existing.customer || null),
+              // Authoritative: refresh status from Bid Board endpoint when linked.
+              status: bidStatus,
               customerSource: isMeaningfulCustomer(customer)
                 ? 'procore_bid_board'
                 : (existing.customerSource || null),
-              statusSource: existing.statusSource || 'procore_bid_board',
+              statusSource: 'procore_bid_board',
               customFields: {
-                ...(typeof existing.customFields === 'object' ? (existing.customFields as any) : {}),
+                ...existingCustomFields,
                 bidBoardId: bidId,
-                procoreId: procoreProjectId || (existing.customFields as any)?.procoreId,
+                procoreId: procoreProjectId || (existingCustomFields.procoreId as string | null | undefined),
                 customerLabel: isMeaningfulCustomer(customer)
                   ? customer
-                  : ((existing.customFields as any)?.customerLabel || null),
+                  : ((existingCustomFields.customerLabel as string | null | undefined) || null),
+                statusRaw: bidStatusRaw,
+                statusSyncedAt: new Date().toISOString(),
                 syncedAt: new Date().toISOString()
               }
             }
@@ -317,7 +1163,7 @@ export async function POST(request: Request) {
               procoreId: procoreProjectId,
               customer: isMeaningfulCustomer(customer) ? customer : null,
               customerSource: isMeaningfulCustomer(customer) ? 'procore_bid_board' : null,
-              status: bb.status || "Bidding",
+              status: bidStatus,
               statusSource: 'procore_bid_board',
               customFields: {
                 bidBoardId: bidId,
@@ -337,22 +1183,30 @@ export async function POST(request: Request) {
           externalId: bidId,
           procoreProjectId,
           name,
-          status: bb.status || "Bidding",
+          status: bidStatus,
           customer: isMeaningfulCustomer(customer) ? customer : null,
           payload: bb,
         });
         results.stagingSynced++;
-      } catch (e: any) {
-        results.errors.push(`Bid ${bb.name}: ${e.message}`);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        results.errors.push(`Bid ${bb.name}: ${message}`);
       }
     }
 
     return NextResponse.json({
       success: true,
-      summary: results
+      tokenSource,
+      summary: results,
+      primeProjectBackfill: primeBackfillStats,
+      debug: debugProjectIds.length > 0 ? {
+        requestedIds: debugProjectIds,
+        comparison: debugComparison,
+      } : undefined,
     });
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

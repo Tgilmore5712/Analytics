@@ -6,19 +6,23 @@ export async function GET() {
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("procore_access_token")?.value;
     const refreshToken = cookieStore.get("procore_refresh_token")?.value;
+    const companyId = String(cookieStore.get("procore_company_id")?.value || "").trim();
     const scope = String(cookieStore.get("procore_scope")?.value || "").trim();
     const scopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
     const normalizedScopes = scopes.map((entry) => entry.toLowerCase());
+    const hasFullProcoreScope = normalizedScopes.includes("procore_all");
 
     return NextResponse.json({
       success: true,
       connected: Boolean(accessToken),
       hasAccessToken: Boolean(accessToken),
       hasRefreshToken: Boolean(refreshToken),
+      companyId: companyId || null,
       scope: scope || null,
       scopes,
-      hasReadScope: normalizedScopes.includes("read"),
-      hasWriteScope: normalizedScopes.includes("write"),
+      hasReadScope: hasFullProcoreScope || normalizedScopes.includes("read"),
+      hasWriteScope: hasFullProcoreScope || normalizedScopes.includes("write"),
+      hasFullProcoreScope,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

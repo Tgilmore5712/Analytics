@@ -27,8 +27,10 @@ export default function ProcoreProjectsFeedToolsPage() {
   const [procoreConnected, setProcoreConnected] = useState<boolean>(false);
   const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
   const [bidsProjectId, setBidsProjectId] = useState<string>("");
+  const [primeContractsProjectId, setPrimeContractsProjectId] = useState<string>("");
   const [bidFormsProjectId, setBidFormsProjectId] = useState<string>("");
   const [bidFormsPackageId, setBidFormsPackageId] = useState<string>("");
+  const [projectIdsToCheck, setProjectIdsToCheck] = useState<string>("598134326375662,598134326375719,598134326376806");
 
   // Preserve Procore page location on refresh
   useProcoreAuthAfterRefresh();
@@ -42,6 +44,9 @@ export default function ProcoreProjectsFeedToolsPage() {
       backfillApply: "/api/procore/projects-feed/backfill-promoted?dryRun=false&limit=5000",
       feed: "/api/procore/projects-feed?page=1&pageSize=200",
       unmatched: "/api/procore/projects-feed?unmatchedOnly=true&page=1&pageSize=200",
+      existsByIds: "/api/procore/projects/exists-by-ids?ids=598134326375662,598134326375719,598134326376806",
+      syncCompareIds: "/api/procore/sync/all-projects (POST body: { fetchAll:true, includeInactiveV1:true, includeTestProjects:true, maxPages:1000, debugProjectIds:[...] })",
+      primeContracts: "/api/procore/prime-contracts?projectId=YOUR_PROJECT_ID&page=1&perPage=100&persist=true",
     }),
     []
   );
@@ -138,6 +143,38 @@ export default function ProcoreProjectsFeedToolsPage() {
     await runGet(`/api/procore/bids?projectId=${encodeURIComponent(projectId)}&page=1&pageSize=200`, "Fetch Bids");
   }
 
+  async function runPrimeContractsFetch() {
+    const projectId = primeContractsProjectId.trim();
+    if (!projectId) {
+      setOutput(
+        toPrettyJson({
+          action: "Fetch Prime Contracts",
+          ok: false,
+          error: "Project ID is required to fetch prime contracts.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runGet(
+      `/api/procore/prime-contracts?projectId=${encodeURIComponent(projectId)}&page=1&perPage=100&persist=true`,
+      "Fetch Prime Contracts"
+    );
+  }
+
+  async function runSyncAllPrimeContracts() {
+    await runPost("/api/procore/sync/prime-contracts", "Sync All Prime Contracts");
+  }
+
+  async function runSeedFromProjectsTest() {
+    await runPost(
+      "/api/procore/sync/all-projects",
+      "Seed from Projects_test",
+      { seedFromFile: true, usePrimeContractProjectIdsAsTruth: true, includePrimeContractProjectBackfill: true }
+    );
+  }
+
   async function runBidFormsSync() {
     const projectId = bidFormsProjectId.trim();
     const bidPackageId = bidFormsPackageId.trim();
@@ -200,6 +237,155 @@ export default function ProcoreProjectsFeedToolsPage() {
       `/api/procore/bid-packages?projectId=${encodeURIComponent(projectId)}&fetchAll=true`,
       "List Bid Packages"
     );
+  }
+
+  async function runProjectIdCheck() {
+    const ids = projectIdsToCheck
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      setOutput(
+        toPrettyJson({
+          action: "Check Project IDs",
+          ok: false,
+          error: "Enter one or more comma-separated Procore project IDs.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    const path = `/api/procore/projects/exists-by-ids?ids=${encodeURIComponent(ids.join(","))}`;
+    await runGet(path, "Check Project IDs");
+  }
+
+  async function runSyncDebugCompare() {
+    const ids = projectIdsToCheck
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      setOutput(
+        toPrettyJson({
+          action: "Sync Debug Compare IDs",
+          ok: false,
+          error: "Enter one or more comma-separated Procore project IDs.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runPost("/api/procore/sync/all-projects", "Sync Debug Compare IDs", {
+      fetchAll: true,
+      includeInactiveV1: true,
+      includeTestProjects: true,
+      maxPages: 1000,
+      debugProjectIds: ids,
+    });
+  }
+
+  async function runGenerateDiscrepancyReport() {
+    const ids = projectIdsToCheck
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      setOutput(
+        toPrettyJson({
+          action: "Generate Discrepancy Report",
+          ok: false,
+          error: "Enter one or more comma-separated Procore project IDs.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    setBusyAction("Generate Discrepancy Report");
+    setLastStatus("running");
+
+    try {
+      const payload = {
+        fetchAll: true,
+        includeInactiveV1: true,
+        includeTestProjects: true,
+        maxPages: 1000,
+        debugProjectIds: ids,
+      };
+
+      const res = await fetch("/api/procore/sync/all-projects", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      const response = (body.response as Record<string, unknown> | undefined) || body;
+      const debug = response.debug as Record<string, unknown> | undefined;
+      const comparison = (debug?.comparison as Array<Record<string, unknown>> | undefined) || [];
+      const summary = (response.summary as Record<string, unknown> | undefined) || {};
+
+      const lines: string[] = [];
+      lines.push("Procore Support Ticket: List vs By-ID Project Visibility Discrepancy");
+      lines.push("");
+      lines.push(`Date: ${new Date().toISOString()}`);
+      lines.push(`Endpoint under test: POST /api/procore/sync/all-projects`);
+      lines.push(`Request payload: ${JSON.stringify(payload)}`);
+      lines.push("");
+      lines.push("Observed summary from sync run:");
+      lines.push(`- v1Synced: ${String(summary.v1Synced ?? "n/a")}`);
+      lines.push(`- bidBoardSynced: ${String(summary.bidBoardSynced ?? "n/a")}`);
+      lines.push(`- projectStagesSynced: ${String(summary.projectStagesSynced ?? "n/a")}`);
+      lines.push(`- stagingSynced: ${String(summary.stagingSynced ?? "n/a")}`);
+      lines.push(`- errors: ${JSON.stringify(summary.errors ?? [])}`);
+      lines.push("");
+      lines.push("Per-project comparison:");
+
+      for (const row of comparison) {
+        const id = String(row.id ?? "unknown");
+        lines.push(`- Project ID: ${id}`);
+        lines.push(`  - Appears in v1.0 list sync passes: ${String(row.inList)}`);
+        lines.push(`  - v1.0 passes matched: ${JSON.stringify(row.inPasses ?? [])}`);
+        lines.push(`  - Appears in v1.1 list: ${String(row.inV11List)}`);
+        lines.push(`  - Retrieved by direct-by-id call: ${String(row.byIdOk)} (HTTP ${String(row.byIdStatus ?? "n/a")})`);
+        lines.push(`  - Name: ${String(row.byIdName ?? "")}`);
+        lines.push(`  - Project Number: ${String(row.byIdProjectNumber ?? "")}`);
+        lines.push(`  - Active: ${String(row.byIdActive ?? "")}`);
+        lines.push(`  - Is Demo/Test: ${String(row.byIdIsDemo ?? "")}`);
+        lines.push(`  - Stage: ${String(row.byIdStage ?? "")}`);
+        lines.push(`  - Updated At: ${String(row.byIdUpdatedAt ?? "")}`);
+        if (row.byIdError) lines.push(`  - by-id error: ${String(row.byIdError)}`);
+      }
+
+      lines.push("");
+      lines.push("Conclusion:");
+      lines.push("- Same authenticated session can fetch project(s) by ID but those same ID(s) are omitted from both /rest/v1.0/projects and /rest/v1.1/projects list responses.");
+      lines.push("- This indicates an upstream Procore list-enumeration inconsistency rather than local sync filtering/upsert behavior.");
+      lines.push("");
+      lines.push("Raw JSON response:");
+      lines.push(JSON.stringify(body, null, 2));
+
+      setOutput(lines.join("\n"));
+      setLastStatus(res.ok ? "ok" : "error");
+    } catch (error) {
+      setOutput(
+        toPrettyJson({
+          action: "Generate Discrepancy Report",
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+      setLastStatus("error");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function runPost(path: string, actionLabel: string, payload: object = {}) {
@@ -333,6 +519,19 @@ export default function ProcoreProjectsFeedToolsPage() {
                 />
               </div>
 
+              <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mb-2">
+                  Prime Contracts Project ID
+                </label>
+                <input
+                  type="text"
+                  value={primeContractsProjectId}
+                  onChange={(e) => setPrimeContractsProjectId(e.target.value)}
+                  placeholder="Enter Procore project ID"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+              </div>
+
               <button
                 disabled={disableSyncActions || !bidsProjectId.trim()}
                 onClick={runBidsSync}
@@ -347,6 +546,30 @@ export default function ProcoreProjectsFeedToolsPage() {
                 className="px-4 py-3 rounded-xl bg-sky-700 text-white font-black text-xs uppercase tracking-widest hover:bg-sky-800 disabled:opacity-50"
               >
                 {busyAction === "Fetch Bids" ? "Running..." : "6) Fetch Bids"}
+              </button>
+
+              <button
+                disabled={isBusy || !primeContractsProjectId.trim()}
+                onClick={runPrimeContractsFetch}
+                className="px-4 py-3 rounded-xl bg-lime-700 text-white font-black text-xs uppercase tracking-widest hover:bg-lime-800 disabled:opacity-50"
+              >
+                {busyAction === "Fetch Prime Contracts" ? "Running..." : "6b) Fetch Prime Contracts"}
+              </button>
+
+              <button
+                disabled={disableSyncActions}
+                onClick={runSyncAllPrimeContracts}
+                className="px-4 py-3 rounded-xl bg-emerald-700 text-white font-black text-xs uppercase tracking-widest hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {busyAction === "Sync All Prime Contracts" ? "Running..." : "6c) Sync All Prime Contracts"}
+              </button>
+
+              <button
+                disabled={disableSyncActions}
+                onClick={runSeedFromProjectsTest}
+                className="px-4 py-3 rounded-xl bg-violet-700 text-white font-black text-xs uppercase tracking-widest hover:bg-violet-800 disabled:opacity-50"
+              >
+                {busyAction === "Seed from Projects_test" ? "Running..." : "6d) Seed from Projects_test (272)"}
               </button>
 
               <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
@@ -419,6 +642,43 @@ export default function ProcoreProjectsFeedToolsPage() {
               >
                 {busyAction === "Fetch Unmatched" ? "Running..." : "12) Fetch Unmatched"}
               </button>
+
+              <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mb-2">
+                  Check Project IDs (comma separated)
+                </label>
+                <input
+                  type="text"
+                  value={projectIdsToCheck}
+                  onChange={(e) => setProjectIdsToCheck(e.target.value)}
+                  placeholder="598134326375662,598134326375719"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+              </div>
+
+              <button
+                disabled={isBusy}
+                onClick={runProjectIdCheck}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-amber-700 text-white font-black text-xs uppercase tracking-widest hover:bg-amber-800 disabled:opacity-50"
+              >
+                {busyAction === "Check Project IDs" ? "Running..." : "13) Check Project IDs"}
+              </button>
+
+              <button
+                disabled={disableSyncActions}
+                onClick={runSyncDebugCompare}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-rose-700 text-white font-black text-xs uppercase tracking-widest hover:bg-rose-800 disabled:opacity-50"
+              >
+                {busyAction === "Sync Debug Compare IDs" ? "Running..." : "14) Sync Debug Compare IDs"}
+              </button>
+
+              <button
+                disabled={disableSyncActions}
+                onClick={runGenerateDiscrepancyReport}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-slate-800 text-white font-black text-xs uppercase tracking-widest hover:bg-slate-900 disabled:opacity-50"
+              >
+                {busyAction === "Generate Discrepancy Report" ? "Running..." : "15) Generate Discrepancy Report"}
+              </button>
             </div>
 
             <div className="pt-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
@@ -464,6 +724,34 @@ export default function ProcoreProjectsFeedToolsPage() {
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
                 {endpointExamples.unmatched}
+              </button>
+              <button
+                onClick={() => openInNewTab(endpointExamples.existsByIds)}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.existsByIds}
+              </button>
+              <button
+                onClick={() => openInNewTab(endpointExamples.primeContracts)}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.primeContracts}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
+                  action: "Sync Debug Compare IDs",
+                  usePost: "/api/procore/sync/all-projects",
+                  payload: {
+                    fetchAll: true,
+                    includeInactiveV1: true,
+                    includeTestProjects: true,
+                    maxPages: 1000,
+                    debugProjectIds: ["598134326241241", "598134326378468"],
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.syncCompareIds}
               </button>
               <button
                 onClick={() => openInNewTab('/api/procore/sync/bids?projectId=YOUR_PROJECT_ID&fetchAll=true')}

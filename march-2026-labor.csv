@@ -1,0 +1,484 @@
+Project,Date,Name,Cost Code,Cost Name,Hours
+"2505-MF","2026-03-02","Omar Stoltzfus","03-300-20-10","SOG Concrete Labor",1
+"2505-WP","2026-03-02","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-02","Jason Stoltzfus","03-300-00-10","Foundation Concrete Labor",9
+"2505-WP","2026-03-02","Omar Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-02","Omar Stoltzfus","03-300-00-10","Foundation Concrete Labor",9
+"2505-WP","2026-03-02","William Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-02","William Stoltzfus","03-300-00-10","Foundation Concrete Labor",9
+"2505-WP","2026-03-03","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-03","Jason Stoltzfus","03-300-10-10","Wall Concrete Labor",5
+"2505-WP","2026-03-03","William Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-03","William Stoltzfus","03-300-10-10","Wall Concrete Labor",4.5
+"2505-WP","2026-03-04","Japheth King","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-04","Japheth King","03-300-00-10","Foundation Concrete Labor",10
+"2505-WP","2026-03-04","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-04","Jason Stoltzfus","03-300-00-10","Foundation Concrete Labor",7
+"2505-WP","2026-03-04","Jason Stoltzfus","03-300-10-10","Wall Concrete Labor",3
+"2505-WP","2026-03-04","William Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-04","William Stoltzfus","03-300-00-10","Foundation Concrete Labor",10
+"2505-WP","2026-03-05","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-05","Jason Stoltzfus","03-300-10-10","Wall Concrete Labor",3
+"2505-WP","2026-03-05","Jason Stoltzfus","03-300-30-10","Site Concrete Labor",4.5
+"2505-WP","2026-03-05","Matt Beiler","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-05","Matt Beiler","03-300-10-10","Wall Concrete Labor",3
+"2505-WP","2026-03-05","Matt Beiler","03-300-30-10","Site Concrete Labor",4.5
+"2505-WP","2026-03-06","Japheth King","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-06","Japheth King","03-300-00-10","Foundation Concrete Labor",10
+"2505-WP","2026-03-06","Japheth King","03-300-30-10","Site Concrete Labor",2
+"2505-WP","2026-03-06","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-06","Jason Stoltzfus","03-300-00-10","Foundation Concrete Labor",10.5
+"2505-WP","2026-03-06","Jason Stoltzfus","03-300-30-10","Site Concrete Labor",1.5
+"2505-WP","2026-03-06","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",1.5
+"2505-WP","2026-03-06","Jose Cruz-Loaeza","03-300-00-10","Foundation Concrete Labor",7
+"2505-WP","2026-03-06","Jose Cruz-Loaeza","03-300-30-10","Site Concrete Labor",2
+"2505-WP","2026-03-06","Joseph Beiler","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-06","Joseph Beiler","03-300-00-10","Foundation Concrete Labor",4.5
+"2505-WP","2026-03-06","Joseph Beiler","03-300-30-10","Site Concrete Labor",5
+"2505-WP","2026-03-06","Matt Beiler","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-06","Matt Beiler","03-300-00-10","Foundation Concrete Labor",9.5
+"2505-WP","2026-03-09","Jason Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-09","Jason Stoltzfus","03-300-00-10","Foundation Concrete Labor",2
+"2505-WP","2026-03-09","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-09","Jose Cruz-Loaeza","03-300-00-10","Foundation Concrete Labor",9
+"2505-WP","2026-03-09","Matt Beiler","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-09","Matt Beiler","03-300-00-10","Foundation Concrete Labor",9
+"2505-WP","2026-03-10","Jason Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2505-WP","2026-03-10","Jason Stoltzfus","03-300-00-10","Foundation Concrete Labor",17
+"2505-WP","2026-03-12","Jason Stoltzfus","01-300-10-30","Travel Labor",2
+"2505-WP","2026-03-12","Jason Stoltzfus","03-300-00-10","Foundation Concrete Labor",7
+"2505-WP","2026-03-12","William Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-12","William Stoltzfus","03-300-00-10","Foundation Concrete Labor",3.5
+"2505-WP","2026-03-16","Jason Stoltzfus","03-300-20-10","SOG Concrete Labor",2.5
+"2505-WP","2026-03-17","Japheth King","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-17","Japheth King","03-300-20-10","SOG Concrete Labor",9
+"2505-WP","2026-03-17","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-17","Jason Stoltzfus","03-300-20-10","SOG Concrete Labor",9
+"2505-WP","2026-03-17","Jose Alpizar","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-17","Jose Alpizar","03-300-20-10","SOG Concrete Labor",9.5
+"2505-WP","2026-03-17","Kevin Buch","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-17","Kevin Buch","03-300-20-10","SOG Concrete Labor",9.5
+"2505-WP","2026-03-17","Raymond King Jr","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-17","Raymond King Jr","03-300-20-10","SOG Concrete Labor",9.5
+"2505-WP","2026-03-18","Jason Stoltzfus","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-18","Jason Stoltzfus","03-300-20-10","SOG Concrete Labor",7
+"2505-WP","2026-03-20","Japheth King","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-20","Japheth King","03-300-20-10","SOG Concrete Labor",20.5
+"2505-WP","2026-03-20","Jason Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2505-WP","2026-03-20","Jason Stoltzfus","03-300-20-10","SOG Concrete Labor",20.5
+"2505-WP","2026-03-20","John King","01-300-10-30","Travel Labor",1
+"2505-WP","2026-03-20","John King","03-300-20-10","SOG Concrete Labor",12
+"2505-WP","2026-03-20","Jose Alpizar","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-20","Jose Alpizar","03-300-20-10","SOG Concrete Labor",12
+"2505-WP","2026-03-20","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-20","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",4
+"2505-WP","2026-03-20","Lee Zook","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-20","Lee Zook","03-300-20-10","SOG Concrete Labor",12
+"2505-WP","2026-03-20","Mose Zook","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-20","Mose Zook","03-300-20-10","SOG Concrete Labor",3.5
+"2505-WP","2026-03-30","Mose Zook","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-30","Mose Zook","03-300-20-10","SOG Concrete Labor",8.5
+"2505-WP","2026-03-30","William Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2505-WP","2026-03-30","William Stoltzfus","03-300-20-10","SOG Concrete Labor",9
+"2506 - FTW","2026-03-03","Joseph Beiler","03-300-20-10","SOG Concrete Labor",0.5
+"2506 - FTW","2026-03-03","Joseph Beiler","05-100-10-30","Bollards Labor",0.5
+"2506 - FTW","2026-03-04","Francisco Garcia Romero","01-300-10-30","Travel Labor",2
+"2506 - FTW","2026-03-04","Francisco Garcia Romero","03-300-00-10","Foundation Concrete Labor",5
+"2506 - FTW","2026-03-04","Francisco Garcia Romero","05-100-10-30","Bollards Labor",3
+"2506 - FTW","2026-03-04","Joseph Beiler","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-04","Joseph Beiler","03-300-20-10","SOG Concrete Labor",5.25
+"2506 - FTW","2026-03-04","Joseph Beiler","05-100-10-30","Bollards Labor",3
+"2506 - FTW","2026-03-04","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-04","Logan Spence","03-300-20-10","SOG Concrete Labor",5.25
+"2506 - FTW","2026-03-04","Logan Spence","05-100-10-30","Bollards Labor",3
+"2506 - FTW","2026-03-19","Logan Spence","03-300-20-10","SOG Concrete Labor",2
+"2506 - FTW","2026-03-19","Matt Beiler","03-300-20-10","SOG Concrete Labor",2
+"2506 - FTW","2026-03-19","Omar Stoltzfus","03-300-20-10","SOG Concrete Labor",2
+"2506 - FTW","2026-03-20","Logan Spence","01-300-10-30","Travel Labor",0.5
+"2506 - FTW","2026-03-20","Logan Spence","03-300-20-10","SOG Concrete Labor",4.5
+"2506 - FTW","2026-03-20","Omar Stoltzfus","03-300-20-10","SOG Concrete Labor",4.5
+"2506 - FTW","2026-03-20","Raymond King Jr","03-300-20-10","SOG Concrete Labor",1.5
+"2506 - FTW","2026-03-21","John King","01-300-10-30","Travel Labor",0.5
+"2506 - FTW","2026-03-21","John King","03-300-20-10","SOG Concrete Labor",6
+"2506 - FTW","2026-03-21","Lee Zook","03-300-20-10","SOG Concrete Labor",6
+"2506 - FTW","2026-03-21","Matt Beiler","03-300-20-10","SOG Concrete Labor",6
+"2506 - FTW","2026-03-23","Japheth King","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-23","Japheth King","03-300-20-10","SOG Concrete Labor",8
+"2506 - FTW","2026-03-23","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-23","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",8
+"2506 - FTW","2026-03-23","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-23","Logan Spence","03-300-20-10","SOG Concrete Labor",8
+"2506 - FTW","2026-03-23","Matt Beiler","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-23","Matt Beiler","03-300-20-10","SOG Concrete Labor",8.5
+"2506 - FTW","2026-03-23","Omar Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-23","Omar Stoltzfus","03-300-20-10","SOG Concrete Labor",8
+"2506 - FTW","2026-03-24","Francisco Garcia Romero","01-300-10-30","Travel Labor",2
+"2506 - FTW","2026-03-24","Francisco Garcia Romero","03-300-20-10","SOG Concrete Labor",7
+"2506 - FTW","2026-03-24","Japheth King","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-24","Japheth King","03-300-20-10","SOG Concrete Labor",11.5
+"2506 - FTW","2026-03-24","John King","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-24","John King","03-300-20-10","SOG Concrete Labor",11.5
+"2506 - FTW","2026-03-24","John Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-24","John Stoltzfus","03-300-20-10","SOG Concrete Labor",5.5
+"2506 - FTW","2026-03-24","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-24","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",7.5
+"2506 - FTW","2026-03-24","Joseph Beiler","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-24","Joseph Beiler","03-300-20-10","SOG Concrete Labor",7
+"2506 - FTW","2026-03-24","Kevin Buch","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-24","Kevin Buch","03-300-20-10","SOG Concrete Labor",13
+"2506 - FTW","2026-03-24","Lee Zook","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-24","Lee Zook","03-300-20-10","SOG Concrete Labor",13
+"2506 - FTW","2026-03-24","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-24","Logan Spence","03-300-20-10","SOG Concrete Labor",13
+"2506 - FTW","2026-03-24","Matt Beiler","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-24","Matt Beiler","03-300-20-10","SOG Concrete Labor",14.5
+"2506 - FTW","2026-03-24","Omar Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-24","Omar Stoltzfus","03-300-20-10","SOG Concrete Labor",14.5
+"2506 - FTW","2026-03-24","William Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-24","William Stoltzfus","03-300-20-10","SOG Concrete Labor",13
+"2506 - FTW","2026-03-25","Francisco Garcia Romero","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-25","Francisco Garcia Romero","03-300-20-10","SOG Concrete Labor",9.5
+"2506 - FTW","2026-03-25","John King","01-300-10-30","Travel Labor",0.75
+"2506 - FTW","2026-03-25","John King","03-300-20-10","SOG Concrete Labor",2.25
+"2506 - FTW","2026-03-25","Joseph Beiler","01-300-10-30","Travel Labor",0.25
+"2506 - FTW","2026-03-25","Joseph Beiler","03-300-20-10","SOG Concrete Labor",2.25
+"2506 - FTW","2026-03-25","Omar Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-25","Omar Stoltzfus","03-300-20-10","SOG Concrete Labor",9.5
+"2506 - FTW","2026-03-26","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-26","Logan Spence","03-300-30-10","Site Concrete Labor",9.5
+"2506 - FTW","2026-03-26","Omar Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-26","Omar Stoltzfus","03-300-30-10","Site Concrete Labor",10
+"2506 - FTW","2026-03-27","Francisco Garcia Romero","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","Francisco Garcia Romero","03-300-20-10","SOG Concrete Labor",12.5
+"2506 - FTW","2026-03-27","Jason Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-27","Jason Stoltzfus","03-300-30-10","Site Concrete Labor",12.5
+"2506 - FTW","2026-03-27","John King","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-27","John King","03-300-20-10","SOG Concrete Labor",12
+"2506 - FTW","2026-03-27","Jose Alpizar","03-300-30-10","Site Concrete Labor",6.5
+"2506 - FTW","2026-03-27","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",7
+"2506 - FTW","2026-03-27","Joseph Beiler","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","Joseph Beiler","03-300-30-10","Site Concrete Labor",8
+"2506 - FTW","2026-03-27","Lee Zook","03-300-20-10","SOG Concrete Labor",7
+"2506 - FTW","2026-03-27","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-27","Logan Spence","03-300-30-10","Site Concrete Labor",12.5
+"2506 - FTW","2026-03-27","Matt Beiler","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","Matt Beiler","03-300-30-10","Site Concrete Labor",13
+"2506 - FTW","2026-03-27","Mose Zook","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","Mose Zook","03-300-30-10","Site Concrete Labor",12.5
+"2506 - FTW","2026-03-27","Omar Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","Omar Stoltzfus","03-300-30-10","Site Concrete Labor",13.5
+"2506 - FTW","2026-03-27","Raymond King Jr","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","Raymond King Jr","03-300-30-10","Site Concrete Labor",13
+"2506 - FTW","2026-03-27","William Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-27","William Stoltzfus","03-300-30-10","Site Concrete Labor",12.5
+"2506 - FTW","2026-03-30","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-30","Logan Spence","03-300-30-10","Site Concrete Labor",8.5
+"2506 - FTW","2026-03-30","Matt Beiler","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-30","Matt Beiler","03-300-30-10","Site Concrete Labor",9.5
+"2506 - FTW","2026-03-30","Omar Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-30","Omar Stoltzfus","03-300-30-10","Site Concrete Labor",2.5
+"2506 - FTW","2026-03-30","Raymond King Jr","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-30","Raymond King Jr","03-300-30-10","Site Concrete Labor",2.5
+"2506 - FTW","2026-03-31","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-31","Ivan Zavaleta Lopez","03-300-30-10","Site Concrete Labor",9
+"2506 - FTW","2026-03-31","Logan Spence","01-300-10-30","Travel Labor",1.5
+"2506 - FTW","2026-03-31","Logan Spence","03-300-30-10","Site Concrete Labor",9
+"2506 - FTW","2026-03-31","Omar Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-31","Omar Stoltzfus","03-300-30-10","Site Concrete Labor",9
+"2506 - FTW","2026-03-31","William Stoltzfus","01-300-10-30","Travel Labor",1
+"2506 - FTW","2026-03-31","William Stoltzfus","03-300-30-10","Site Concrete Labor",9
+"2508 - BRS","2026-03-24","Joshua Guidroz","03-300-20-10","SOG Concrete Labor",0.5
+"2508 - BRS","2026-03-25","John King","01-300-10-30","Travel Labor",3
+"2508 - BRS","2026-03-25","John King","03-300-20-10","SOG Concrete Labor",5
+"2508 - BRS","2026-03-25","Joseph Beiler","01-300-10-30","Travel Labor",3
+"2508 - BRS","2026-03-25","Joseph Beiler","03-300-20-10","SOG Concrete Labor",5
+"2508 - BRS","2026-03-26","Francisco Garcia Romero","01-300-10-30","Travel Labor",3
+"2508 - BRS","2026-03-26","Francisco Garcia Romero","03-300-20-10","SOG Concrete Labor",10.5
+"2508 - BRS","2026-03-26","Japheth King","01-300-10-30","Travel Labor",2.5
+"2508 - BRS","2026-03-26","Japheth King","03-300-20-10","SOG Concrete Labor",10
+"2508 - BRS","2026-03-26","John King","01-300-10-30","Travel Labor",3
+"2508 - BRS","2026-03-26","John King","03-300-20-10","SOG Concrete Labor",10.5
+"2508 - BRS","2026-03-26","Joseph Beiler","01-300-10-30","Travel Labor",2.5
+"2508 - BRS","2026-03-26","Joseph Beiler","03-300-20-10","SOG Concrete Labor",10.5
+"2508 - BRS","2026-03-26","Lee Zook","01-300-10-30","Travel Labor",2.5
+"2508 - BRS","2026-03-26","Lee Zook","03-300-20-10","SOG Concrete Labor",10.5
+"2508 - GI","2026-03-25","Isaac Stoltzfus Jr","02-600-10-10","QC Labor",1.5
+"2509 - BAPH","2026-03-25","Jose Alpizar","01-300-10-30","Travel Labor",2
+"2509 - BAPH","2026-03-25","Jose Alpizar","03-300-20-10","SOG Concrete Labor",5
+"2509 - BAPH","2026-03-25","Raymond King Jr","01-300-10-30","Travel Labor",1.5
+"2509 - BAPH","2026-03-25","Raymond King Jr","03-300-20-10","SOG Concrete Labor",5.5
+"2509 - BAPH","2026-03-26","Jose Alpizar","01-300-10-30","Travel Labor",2
+"2509 - BAPH","2026-03-26","Jose Alpizar","03-300-20-10","SOG Concrete Labor",8
+"2509 - BAPH","2026-03-26","Raymond King Jr","01-300-10-30","Travel Labor",1.5
+"2509 - BAPH","2026-03-26","Raymond King Jr","03-300-20-10","SOG Concrete Labor",8.5
+"2509 - BT","2026-03-06","Francisco Garcia Romero","01-300-10-30","Travel Labor",2
+"2509 - BT","2026-03-06","Francisco Garcia Romero","03-300-40-60","Concrete Interior Sealers",8.5
+"2509 - BT","2026-03-06","James King","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-06","James King","03-300-40-60","Concrete Interior Sealers",8.5
+"2509 - BT","2026-03-06","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-06","Lee Zook","03-300-40-60","Concrete Interior Sealers",8.5
+"2509 - BT","2026-03-06","William Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-06","William Stoltzfus","03-300-40-60","Concrete Interior Sealers",8.5
+"2509 - BT","2026-03-09","Japheth King","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-09","Japheth King","03-300-40-40","Concrete Exterior Sealers",1
+"2509 - BT","2026-03-09","Japheth King","03-300-40-60","Concrete Interior Sealers",7.5
+"2509 - BT","2026-03-09","John King","01-300-10-30","Travel Labor",2
+"2509 - BT","2026-03-09","John King","03-300-40-60","Concrete Interior Sealers",8.5
+"2509 - BT","2026-03-09","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-09","Lee Zook","03-300-40-60","Concrete Interior Sealers",8.5
+"2509 - BT","2026-03-09","Mose Zook","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-09","Mose Zook","03-300-40-40","Concrete Exterior Sealers",1
+"2509 - BT","2026-03-09","Mose Zook","03-300-40-60","Concrete Interior Sealers",7.5
+"2509 - BT","2026-03-09","William Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2509 - BT","2026-03-09","William Stoltzfus","03-300-40-60","Concrete Interior Sealers",9
+"2509 - BT","2026-03-10","John King","01-300-10-30","Travel Labor",0.5
+"2509 - BT","2026-03-10","John King","03-300-40-60","Concrete Interior Sealers",4
+"2509 - BT","2026-03-10","William Stoltzfus","01-300-10-30","Travel Labor",0.5
+"2509 - BT","2026-03-10","William Stoltzfus","03-300-40-60","Concrete Interior Sealers",4.5
+"2509 - BT","2026-03-12","William Stoltzfus","03-300-40-60","Concrete Interior Sealers",2
+"2511 - MCMB","2026-03-06","Jose Alpizar","01-300-10-30","Travel Labor",1
+"2511 - MCMB","2026-03-06","Jose Alpizar","03-300-10-10","Wall Concrete Labor",1
+"2511 - MCMB","2026-03-06","Mose Zook","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-06","Mose Zook","03-300-10-10","Wall Concrete Labor",1
+"2511 - MCMB","2026-03-06","Raymond King Jr","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-06","Raymond King Jr","03-300-10-10","Wall Concrete Labor",4.5
+"2511 - MCMB","2026-03-09","Raymond King Jr","03-300-20-10","SOG Concrete Labor",1
+"2511 - MCMB","2026-03-12","Jose Alpizar","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-12","Jose Alpizar","03-300-20-10","SOG Concrete Labor",5.5
+"2511 - MCMB","2026-03-12","Matt Beiler","03-300-20-10","SOG Concrete Labor",5.5
+"2511 - MCMB","2026-03-12","Matt Beiler","03-300-30-10","Site Concrete Labor",1
+"2511 - MCMB","2026-03-12","Mose Zook","03-300-20-10","SOG Concrete Labor",6.5
+"2511 - MCMB","2026-03-12","Raymond King Jr","03-300-20-10","SOG Concrete Labor",7
+"2511 - MCMB","2026-03-13","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-13","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",5.5
+"2511 - MCMB","2026-03-13","Kevin Buch","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-13","Kevin Buch","03-300-20-10","SOG Concrete Labor",5.5
+"2511 - MCMB","2026-03-13","Mose Zook","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-13","Mose Zook","03-300-20-10","SOG Concrete Labor",11
+"2511 - MCMB","2026-03-13","Raymond King Jr","01-300-10-30","Travel Labor",0.5
+"2511 - MCMB","2026-03-13","Raymond King Jr","03-300-20-10","SOG Concrete Labor",11
+"2601 - GSQ","2026-03-09","Jose Alpizar","01-300-10-30","Travel Labor",1
+"2601 - GSQ","2026-03-09","Jose Alpizar","03-300-30-10","Site Concrete Labor",7
+"2601 - GSQ","2026-03-09","Raymond King Jr","01-300-10-30","Travel Labor",0.5
+"2601 - GSQ","2026-03-09","Raymond King Jr","03-300-30-10","Site Concrete Labor",7
+"2601 - JFM","2026-03-09","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-09","Alvin Huyard","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-09","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-09","Ivan Zavaleta Lopez","03-300-20-10","SOG Concrete Labor",7
+"2601 - JFM","2026-03-09","James King","01-300-10-30","Travel Labor",2.5
+"2601 - JFM","2026-03-09","James King","03-300-20-10","SOG Concrete Labor",7.5
+"2601 - JFM","2026-03-09","Joshua Guidroz","03-300-20-10","SOG Concrete Labor",1
+"2601 - JFM","2026-03-09","Omar Garcia Cruz","01-300-10-30","Travel Labor",2.5
+"2601 - JFM","2026-03-09","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-10","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-10","Alvin Huyard","03-300-20-10","SOG Concrete Labor",14.5
+"2601 - JFM","2026-03-10","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","Ivan Zavaleta Lopez","03-300-20-10","SOG Concrete Labor",14.5
+"2601 - JFM","2026-03-10","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","James King","03-300-20-10","SOG Concrete Labor",14.5
+"2601 - JFM","2026-03-10","Japheth King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","Japheth King","03-300-20-10","SOG Concrete Labor",11
+"2601 - JFM","2026-03-10","John King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","John King","03-300-20-10","SOG Concrete Labor",5
+"2601 - JFM","2026-03-10","Jose Alpizar","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-10","Jose Alpizar","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-10","Kevin Buch","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-10","Kevin Buch","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-10","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","Lee Zook","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-10","Mose Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","Mose Zook","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-10","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-10","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",14.5
+"2601 - JFM","2026-03-10","Raymond King Jr","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-10","Raymond King Jr","03-300-20-10","SOG Concrete Labor",12
+"2601 - JFM","2026-03-10","William Stoltzfus","01-300-10-30","Travel Labor",1
+"2601 - JFM","2026-03-10","William Stoltzfus","03-300-20-10","SOG Concrete Labor",7
+"2601 - JFM","2026-03-11","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-11","Alvin Huyard","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-11","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-11","Ivan Zavaleta Lopez","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-11","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-11","James King","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-11","Lee Zook","01-300-10-30","Travel Labor",1
+"2601 - JFM","2026-03-11","Lee Zook","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-11","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-11","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-12","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-12","Alvin Huyard","03-300-20-10","SOG Concrete Labor",2.5
+"2601 - JFM","2026-03-12","Alvin Huyard","03-300-20-70","Non Contracted Labor",6
+"2601 - JFM","2026-03-12","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-12","James King","03-300-20-10","SOG Concrete Labor",4
+"2601 - JFM","2026-03-12","James King","03-300-20-70","Non Contracted Labor",4
+"2601 - JFM","2026-03-12","Matthew King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-12","Matthew King","03-300-20-10","SOG Concrete Labor",6.5
+"2601 - JFM","2026-03-12","Matthew King","03-300-20-70","Non Contracted Labor",2
+"2601 - JFM","2026-03-12","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-12","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",6.5
+"2601 - JFM","2026-03-12","Omar Garcia Cruz","03-300-20-70","Non Contracted Labor",2
+"2601 - JFM","2026-03-13","Alvin Huyard","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-13","Alvin Huyard","03-300-20-70","Non Contracted Labor",9
+"2601 - JFM","2026-03-13","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-13","James King","03-300-20-70","Non Contracted Labor",9
+"2601 - JFM","2026-03-13","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-13","Omar Garcia Cruz","03-300-20-70","Non Contracted Labor",9
+"2601 - JFM","2026-03-16","Alvin Huyard","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-16","Alvin Huyard","03-300-20-70","Non Contracted Labor",8
+"2601 - JFM","2026-03-16","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-16","James King","03-300-20-70","Non Contracted Labor",8
+"2601 - JFM","2026-03-16","Mose Zook","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-16","Mose Zook","03-300-20-70","Non Contracted Labor",3
+"2601 - JFM","2026-03-16","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-16","Omar Garcia Cruz","03-300-20-70","Non Contracted Labor",8
+"2601 - JFM","2026-03-17","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-17","Alvin Huyard","03-300-20-70","Non Contracted Labor",8.5
+"2601 - JFM","2026-03-17","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-17","Ivan Zavaleta Lopez","03-300-20-70","Non Contracted Labor",8
+"2601 - JFM","2026-03-17","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-17","James King","03-300-20-70","Non Contracted Labor",8.5
+"2601 - JFM","2026-03-17","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-17","Lee Zook","03-300-20-70","Non Contracted Labor",8
+"2601 - JFM","2026-03-17","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-17","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",4
+"2601 - JFM","2026-03-17","Omar Garcia Cruz","03-300-20-70","Non Contracted Labor",4.5
+"2601 - JFM","2026-03-18","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-18","Alvin Huyard","03-300-20-10","SOG Concrete Labor",6.5
+"2601 - JFM","2026-03-18","Alvin Huyard","03-300-20-70","Non Contracted Labor",2
+"2601 - JFM","2026-03-18","Jose Alpizar","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-18","Jose Alpizar","03-300-20-70","Non Contracted Labor",8.5
+"2601 - JFM","2026-03-18","Kevin Buch","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-18","Kevin Buch","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-18","Mose Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-18","Mose Zook","03-300-20-70","Non Contracted Labor",8.5
+"2601 - JFM","2026-03-18","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-18","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-19","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-19","Alvin Huyard","03-300-20-10","SOG Concrete Labor",7.5
+"2601 - JFM","2026-03-19","Alvin Huyard","03-300-20-70","Non Contracted Labor",1
+"2601 - JFM","2026-03-19","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-19","James King","03-300-20-10","SOG Concrete Labor",7.5
+"2601 - JFM","2026-03-19","James King","03-300-20-70","Non Contracted Labor",1
+"2601 - JFM","2026-03-19","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-19","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-20","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-20","Alvin Huyard","03-300-20-10","SOG Concrete Labor",10
+"2601 - JFM","2026-03-20","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-20","James King","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-20","John King","01-300-10-30","Travel Labor",1
+"2601 - JFM","2026-03-20","John King","03-300-20-10","SOG Concrete Labor",9.5
+"2601 - JFM","2026-03-20","Jose Alpizar","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-20","Jose Alpizar","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-20","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-20","Lee Zook","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-20","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-20","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-21","Alvin Huyard","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-21","Alvin Huyard","03-300-20-10","SOG Concrete Labor",5
+"2601 - JFM","2026-03-21","Francisco Garcia Romero","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-21","Francisco Garcia Romero","03-300-20-10","SOG Concrete Labor",5
+"2601 - JFM","2026-03-21","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-21","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",5
+"2601 - JFM","2026-03-23","Alvin Huyard","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-23","Alvin Huyard","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-23","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-23","James King","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-23","Jose Alpizar","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-23","Jose Alpizar","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-23","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-23","Lee Zook","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-23","Mose Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-23","Mose Zook","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-23","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-23","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-23","Raymond King Jr","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-23","Raymond King Jr","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-24","Alvin Huyard","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-24","Alvin Huyard","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-24","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-24","Ivan Zavaleta Lopez","03-300-20-10","SOG Concrete Labor",7.5
+"2601 - JFM","2026-03-24","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-24","James King","03-300-20-10","SOG Concrete Labor",7.5
+"2601 - JFM","2026-03-24","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-24","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",7.5
+"2601 - JFM","2026-03-25","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-25","Alvin Huyard","03-300-20-10","SOG Concrete Labor",12.5
+"2601 - JFM","2026-03-25","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-25","James King","03-300-20-10","SOG Concrete Labor",12
+"2601 - JFM","2026-03-25","Japheth King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-25","Japheth King","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-25","Jason Stoltzfus","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-25","Jason Stoltzfus","03-300-20-10","SOG Concrete Labor",12
+"2601 - JFM","2026-03-25","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-25","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-25","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-25","Lee Zook","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-25","Matt Beiler","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-25","Matt Beiler","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-25","Mose Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-25","Mose Zook","03-300-20-10","SOG Concrete Labor",11.5
+"2601 - JFM","2026-03-25","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-25","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",12
+"2601 - JFM","2026-03-25","William Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-25","William Stoltzfus","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-26","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-26","Alvin Huyard","03-300-20-10","SOG Concrete Labor",13
+"2601 - JFM","2026-03-26","Ivan Zavaleta Lopez","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-26","Ivan Zavaleta Lopez","03-300-20-10","SOG Concrete Labor",13
+"2601 - JFM","2026-03-26","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-26","James King","03-300-20-10","SOG Concrete Labor",12.5
+"2601 - JFM","2026-03-26","Jason Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-26","Jason Stoltzfus","03-300-20-10","SOG Concrete Labor",9.5
+"2601 - JFM","2026-03-26","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-26","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",9.5
+"2601 - JFM","2026-03-26","Kevin Buch","01-300-10-30","Travel Labor",1
+"2601 - JFM","2026-03-26","Kevin Buch","03-300-20-10","SOG Concrete Labor",12.5
+"2601 - JFM","2026-03-26","Matthew King","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-26","Matthew King","03-300-20-10","SOG Concrete Labor",11
+"2601 - JFM","2026-03-26","Mose Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-26","Mose Zook","03-300-20-10","SOG Concrete Labor",9.5
+"2601 - JFM","2026-03-26","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-26","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",13
+"2601 - JFM","2026-03-26","William Stoltzfus","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-26","William Stoltzfus","03-300-20-10","SOG Concrete Labor",12
+"2601 - JFM","2026-03-27","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-27","Alvin Huyard","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-27","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-27","James King","03-300-20-10","SOG Concrete Labor",8
+"2601 - JFM","2026-03-27","Jose Alpizar","01-300-10-30","Travel Labor",1
+"2601 - JFM","2026-03-27","Jose Alpizar","03-300-20-10","SOG Concrete Labor",4
+"2601 - JFM","2026-03-27","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",1
+"2601 - JFM","2026-03-27","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",5.5
+"2601 - JFM","2026-03-27","Lee Zook","01-300-10-30","Travel Labor",0.5
+"2601 - JFM","2026-03-27","Lee Zook","03-300-20-10","SOG Concrete Labor",5
+"2601 - JFM","2026-03-27","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-27","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-30","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-30","James King","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-30","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-30","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",8
+"2601 - JFM","2026-03-30","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-30","Lee Zook","03-300-20-10","SOG Concrete Labor",8
+"2601 - JFM","2026-03-30","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-30","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",9
+"2601 - JFM","2026-03-31","Alvin Huyard","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-31","Alvin Huyard","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-31","James King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-31","James King","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-31","Japheth King","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-31","Japheth King","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-31","Jose Cruz-Loaeza","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-31","Jose Cruz-Loaeza","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-31","Lee Zook","01-300-10-30","Travel Labor",1.5
+"2601 - JFM","2026-03-31","Lee Zook","03-300-20-10","SOG Concrete Labor",8.5
+"2601 - JFM","2026-03-31","Omar Garcia Cruz","01-300-10-30","Travel Labor",2
+"2601 - JFM","2026-03-31","Omar Garcia Cruz","03-300-20-10","SOG Concrete Labor",8.5
+"2602 - JKS","2026-03-03","Raymond King Jr","03-300-30-10","Site Concrete Labor",1
+"2602 - JKS","2026-03-04","Jose Alpizar","03-300-30-10","Site Concrete Labor",3.5
+"2602 - JKS","2026-03-04","Jose Alpizar","31-100-10-50","Excavation Equipment",7
+"2602 - JKS","2026-03-04","Raymond King Jr","03-300-30-10","Site Concrete Labor",4
+"2602 - JKS","2026-03-04","Raymond King Jr","31-100-10-50","Excavation Equipment",7
+"2602 - JKS","2026-03-05","Raymond King Jr","03-300-30-10","Site Concrete Labor",1
+"2602 - JKS","2026-03-06","Jose Alpizar","03-300-30-10","Site Concrete Labor",5
+"2602 - JKS","2026-03-06","Mose Zook","03-300-30-10","Site Concrete Labor",4.5
+"2602 - JKS","2026-03-06","Raymond King Jr","03-300-30-10","Site Concrete Labor",5
+"9009","2026-03-31","Todd Gilmore","03-150-10-05","Waterstop",4

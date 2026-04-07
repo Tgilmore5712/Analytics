@@ -18,6 +18,12 @@ function choosePrimaryGroup(groupTotals: Record<string, number>) {
   return entries[0][0];
 }
 
+function keyFromProjectIdentity(projectNumber: unknown, projectName: unknown) {
+  const num = (projectNumber ?? '').toString().trim().toLowerCase();
+  const name = (projectName ?? '').toString().trim().toLowerCase();
+  return `${num}__${name}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -32,6 +38,7 @@ export async function GET(request: NextRequest) {
     const projectName = (searchParams.get('projectName') || '').trim();
     const statusesParam = (searchParams.get('statuses') || '').trim();
     const includeArchived = (searchParams.get('includeArchived') || '').trim().toLowerCase() === 'true';
+    const endpointOnly = (searchParams.get('endpointOnly') || '').trim().toLowerCase() === 'true';
 
     const statusList = statusesParam
       ? statusesParam.split(',').map((value) => value.trim()).filter((value) => value.length > 0)
@@ -72,12 +79,21 @@ export async function GET(request: NextRequest) {
       where.projectName = projectName;
     }
 
+    // Restrict to records that were synced from live endpoints.
+    // Current canonical signal is a non-empty Procore project id.
+    if (endpointOnly) {
+      where.procoreId = {
+        not: null,
+      };
+    }
+
     const queryWhere = Object.keys(where).length > 0 ? where : undefined;
     const legacyWhere: Prisma.ProjectWhereInput = {};
     if (statusList.length > 0) legacyWhere.status = { in: statusList };
     if (customer) legacyWhere.customer = customer;
     if (projectNumber) legacyWhere.projectNumber = projectNumber;
     if (projectName) legacyWhere.projectName = projectName;
+    if (endpointOnly) legacyWhere.procoreId = { not: null };
     const legacyQueryWhere = Object.keys(legacyWhere).length > 0 ? legacyWhere : undefined;
     const baseFindManyArgs = {
       orderBy: {
@@ -88,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     let total: number | undefined;
     let hasNextPage = false;
-    let projects: any[];
+    let projects: Record<string, unknown>[];
     const summarySelect = {
       id: true,
       customer: true,
@@ -327,10 +343,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const projectsWithPMC = projects.map((project) => {
+    let projectsWithPMC: Array<Record<string, unknown>> = projects.map((project) => {
       const customFields = getCanonicalProjectCustomFields(project.customFields);
 
-      const fallback = pmcFromDetailsByProjectId.get(project.id);
+      const projectId = typeof project.id === 'string' ? project.id : String(project.id || '');
+      const fallback = pmcFromDetailsByProjectId.get(projectId);
       const identity = getCanonicalProjectIdentity(project);
 
       return {
@@ -341,6 +358,86 @@ export async function GET(request: NextRequest) {
         pmcMappingSource: customFields.pmcMappingSource ?? fallback?.pmcMappingSource ?? null,
       };
     });
+
+    // Endpoint-only mode: keep endpoint records, but backfill missing customer
+    // from matching legacy rows so project cards are usable.
+    if (endpointOnly && projectsWithPMC.length > 0) {
+      const identityPairs = projectsWithPMC
+        .map((project) => ({
+          projectNumber: (project['projectNumber'] ?? '').toString().trim(),
+          projectName: (project['projectName'] ?? '').toString().trim(),
+        }))
+        .filter((project) => project.projectNumber.length > 0 || project.projectName.length > 0);
+
+      if (identityPairs.length > 0) {
+        const identityWhere: Prisma.ProjectWhereInput[] = identityPairs.map((project) => {
+          const where: Prisma.ProjectWhereInput = {
+            AND: [
+              { procoreId: null },
+              { customer: { not: null } },
+            ],
+          };
+
+          const number = project.projectNumber;
+          const name = project.projectName;
+
+          if (number && name) {
+            where.projectNumber = number;
+            where.projectName = name;
+          } else if (number) {
+            where.projectNumber = number;
+          } else if (name) {
+            where.projectName = name;
+          }
+
+          return where;
+        });
+
+        const legacyCustomerRows = await prisma.project.findMany({
+          where: {
+            OR: identityWhere,
+          },
+          select: {
+            projectNumber: true,
+            projectName: true,
+            customer: true,
+            customerSource: true,
+            updatedAt: true,
+          },
+          orderBy: {
+            updatedAt: 'desc',
+          },
+        });
+
+        const fallbackByIdentity = new Map<string, { customer: string; customerSource: string | null }>();
+        for (const row of legacyCustomerRows) {
+          const customer = (row.customer || '').toString().trim();
+          if (!customer) continue;
+          const key = keyFromProjectIdentity(row.projectNumber, row.projectName);
+          if (!fallbackByIdentity.has(key)) {
+            fallbackByIdentity.set(key, {
+              customer,
+              customerSource: row.customerSource,
+            });
+          }
+        }
+
+        projectsWithPMC = projectsWithPMC.map((project) => {
+          const customer = (project['customer'] || '').toString().trim();
+          if (customer.length > 0) return project;
+
+          const key = keyFromProjectIdentity(project['projectNumber'], project['projectName']);
+          const fallback = fallbackByIdentity.get(key);
+          if (!fallback) return project;
+
+          return {
+            ...project,
+            customer: fallback.customer,
+            customerSource: fallback.customerSource ?? 'legacy_customer_fallback',
+          };
+        });
+      }
+    }
 
     const totalPages = includeTotal && typeof total === 'number'
       ? Math.max(1, Math.ceil(total / pageSize))

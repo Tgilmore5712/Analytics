@@ -1249,3 +1249,53 @@ model TimecardEntryUnpackedField {
   @@map("timecard_entry_unpacked_fields")
 }
 
+// ==================== TIMECARD COST CODE MAPPINGS ====================
+model TimecardCostCodeMapping {
+  id               String    @id
+  procoreProjectId String    @map("procore_project_id")
+  projectId        String?   @map("project_id")
+  timecardCostCode String    @map("timecard_cost_code")
+  poCostCode       String    @map("po_cost_code")
+  matchType        String    @default("manual") @map("match_type")
+  confidence       Float?
+  isPrimary        Boolean   @default(false) @map("is_primary")
+  isActive         Boolean   @default(true) @map("is_active")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([procoreProjectId, timecardCostCode, poCostCode])
+  @@index([procoreProjectId])
+  @@index([projectId])
+  @@index([timecardCostCode])
+  @@index([poCostCode])
+  @@index([isPrimary])
+  @@index([isActive])
+  @@map("timecard_cost_code_mappings")
+}
+
+// ==================== COST CODE CATEGORIES ====================
+// Master lookup: maps every cost code to a labor category.
+// Both timecard entries and PO line items join here so hours can
+// be compared at the category level (e.g. "Foundation Labor").
+model CostCodeCategory {
+  id            String   @id @default(cuid())
+  costCode      String   @unique @map("cost_code")
+  costName      String   @map("cost_name")
+  category      String
+  // When set, all codes in this category roll up to this single canonical code
+  // for consistent XX-XXX-XX-XX formatting in reports.
+  canonicalCode String?  @map("canonical_code")
+  itemType      String   @default("Labor") @map("item_type")
+  name          String
+  description   String?
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([category])
+  @@index([canonicalCode])
+  @@index([isActive])
+  @@map("cost_code_categories")
+}
+
