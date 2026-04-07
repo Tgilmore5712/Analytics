@@ -1017,7 +1017,7 @@ export default function LongTermSchedulePage() {
           }
         >
           <div className="text-[10px] font-black text-orange-700 mb-1">
-            {getFteFromHours(proj.hours, granularity).toFixed(1)} FTE
+            {getFteFromHours(proj.hours, granularity).toFixed(1)} Man Power
           </div>
           <div className="font-black text-gray-900 whitespace-normal break-words">{proj.scopeOfWork}</div>
           <div className="text-gray-500 whitespace-normal break-words">{proj.jobKey.split("~")[2] || proj.jobKey}</div>
@@ -1244,7 +1244,7 @@ export default function LongTermSchedulePage() {
                                   <span className="text-stone-300">Headcount</span>
                                   <span className="text-orange-300">{Number.isInteger(activeHeadcount) ? activeHeadcount : activeHeadcount.toFixed(1)}</span>
                                   <span className="text-stone-500">|</span>
-                                  <span className="text-orange-200">FTE {allocatedFTE.toFixed(1)}</span>
+                                  <span className="text-orange-200">Man Power {allocatedFTE.toFixed(1)}</span>
                                 </div>
                                 <div className="mt-0.5 flex items-center justify-between text-xs font-black">
                                   <span className="text-orange-200">{allocatedHours.toFixed(0)}H</span>
@@ -1275,7 +1275,7 @@ export default function LongTermSchedulePage() {
                                 <span className="text-stone-300">Headcount</span>
                                 <span className="text-orange-300">{Number.isInteger(activeHeadcount) ? activeHeadcount : activeHeadcount.toFixed(1)}</span>
                                 <span className="text-stone-500">|</span>
-                                <span className="text-orange-200">FTE {allocatedFTE.toFixed(1)}</span>
+                                <span className="text-orange-200">Man Power {allocatedFTE.toFixed(1)}</span>
                               </div>
                               <div className="mt-0.5 flex items-center justify-between text-[10px] font-black">
                                 <span className="text-orange-200">{allocatedHours.toFixed(0)}H</span>
@@ -1339,7 +1339,7 @@ export default function LongTermSchedulePage() {
                                 key={`pm-${group.pmId}-${col.type === "week" ? col.weekKey : `${col.weekKey}-${col.dateKey}`}`}
                                 className="py-3 px-2 text-center text-xs font-black text-orange-100 border-r border-stone-600"
                               >
-                                <div className="text-orange-50 tracking-tight text-sm">{getFteFromHours(columnHours, col.type === "week" ? "week" : "day").toFixed(1)} FTE</div>
+                                <div className="text-orange-50 tracking-tight text-sm">{getFteFromHours(columnHours, col.type === "week" ? "week" : "day").toFixed(1)} Man Power</div>
                                 <div className="text-[10px] text-orange-300">{columnHours.toFixed(0)}H</div>
                                 <div className="text-[10px] text-stone-300 uppercase tracking-wider">{uniqueJobs.size} Jobs</div>
                               </td>
@@ -1347,7 +1347,7 @@ export default function LongTermSchedulePage() {
                           })}
                           <td className="py-3 px-3 text-center text-xs font-black text-orange-100 border-l border-stone-600 bg-stone-800">
                             <div className="text-sm">{group.totalHours.toFixed(0)}H</div>
-                            <div className="text-[10px] text-orange-300">{(group.totalHours / 50).toFixed(1)} FTE</div>
+                            <div className="text-[10px] text-orange-300">{(group.totalHours / 50).toFixed(1)} Man Power</div>
                             <div className="text-[10px] text-stone-300 uppercase tracking-wider">{
                               new Set(
                                 group.foremanRows.flatMap((row) =>
@@ -1391,7 +1391,7 @@ export default function LongTermSchedulePage() {
                                       <div className="space-y-1.5">
                                         <div className="font-black text-gray-900 text-base tracking-tight">
                                           {getFteFromHours(hours, "week").toFixed(1)}
-                                          <span className="text-[10px] opacity-50 ml-0.5">FTE</span>
+                                          <span className="text-[10px] opacity-50 ml-0.5">Man Power</span>
                                         </div>
                                         <div className="text-[10px] text-gray-500 font-black">{hours.toFixed(1)}H</div>
                                         {renderProjects(allocation.projects, false, "week", { sourceForemanId: row.id })}
@@ -1422,7 +1422,7 @@ export default function LongTermSchedulePage() {
                                     <div className="space-y-1.5">
                                       <div className="font-black text-gray-900 text-base tracking-tight">
                                         {getFteFromHours(dayHours, "day").toFixed(1)}
-                                        <span className="text-[10px] opacity-50 ml-0.5">FTE</span>
+                                        <span className="text-[10px] opacity-50 ml-0.5">Man Power</span>
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-black">{dayHours.toFixed(1)}H</div>
                                       {renderProjects(dayAllocation.projects, true, "day", { sourceDateKey: col.dateKey, sourceForemanId: row.id })}
@@ -1434,7 +1434,7 @@ export default function LongTermSchedulePage() {
                             <td className="text-center py-4 px-5 text-base font-black bg-stone-50 border-l border-gray-200">
                               <div className="text-gray-900">{row.totalHours.toFixed(1)}H</div>
                               <div className="text-[10px] font-black text-orange-700 uppercase">
-                                {(row.totalHours / 50).toFixed(1)} Total FTE
+                                {(row.totalHours / 50).toFixed(1)} Total Man Power
                               </div>
                             </td>
                           </tr>
@@ -1448,7 +1448,7 @@ export default function LongTermSchedulePage() {
                       </td>
                       {globalColumnTotals.map((total, idx) => (
                         <td key={idx} className="text-center py-6 px-3 text-sm border-r border-stone-700">
-                          <div className="text-lg tracking-tight text-orange-300">{getFteFromHours(total, columnDefs[idx]?.type === "week" ? "week" : "day").toFixed(1)} FTE</div>
+                          <div className="text-lg tracking-tight text-orange-300">{getFteFromHours(total, columnDefs[idx]?.type === "week" ? "week" : "day").toFixed(1)} Man Power</div>
                           <div className="text-[10px] text-stone-300 opacity-80">{total.toFixed(0)}H</div>
                         </td>
                       ))}
@@ -1479,7 +1479,7 @@ export default function LongTermSchedulePage() {
                         />
                       </div>
                       <div className="text-sm font-black uppercase italic">{group.pmName}</div>
-                      <div className="text-[9px] font-bold text-orange-200 mt-1">{group.totalHours.toFixed(0)}h <span className="text-orange-400">|</span> {(group.totalHours / 50).toFixed(1)} FTE</div>
+                      <div className="text-[9px] font-bold text-orange-200 mt-1">{group.totalHours.toFixed(0)}h <span className="text-orange-400">|</span> {(group.totalHours / 50).toFixed(1)} Man Power</div>
                     </button>
                   </div>
 
@@ -1522,7 +1522,7 @@ export default function LongTermSchedulePage() {
                                 </button>
 
                                 <div className="mb-2">
-                                  <span className="font-black text-gray-900 text-sm">{getFteFromHours(hours, "week").toFixed(1)} FTE</span>
+                                  <span className="font-black text-gray-900 text-sm">{getFteFromHours(hours, "week").toFixed(1)} Man Power</span>
                                   <span className="text-[10px] text-gray-500 ml-2">{hours.toFixed(1)}h</span>
                                 </div>
 
@@ -1555,7 +1555,7 @@ export default function LongTermSchedulePage() {
                                           )}
                                           {dayHours > 0 && (
                                             <div className="space-y-1">
-                                              <div className="text-[10px] font-black text-gray-800 mt-1">{getFteFromHours(dayHours, "day").toFixed(1)} FTE</div>
+                                              <div className="text-[10px] font-black text-gray-800 mt-1">{getFteFromHours(dayHours, "day").toFixed(1)} Man Power</div>
                                               <div className="text-[9px] text-gray-500">{dayHours.toFixed(1)}h</div>
                                               {renderProjects(dayAllocation?.projects || [], true, "day", { sourceDateKey: dayKey, sourceForemanId: row.id })}
                                             </div>
