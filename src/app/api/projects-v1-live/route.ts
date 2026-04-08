@@ -61,7 +61,16 @@ export async function GET(request: NextRequest) {
             v.customer,
             ps.name AS project_stage_name,
             ps.category AS project_stage_category,
-            bb.status AS bid_board_status,
+            COALESCE(
+              bb.status,
+              CASE
+                WHEN LOWER(REPLACE(COALESCE(v.status, ''), '-', ' ')) = 'bidding' THEN 'BID_SUBMITTED'
+                WHEN LOWER(REPLACE(COALESCE(v.status, ''), '-', ' ')) = 'pre construction' THEN 'ESTIMATING'
+                WHEN LOWER(REPLACE(COALESCE(v.status, ''), '-', ' ')) = 'post construction' THEN 'COMPLETE'
+                WHEN LOWER(REPLACE(COALESCE(v.status, ''), '-', ' ')) = 'course of construction' THEN 'IN_PROGRESS'
+                ELSE NULL
+              END
+            ) AS bid_board_status,
             bb.bid_board_id,
             v.synced_at
           FROM procore_projects_v1_live v
@@ -84,7 +93,13 @@ export async function GET(request: NextRequest) {
             NULL::text AS customer,
             NULL::text AS project_stage_name,
             NULL::text AS project_stage_category,
-            NULL::text AS bid_board_status,
+            CASE
+              WHEN LOWER(REPLACE(COALESCE(p.status, ''), '-', ' ')) = 'bidding' THEN 'BID_SUBMITTED'
+              WHEN LOWER(REPLACE(COALESCE(p.status, ''), '-', ' ')) = 'pre construction' THEN 'ESTIMATING'
+              WHEN LOWER(REPLACE(COALESCE(p.status, ''), '-', ' ')) = 'post construction' THEN 'COMPLETE'
+              WHEN LOWER(REPLACE(COALESCE(p.status, ''), '-', ' ')) = 'course of construction' THEN 'IN_PROGRESS'
+              ELSE NULL
+            END AS bid_board_status,
             NULL::text AS bid_board_id,
             p.synced_at
           FROM prime_supplement p

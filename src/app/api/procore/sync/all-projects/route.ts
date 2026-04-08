@@ -6,6 +6,21 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { extractCustomerFromCustomFields, isMeaningfulCustomer } from "@/lib/procoreProjectFeed";
 
+function mapV1StatusToBidBoardStatus(status: string | null | undefined): string | null {
+  const normalized = String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (!normalized) return null;
+  if (normalized === "bidding") return "BID_SUBMITTED";
+  if (normalized === "pre construction") return "ESTIMATING";
+  if (normalized === "post construction") return "COMPLETE";
+  if (normalized === "course of construction") return "IN_PROGRESS";
+  return null;
+}
+
 async function ensureEndpointLiveTables() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS procore_projects_v1_live (
@@ -1074,6 +1089,7 @@ export async function POST(request: Request) {
 
         const status = p.status || p.project_status?.name || p.project_stage?.name || "Active";
         const statusRaw = p.status || p.project_status?.name || p.project_stage?.name || null;
+        const fallbackBidBoardStatus = mapV1StatusToBidBoardStatus(status);
 
         await upsertV1Live({
           companyId,
@@ -1093,6 +1109,7 @@ export async function POST(request: Request) {
           procoreProjectId: procoreId,
           name,
           status,
+          bidBoardStatus: fallbackBidBoardStatus,
           customer: isMeaningfulCustomer(customer) ? customer : null,
           payload: p,
         });
