@@ -10,6 +10,10 @@ type TotalHoursRow = {
   totalquantity: number | null;
 };
 
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
 function firstText(...values: unknown[]): string {
   for (const value of values) {
     const text = String(value ?? '').trim();
@@ -27,6 +31,18 @@ function isUniqueConstraintError(error: unknown): boolean {
 function getCurrentMonthKey(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getBidBoardStatusFromPayload(payload: unknown): string {
+  if (!isRecord(payload)) return '';
+
+  return firstText(
+    payload.bidBoardStatus,
+    payload.bid_board_status,
+    payload.bidStatus,
+    payload.bid_status,
+    isRecord(payload.bid_status) ? payload.bid_status.name : ''
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -67,8 +83,8 @@ export async function POST(request: NextRequest) {
         name: true,
         displayName: true,
         customer: true,
-        bidBoardStatus: true,
         status: true,
+        payload: true,
       },
     });
 
@@ -86,7 +102,11 @@ export async function POST(request: NextRequest) {
       stagingProject.externalId
     );
     const canonicalCustomer = firstText(stagingProject.customer);
-    const canonicalStatus = firstText(stagingProject.bidBoardStatus, stagingProject.status, 'UNKNOWN');
+    const canonicalStatus = firstText(
+      getBidBoardStatusFromPayload(stagingProject.payload),
+      stagingProject.status,
+      'UNKNOWN'
+    );
 
     if (!canonicalProjectName || !canonicalProjectNumber) {
       return NextResponse.json(
