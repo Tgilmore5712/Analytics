@@ -146,6 +146,8 @@ function getNextMonths(count: number) {
   return months;
 }
 
+const DEFAULT_PROCORE_COMPANY_ID = process.env.NEXT_PUBLIC_PROCORE_COMPANY_ID || "598134325658789";
+
 export default function SchedulingPage() {
   return <SchedulingContent />;
 }
@@ -696,6 +698,7 @@ function SchedulingContent() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          companyId: DEFAULT_PROCORE_COMPANY_ID,
           fetchAll: false,
           forceUserOAuth: true,
           maxPages: 1,
