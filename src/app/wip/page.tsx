@@ -259,16 +259,17 @@ function WIPReportContent() {
         const start = Date.now();
 
         // Parallelize all primary data fetches
-        const [projectsScopesRes, schedulesData, projectsForHoursData] = await Promise.all([
+        const [projectsScopesRes, schedulesData, budgetProjectsRes] = await Promise.all([
           fetch("/api/project-scopes"),
           fetchAllPages<any>("/api/scheduling"),
-          fetchAllPages<any>("/api/projects"),
+          fetch("/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS"),
         ]);
 
         let projectsData: any[] = [];
         let projectsSnapshot: any[] = [];
         let scopesSnapshot: any[] = [];
         let schedulesDataLocal: any[] = [];
+        let projectsForHoursData: any[] = [];
 
         // Handle projects-scopes response
         if (projectsScopesRes.ok) {
@@ -293,6 +294,25 @@ function WIPReportContent() {
           }
         } else {
           console.warn("[WIP] Scheduling API endpoint not available");
+        }
+
+        // Handle scheduling budget response (source of truth for WIP project-hours pool)
+        if (budgetProjectsRes.ok) {
+          const budgetJson = await budgetProjectsRes.json();
+          const budgetRows = Array.isArray(budgetJson?.data) ? budgetJson.data : [];
+          projectsForHoursData = budgetRows.map((p: any) => ({
+            id: String(p.projectId || ""),
+            projectName: String(p.projectName || ""),
+            projectNumber: String(p.projectId || ""),
+            customer: String(p.customer || ""),
+            status: "In Progress",
+            hours: Number(p.totalQuantity) || 0,
+            pmcgroup: false,
+            projectArchived: false,
+          }));
+          console.log("[WIP] Budget projects for hours:", projectsForHoursData.length, "records");
+        } else {
+          console.warn("[WIP] projects-with-budget endpoint not available");
         }
 
         console.log(`[WIP] Fetched all primary data in ${Date.now() - start}ms`);
@@ -339,8 +359,8 @@ function WIPReportContent() {
   }, []);
 
   const schedulePageJobs = React.useMemo(() => {
-    const qualifyingStatuses = ["In Progress"];
-    const priorityStatuses = ["In Progress"];
+    const qualifyingStatuses = ["In Progress", "IN_PROGRESS"];
+    const priorityStatuses = ["In Progress", "IN_PROGRESS"];
 
     const activeProjects = projectsForHours.filter((p) => {
       if (p.projectArchived) return false;

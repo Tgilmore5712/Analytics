@@ -4,13 +4,14 @@ import { prisma } from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 type ProjectBudgetRow = {
-  projectId: string;
-  projectName: string | null;
-  bidBoardStatus: string | null;
-  totalQuantity: number | null;
-  totalAmount: number | null;
-  lineItemCount: number;
-  syncedAt: string;
+  projectid: string;
+  projectname: string | null;
+  customer: string | null;
+  bidboardstatus: string | null;
+  totalquantity: number | null;
+  totalamount: number | null;
+  lineitemcount: number;
+  syncedat: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
         SELECT
           s.external_id AS projectId,
           s.name AS projectName,
+          s.customer AS customer,
           s.bid_board_status AS bidBoardStatus,
           SUM(COALESCE(b.quantity, 0))::float AS totalQuantity,
           SUM(COALESCE(b.amount, 0))::float AS totalAmount,
@@ -33,15 +35,20 @@ export async function GET(request: NextRequest) {
         LEFT JOIN budgetlineitems b
           ON b.company_id = s.company_id
           AND b.project_id = s.procore_project_id
+          AND LOWER(b.uom) IN ('hours', 'hr', 'hrs')
+          AND LOWER(COALESCE(b.cost_code, '')) NOT IN ('project management.other', '01-300-10-20.o')
         WHERE s.source = 'procore_v1_projects'
           AND s.company_id = $1
+          AND s.external_id IS NOT NULL
+          AND s.name IS NOT NULL
           AND ($2::text IS NULL OR s.bid_board_status = $2::text)
-        GROUP BY s.external_id, s.name, s.bid_board_status, s.synced_at
+        GROUP BY s.external_id, s.name, s.customer, s.bid_board_status, s.synced_at
         ORDER BY s.name ASC NULLS LAST
       `,
       companyId,
       bidBoardStatus || null
     );
+
 
     return NextResponse.json({
       success: true,
@@ -49,13 +56,14 @@ export async function GET(request: NextRequest) {
       bidBoardStatus: bidBoardStatus || null,
       companyId,
       data: rows.map((row) => ({
-        projectId: row.projectId,
-        projectName: row.projectName,
-        bidBoardStatus: row.bidBoardStatus,
-        totalQuantity: row.totalQuantity || 0,
-        totalAmount: row.totalAmount || 0,
-        lineItemCount: row.lineItemCount,
-        syncedAt: row.syncedAt,
+        projectId: row.projectid,
+        projectName: row.projectname,
+        customer: row.customer || '',
+        bidBoardStatus: row.bidboardstatus,
+        totalQuantity: row.totalquantity || 0,
+        totalAmount: row.totalamount || 0,
+        lineItemCount: row.lineitemcount,
+        syncedAt: row.syncedat,
       })),
     });
   } catch (error) {

@@ -404,6 +404,7 @@ export async function POST(request: Request) {
 
     const {
       fetchAll = true,
+      forceUserOAuth = false,
       includeInactiveV1 = true,
       includeTestProjects = true,
       includePrimeContractProjectBackfill = true,
@@ -450,8 +451,16 @@ export async function POST(request: Request) {
     let accessToken: string;
     let tokenSource: string;
     try {
-      accessToken = await getClientCredentialsToken();
-      tokenSource = 'client_credentials';
+      if (forceUserOAuth) {
+        if (!userAccessToken) {
+          return NextResponse.json({ error: "Missing access token. Please login via OAuth." }, { status: 401 });
+        }
+        accessToken = userAccessToken;
+        tokenSource = 'user_oauth_forced';
+      } else {
+        accessToken = await getClientCredentialsToken();
+        tokenSource = 'client_credentials';
+      }
     } catch {
       if (!userAccessToken) {
         return NextResponse.json({ error: "Missing access token. Please login via OAuth." }, { status: 401 });

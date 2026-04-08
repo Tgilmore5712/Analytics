@@ -185,6 +185,7 @@ function SchedulingContent() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [savingJobKey, setSavingJobKey] = useState<string>("");
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [refreshingProcoreStatus, setRefreshingProcoreStatus] = useState(false);
   const [scopesByJobKey, setScopesByJobKey] = useState<Record<string, ApiScope[]>>({});
 
   const fetchAllPages = async <T,>(baseUrl: string): Promise<T[]> => {
@@ -280,18 +281,144 @@ function SchedulingContent() {
     async function fetchData() {
       try {
         let schedulesArray: JobSchedule[] = [];
+        const projectsData: Project[] = [];
 
-        // Fetch projects from API
-        const projectsRaw = await fetchAllPages<ApiProject>("/api/projects");
-        if (!projectsRaw.length) {
-          console.warn("Failed to fetch projects from API");
-          setProjects([]);
+        // Fetch projects with budget from procore staging (IN_PROGRESS projects)
+        let budgetProjectsList: Project[] = [];
+        
+        try {
+          const budgetProjectsRes = await fetch("/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS");
+          console.log(`[Scheduling] Budget endpoint response status: ${budgetProjectsRes.status}`);
+          
+          if (budgetProjectsRes.ok) {
+            const budgetProjectsJson = await readJsonResponse<{ success?: boolean; data?: Array<Record<string, unknown>> }>(budgetProjectsRes, {
+              label: "projects-with-budget",
+              fallback: { data: [] },
+            });
+            const budgetProjects = (budgetProjectsJson.data || []) as Array<{
+              projectId?: string;
+              projectName?: string;
+              customer?: string;
+              bidBoardStatus?: string;
+              totalQuantity?: number;
+              [key: string]: unknown;
+            }>;
+
+            console.log(`[Scheduling] Found ${budgetProjects.length} IN_PROGRESS projects in staging`);
+            
+            if (budgetProjects.length > 0) {
+              console.log('[Scheduling] Sample budget project:', JSON.stringify(budgetProjects[0], null, 2));
+            }
+
+            // Auto-create Schedule entries for new projects
+            let successCount = 0;
+            for (const project of budgetProjects) {
+              if (!project.projectId || !project.projectName) {
+                console.warn(`[Scheduling] Skipping project with missing id or name:`, project);
+                continue;
+              }
+              
+              try {
+                const autoCreateRes = await fetch("/api/scheduling/auto-create-from-staging", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    projectId: project.projectId,
+                    projectName: project.projectName,
+                    customer: String(project.customer || ""),
+                    bidBoardStatus: project.bidBoardStatus,
+                    totalQuantity: project.totalQuantity || 0,
+                  }),
+                });
+
+                if (autoCreateRes.ok) {
+                  successCount++;
+                  const autoCreateData = await autoCreateRes.json();
+                  // Add budget project to project list
+                  const projData: Project = {
+                    id: String(project.projectId),
+                    projectName: String(project.projectName),
+                    projectNumber: String(project.projectId),
+                    customer: String(project.customer || ""),
+                    status: "In Progress",
+                    hours: Number(project.totalQuantity) || 0,
+                    pmcgroup: false,
+                    projectArchived: false,
+                  };
+                  console.log(`[Scheduling] Adding budget project: ${String(project.projectName)} (hours: ${Number(project.totalQuantity)})`);
+                  budgetProjectsList.push(projData);
+                } else {
+                  console.warn(`[Scheduling] Auto-create returned non-ok status:`, autoCreateRes.status);
+                  // Still add the project even if auto-create failed
+                  budgetProjectsList.push({
+                    id: String(project.projectId),
+                    projectName: String(project.projectName),
+                    projectNumber: String(project.projectId),
+                    customer: String(project.customer || ""),
+                    status: "In Progress",
+                    hours: Number(project.totalQuantity) || 0,
+                    pmcgroup: false,
+                    projectArchived: false,
+                  });
+                }
+              } catch (err) {
+                console.warn(`Failed to auto-create schedule for project ${project.projectId}:`, err);
+                // Still add the project even if auto-create failed
+                budgetProjectsList.push({
+                  id: String(project.projectId),
+                  projectName: String(project.projectName),
+                  projectNumber: String(project.projectId),
+                  customer: String(project.customer || ""),
+                  status: "In Progress",
+                  hours: Number(project.totalQuantity) || 0,
+                  pmcgroup: false,
+                  projectArchived: false,
+                });
+              }
+            }
+            console.log(`[Scheduling] Successfully added ${successCount} out of ${budgetProjects.length} projects`);
+          } else {
+            console.warn(`[Scheduling] Budget endpoint returned status ${budgetProjectsRes.status}`);
+          }
+        } catch (err) {
+          console.warn("Failed to fetch projects-with-budget:", err);
+        }
+
+        // Use budget/staging projects as the source of truth for Scheduling.
+        // Keep merge logic structure in case a secondary source is added later.
+        const budgetById = new Map<string, Project>(
+          budgetProjectsList
+            .filter((p) => Boolean(p.id))
+            .map((p) => [String(p.id), p])
+        );
+
+        const enrichedApiProjects = projectsData.map((project) => {
+          const budgetProject = budgetById.get(String(project.id));
+          if (!budgetProject) return project;
+
+          const existingHours = Number(project.hours) || 0;
+          const budgetHours = Number(budgetProject.hours) || 0;
+          const existingCustomer = (project.customer || "").toString().trim();
+          const budgetCustomer = (budgetProject.customer || "").toString().trim();
+
+          return {
+            ...project,
+            customer: existingCustomer || budgetCustomer,
+            hours: existingHours > 0 ? existingHours : budgetHours,
+          };
+        });
+
+        const apiProjectIds = new Set(enrichedApiProjects.map((p) => p.id));
+        const uniqueBudgetProjects = budgetProjectsList.filter((p) => !apiProjectIds.has(p.id));
+        const allProjects = [...enrichedApiProjects, ...uniqueBudgetProjects];
+
+        console.log(`[Scheduling] Total projects loaded: ${allProjects.length} (Budget source)`);
+
+        if (allProjects.length > 0) {
+          setProjects(allProjects);
         } else {
-          const projectsData = projectsRaw.map((p: any) => ({
-            id: p.id,
-            ...(p as Omit<Project, "id">),
-          }));
-          setProjects(projectsData);
+          console.warn("No projects found from either API or budget source");
+          setProjects([]);
         }
 
         // Fetch saved schedule allocations from database
@@ -646,6 +773,43 @@ function SchedulingContent() {
     }
   }
 
+  async function refreshProcoreStatus() {
+    try {
+      setRefreshingProcoreStatus(true);
+      const response = await fetch("/api/procore/sync/all-projects", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fetchAll: false,
+          forceUserOAuth: true,
+          maxPages: 1,
+          includeInactiveV1: false,
+          includeTestProjects: false,
+          includePrimeContractProjectBackfill: false,
+          usePrimeContractProjectIdsAsTruth: false,
+        }),
+      });
+
+      const payload = await readJsonResponse<{ success?: boolean; message?: string; error?: string }>(response, {
+        label: "procore-sync-all-projects",
+        fallback: {},
+      });
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || payload.message || "Failed to refresh Procore status");
+      }
+
+      alert("Procore status refresh completed. Reloading data...");
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to refresh Procore status:", error);
+      alert("Failed to refresh Procore status");
+    } finally {
+      setRefreshingProcoreStatus(false);
+    }
+  }
+
   async function updateStatus(jobKey: string, newStatus: string) {
     try {
       setUpdatingStatus(jobKey);
@@ -710,6 +874,19 @@ function SchedulingContent() {
     const schedulesByExactKey = new Map<string, JobSchedule>();
     const schedulesByProjectNumName = new Map<string, JobSchedule>();
     const schedulesByProjectNumber = new Map<string, JobSchedule[]>();
+    const schedulesByCustomerProjectName = new Map<string, JobSchedule[]>();
+    const schedulesByProjectName = new Map<string, JobSchedule[]>();
+
+    const getAllocationScore = (schedule: JobSchedule) =>
+      Object.values(schedule.allocations || {}).reduce((sum, value) => {
+        const numeric = Number(value);
+        return sum + (Number.isFinite(numeric) ? numeric : 0);
+      }, 0);
+
+    const pickBestSchedule = (candidates: JobSchedule[]) => {
+      if (!candidates.length) return undefined;
+      return [...candidates].sort((a, b) => getAllocationScore(b) - getAllocationScore(a))[0];
+    };
 
     schedules.forEach((s) => {
       schedulesByExactKey.set(s.jobKey, s);
@@ -722,6 +899,20 @@ function SchedulingContent() {
         const arr = schedulesByProjectNumber.get(parts.projectNumber) || [];
         arr.push(s);
         schedulesByProjectNumber.set(parts.projectNumber, arr);
+      }
+
+      const normalizedCustomer = normalizeCustomerValue(parts.customer) || normalizeCustomerValue(s.customer);
+      const normalizedProjectName = (parts.projectName || s.projectName || '').toString().trim();
+      if (normalizedCustomer && normalizedProjectName) {
+        const customerNameKey = `${normalizedCustomer}~${normalizedProjectName}`;
+        const arr = schedulesByCustomerProjectName.get(customerNameKey) || [];
+        arr.push(s);
+        schedulesByCustomerProjectName.set(customerNameKey, arr);
+      }
+      if (normalizedProjectName) {
+        const arr = schedulesByProjectName.get(normalizedProjectName) || [];
+        arr.push(s);
+        schedulesByProjectName.set(normalizedProjectName, arr);
       }
     });
 
@@ -741,6 +932,24 @@ function SchedulingContent() {
         }
       }
 
+      if (!savedSchedule) {
+        const resolvedCustomer = resolveProjectCustomer(job);
+        const projectName = (job.projectName || '').toString().trim();
+        if (resolvedCustomer && projectName) {
+          const customerNameKey = `${resolvedCustomer}~${projectName}`;
+          const matches = schedulesByCustomerProjectName.get(customerNameKey) || [];
+          savedSchedule = pickBestSchedule(matches);
+        }
+      }
+
+      if (!savedSchedule) {
+        const projectName = (job.projectName || '').toString().trim();
+        if (projectName) {
+          const matches = schedulesByProjectName.get(projectName) || [];
+          savedSchedule = pickBestSchedule(matches);
+        }
+      }
+
       const allocations: Record<string, number> = {};
       validMonths.forEach((month) => {
         allocations[month] = savedSchedule?.allocations[month] ?? 0;
@@ -755,7 +964,7 @@ function SchedulingContent() {
         jobKey: job.key,
         customer: mergedCustomer || "Unknown",
         projectName: job.projectName,
-        status: job.status,
+        status: savedSchedule?.status || job.status,
         totalHours: job.totalHours,
         allocations,
       };
@@ -770,9 +979,8 @@ function SchedulingContent() {
     const filtered = allJobs.filter((job) => {
       const customerMatch = !customerFilter || job.customer === customerFilter;
       const jobMatch = !jobFilter || job.projectName.toLowerCase().includes(jobFilter.toLowerCase());
-      const hasHours = job.totalHours > 0;
       
-      return customerMatch && jobMatch && hasHours;
+      return customerMatch && jobMatch;
     });
 
     const sorted = [...filtered].sort((a, b) => {
@@ -800,7 +1008,8 @@ function SchedulingContent() {
     return sorted;
   }, [allJobs, customerFilter, jobFilter, sortColumn, sortDirection, validMonths]);
 
-  // Calculate unscheduled hours (truly unscheduled - constant regardless of year filter)
+  // Calculate top summary metrics.
+  // When year filter is active, all three cards should reflect the selected year.
   const unscheduledHoursCalc = useMemo(() => {
     if (!allJobs || allJobs.length === 0 || !validMonths || validMonths.length === 0) {
       return {
@@ -810,10 +1019,36 @@ function SchedulingContent() {
       };
     }
 
-    // Total qualifying hours = ALL In Progress jobs (total pool)
+    // Total qualifying hours:
+    // - No year filter: all non-complete jobs in the pool.
+    // - Year filter: only the selected-year allocated portion of each job,
+    //   plus truly unscheduled jobs (0% across all years).
     const totalQualifyingHours = allJobs.reduce((sum, job) => {
       if (job?.status === 'Complete') return sum;
-      return sum + (job?.totalHours || 0);
+
+      if (!yearFilter) {
+        return sum + (job?.totalHours || 0);
+      }
+
+      const scopedPercentRaw = (displayMonths || []).reduce((jobSum, month) => {
+        const percent = (job.allocations && typeof job.allocations === 'object' && job.allocations[month]) ?? 0;
+        return jobSum + (typeof percent === 'number' ? percent : 0);
+      }, 0);
+      const scopedPercent = Math.max(0, Math.min(100, scopedPercentRaw));
+
+      const totalAllocationPercent = validMonths.reduce((jobSum, month) => {
+        const percent = (job.allocations && typeof job.allocations === 'object' && job.allocations[month]) ?? 0;
+        return jobSum + (typeof percent === 'number' ? percent : 0);
+      }, 0);
+
+      const isTrulyUnscheduled = totalAllocationPercent === 0;
+      const yearAllocatedHours = (job?.totalHours || 0) * (scopedPercent / 100);
+
+      if (isTrulyUnscheduled) {
+        return sum + (job?.totalHours || 0);
+      }
+
+      return sum + yearAllocatedHours;
     }, 0);
     
     // Calculate scheduled hours - respects year filter for display purposes
@@ -823,15 +1058,16 @@ function SchedulingContent() {
       .filter(job => job?.status !== 'Complete')
       .reduce((sum, job) => {
         if (!job || !monthsToSum) return sum;
-        const totalPercent = monthsToSum.reduce((jobSum, month) => {
+        const totalPercentRaw = monthsToSum.reduce((jobSum, month) => {
           const percent = (job.allocations && typeof job.allocations === 'object' && job.allocations[month]) ?? 0;
           return jobSum + (typeof percent === 'number' ? percent : 0);
         }, 0);
+        const totalPercent = Math.max(0, Math.min(100, totalPercentRaw));
         const jobScheduledHours = (job.totalHours || 0) * (totalPercent / 100);
         return sum + jobScheduledHours;
       }, 0);
 
-    // Truly unscheduled = jobs with zero allocation in ANY year (not dependent on year filter)
+    // Truly unscheduled = jobs with zero allocation in ANY year
     const trulyUnscheduledHours = allJobs
       .filter(job => job?.status !== 'Complete')
       .reduce((sum, job) => {
@@ -846,10 +1082,14 @@ function SchedulingContent() {
         return sum;
       }, 0);
 
+    // Keep unscheduled as true all-years unscheduled (0% allocated across all months).
+    // Year-scoped remainder can look inflated/misleading when work is allocated in other years.
+    const unscheduledHours = trulyUnscheduledHours;
+
     return {
       totalQualifying: totalQualifyingHours || 0,
       totalScheduled: totalManualScheduledHours || 0,
-      unscheduled: trulyUnscheduledHours || 0,
+      unscheduled: unscheduledHours || 0,
     };
   }, [allJobs, validMonths, displayMonths, yearFilter]);
 
@@ -885,6 +1125,21 @@ function SchedulingContent() {
     <main className="p-8" style={{ fontFamily: "sans-serif", background: "#f5f5f5", minHeight: "100vh", color: "#222" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h1 style={{ color: "#15616D", fontSize: 32, margin: 0 }}>Scheduling</h1>
+        <button
+          onClick={refreshProcoreStatus}
+          disabled={refreshingProcoreStatus}
+          style={{
+            background: refreshingProcoreStatus ? "#9ca3af" : "#15616D",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontWeight: 600,
+            cursor: refreshingProcoreStatus ? "not-allowed" : "pointer",
+          }}
+        >
+          {refreshingProcoreStatus ? "Refreshing..." : "Refresh Procore Status"}
+        </button>
       </div>
 
       <div style={{ background: "#ffffff", borderRadius: 12, padding: 16, border: "1px solid #ddd", marginBottom: 24 }}>
