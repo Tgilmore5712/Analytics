@@ -357,24 +357,27 @@ export async function GET(request: NextRequest) {
     const bidBoardStatusByProcoreId = new Map<string, string>();
 
     if (procoreProjectIds.length > 0) {
-      const stagingRows = await prisma.procoreProjectStaging.findMany({
-        where: {
-          source: 'procore_v1_projects',
-          OR: [
-            { procoreProjectId: { in: procoreProjectIds } },
-            { externalId: { in: procoreProjectIds } },
-          ],
-        },
-        select: {
-          procoreProjectId: true,
-          externalId: true,
-          bidBoardStatus: true,
-          syncedAt: true,
-        },
-        orderBy: {
-          syncedAt: 'desc',
-        },
-      });
+      const stagingRows = await prisma.$queryRaw<
+        Array<{
+          procoreProjectId: string | null;
+          externalId: string | null;
+          bidBoardStatus: string | null;
+          syncedAt: Date;
+        }>
+      >(Prisma.sql`
+        SELECT
+          procore_project_id AS "procoreProjectId",
+          external_id AS "externalId",
+          bid_board_status AS "bidBoardStatus",
+          synced_at AS "syncedAt"
+        FROM procore_project_staging
+        WHERE source = 'procore_v1_projects'
+          AND (
+            procore_project_id IN (${Prisma.join(procoreProjectIds)})
+            OR external_id IN (${Prisma.join(procoreProjectIds)})
+          )
+        ORDER BY synced_at DESC
+      `);
 
       for (const row of stagingRows) {
         const bidBoardStatus = (row.bidBoardStatus || '').toString().trim();
