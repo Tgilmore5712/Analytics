@@ -300,29 +300,77 @@ async function applyBidBoardStatusToV1Staging(params: {
   procoreProjectId?: string | null;
   bidBoardStatus?: string | null;
   bidBoardId?: string | null;
+  bidBoardName?: string | null;
+  customer?: string | null;
 }) {
-  const { companyId, procoreProjectId, bidBoardStatus, bidBoardId } = params;
-  if (!procoreProjectId) return 0;
+  const { companyId, procoreProjectId, bidBoardStatus, bidBoardId, bidBoardName, customer } = params;
+
+  // First attempt: exact match by Procore project id.
+  if (procoreProjectId) {
+    const updatedById = await prisma.$executeRawUnsafe(
+      `
+        UPDATE procore_project_staging
+        SET
+          bid_board_status = $1,
+          payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
+            'bidBoardStatus', $1,
+            'bidBoardExternalId', $2,
+            'bidBoardSyncedAt', NOW()::text
+          ),
+          synced_at = NOW()
+        WHERE source = 'procore_v1_projects'
+          AND company_id = $3
+          AND procore_project_id = $4
+      `,
+      bidBoardStatus ?? null,
+      bidBoardId ?? null,
+      companyId,
+      procoreProjectId
+    );
+
+    if (updatedById > 0) return updatedById;
+  }
+
+  // Fallback: match one best candidate by normalized name (and customer priority when available).
+  const normalizedName = String(bidBoardName || '').trim();
+  if (!normalizedName) return 0;
+  const normalizedCustomer = isMeaningfulCustomer(customer) ? String(customer).trim() : null;
 
   return prisma.$executeRawUnsafe(
     `
-      UPDATE procore_project_staging
+      WITH candidate AS (
+        SELECT ctid
+        FROM procore_project_staging
+        WHERE source = 'procore_v1_projects'
+          AND company_id = $3
+          AND LOWER(BTRIM(COALESCE(name, ''))) = LOWER(BTRIM($4))
+        ORDER BY
+          CASE
+            WHEN $5::text IS NOT NULL
+              AND LOWER(BTRIM(COALESCE(customer, ''))) = LOWER(BTRIM($5::text))
+            THEN 0 ELSE 1
+          END,
+          synced_at DESC
+        LIMIT 1
+      )
+      UPDATE procore_project_staging s
       SET
         bid_board_status = $1,
-        payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
+        payload = COALESCE(s.payload, '{}'::jsonb) || jsonb_build_object(
           'bidBoardStatus', $1,
           'bidBoardExternalId', $2,
-          'bidBoardSyncedAt', NOW()::text
+          'bidBoardSyncedAt', NOW()::text,
+          'bidBoardMatchMode', 'name_fallback'
         ),
         synced_at = NOW()
-      WHERE source = 'procore_v1_projects'
-        AND company_id = $3
-        AND procore_project_id = $4
+      FROM candidate
+      WHERE s.ctid = candidate.ctid
     `,
     bidBoardStatus ?? null,
     bidBoardId ?? null,
     companyId,
-    procoreProjectId
+    normalizedName,
+    normalizedCustomer
   );
 }
 
@@ -1248,6 +1296,8 @@ export async function POST(request: Request) {
           procoreProjectId,
           bidBoardStatus: bidStatus,
           bidBoardId: bidId,
+          bidBoardName: name,
+          customer: isMeaningfulCustomer(customer) ? customer : null,
         });
 
         if (updatedStagingRows > 0) {
