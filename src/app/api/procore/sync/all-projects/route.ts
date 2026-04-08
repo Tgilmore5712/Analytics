@@ -90,6 +90,11 @@ async function ensureEndpointLiveTables() {
     CREATE INDEX IF NOT EXISTS procore_project_stages_live_synced_at_idx
       ON procore_project_stages_live (synced_at DESC)
   `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE procore_project_staging
+      ADD COLUMN IF NOT EXISTS bid_board_status TEXT NULL
+  `);
 }
 
 async function upsertV1Live(params: {
@@ -246,6 +251,7 @@ async function upsertProcoreStaging(params: {
   procoreProjectId?: string | null;
   name?: string | null;
   status?: string | null;
+  bidBoardStatus?: string | null;
   customer?: string | null;
   payload: unknown;
 }) {
@@ -256,6 +262,7 @@ async function upsertProcoreStaging(params: {
     procoreProjectId,
     name,
     status,
+    bidBoardStatus,
     customer,
     payload,
   } = params;
@@ -263,14 +270,15 @@ async function upsertProcoreStaging(params: {
   await prisma.$executeRawUnsafe(
     `
       INSERT INTO procore_project_staging
-        (source, company_id, external_id, procore_project_id, name, status, customer, payload, synced_at)
+        (source, company_id, external_id, procore_project_id, name, status, bid_board_status, customer, payload, synced_at)
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())
       ON CONFLICT (source, company_id, external_id)
       DO UPDATE SET
         procore_project_id = EXCLUDED.procore_project_id,
         name = EXCLUDED.name,
         status = EXCLUDED.status,
+        bid_board_status = EXCLUDED.bid_board_status,
         customer = EXCLUDED.customer,
         payload = EXCLUDED.payload,
         synced_at = NOW()
@@ -281,8 +289,40 @@ async function upsertProcoreStaging(params: {
     procoreProjectId ?? null,
     name ?? null,
     status ?? null,
+    bidBoardStatus ?? null,
     customer ?? null,
     JSON.stringify(payload)
+  );
+}
+
+async function applyBidBoardStatusToV1Staging(params: {
+  companyId: string;
+  procoreProjectId?: string | null;
+  bidBoardStatus?: string | null;
+  bidBoardId?: string | null;
+}) {
+  const { companyId, procoreProjectId, bidBoardStatus, bidBoardId } = params;
+  if (!procoreProjectId) return 0;
+
+  return prisma.$executeRawUnsafe(
+    `
+      UPDATE procore_project_staging
+      SET
+        bid_board_status = $1,
+        payload = COALESCE(payload, '{}'::jsonb) || jsonb_build_object(
+          'bidBoardStatus', $1,
+          'bidBoardExternalId', $2,
+          'bidBoardSyncedAt', NOW()::text
+        ),
+        synced_at = NOW()
+      WHERE source = 'procore_v1_projects'
+        AND company_id = $3
+        AND procore_project_id = $4
+    `,
+    bidBoardStatus ?? null,
+    bidBoardId ?? null,
+    companyId,
+    procoreProjectId
   );
 }
 
@@ -319,7 +359,24 @@ export async function POST(request: Request) {
 
     const cookieStore = await cookies();
     const userAccessToken = cookieStore.get("procore_access_token")?.value;
-    const companyId = String(bodyCompanyId || cookieStore.get("procore_company_id")?.value || procoreConfig.companyId || '').trim();
+    const companyId = String(
+      bodyCompanyId ||
+      cookieStore.get("procore_company_id")?.value ||
+      procoreConfig.companyId ||
+      process.env.PROCORE_COMPANY_ID ||
+      process.env.NEXT_PUBLIC_PROCORE_COMPANY_ID ||
+      ''
+    ).trim();
+
+    if (!companyId) {
+      return NextResponse.json(
+        {
+          error: "MISSING_COMPANY_ID: The Procore Company ID is not configured.",
+          details: "Provide companyId in request body or set PROCORE_COMPANY_ID in environment.",
+        },
+        { status: 400 }
+      );
+    }
 
     if (!userAccessToken && !procoreConfig.clientId) {
       return NextResponse.json({ error: "Missing access token. Please login via OAuth." }, { status: 401 });
@@ -806,21 +863,28 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Fetch all V2 Bid Board Projects (only first 2 pages for speed)
+    // 2. Fetch all V2 Bid Board Projects.
+    // Include filters[by_status]=All so missing projects are included in the DB feed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allBidBoardProjects: any[] = [];
+    const bidBoardStatusFilter = String(body?.['filters[by_status]'] || body?.bidBoardStatusFilter || 'All').trim() || 'All';
     let page = 1;
     while (true) {
-      const url = `https://api.procore.com/rest/v2.0/companies/${companyId}/estimating/bid_board_projects?page=${page}&per_page=100`;
-      const res = await fetch(url, {
-        headers: { 
-          'Authorization': `Bearer ${accessToken}`,
-          'Procore-Company-Id': companyId 
-        }
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: '100',
       });
-      if (!res.ok) break;
-      const json = await res.json();
-      const items = Array.isArray(json) ? json : (json?.data || []);
+      if (bidBoardStatusFilter) {
+        params.set('filters[by_status]', bidBoardStatusFilter);
+      }
+
+      const endpoint = `/rest/v2.0/companies/${companyId}/estimating/bid_board_projects?${params.toString()}`;
+      const json = await makeProcoreRequestWithFallback(endpoint);
+      const items = Array.isArray(json)
+        ? json
+        : (json && typeof json === 'object' && Array.isArray((json as { data?: unknown[] }).data)
+          ? (json as { data: unknown[] }).data
+          : []);
       if (items.length === 0) break;
       allBidBoardProjects.push(...items);
       if (items.length < 100 || !fetchAll) break;
@@ -872,6 +936,8 @@ export async function POST(request: Request) {
       bidBoardSynced: 0,
       projectStagesSynced: 0,
       stagingSynced: 0,
+      stagingBidBoardStatusUpdated: 0,
+      stagingBidBoardStatusSkipped: 0,
       errors: [] as string[]
     };
 
@@ -1177,17 +1243,19 @@ export async function POST(request: Request) {
         }
         results.bidBoardSynced++;
 
-        await upsertProcoreStaging({
-          source: "procore_v2_bid_board",
+        const updatedStagingRows = await applyBidBoardStatusToV1Staging({
           companyId,
-          externalId: bidId,
           procoreProjectId,
-          name,
-          status: bidStatus,
-          customer: isMeaningfulCustomer(customer) ? customer : null,
-          payload: bb,
+          bidBoardStatus: bidStatus,
+          bidBoardId: bidId,
         });
-        results.stagingSynced++;
+
+        if (updatedStagingRows > 0) {
+          results.stagingBidBoardStatusUpdated += updatedStagingRows;
+          results.stagingSynced += updatedStagingRows;
+        } else {
+          results.stagingBidBoardStatusSkipped++;
+        }
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         results.errors.push(`Bid ${bb.name}: ${message}`);
@@ -1197,6 +1265,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       tokenSource,
+      bidBoardStatusFilter,
       summary: results,
       primeProjectBackfill: primeBackfillStats,
       debug: debugProjectIds.length > 0 ? {

@@ -38,7 +38,17 @@ type ApiResponse = {
 type BidBoardApiResponse = {
   success?: boolean;
   data?: BidBoardRow[];
+  projects?: Array<{
+    id?: string | number | null;
+    project_id?: string | number | null;
+    name?: string | null;
+    customer_name?: string | null;
+    status?: string | null;
+    updated_at?: string | null;
+  }>;
 };
+
+const DEFAULT_PROCORE_COMPANY_ID = "598134325658789";
 
 export default function ProjectsPage() {
   const [rows, setRows] = useState<ProjectRow[]>([]);
@@ -62,27 +72,52 @@ export default function ProjectsPage() {
       projectsUrl.searchParams.set("pageSize", "500");
       projectsUrl.searchParams.set("_ts", String(Date.now()));
 
-      const bidBoardUrl = new URL("/api/bid-board-live", window.location.origin);
-      bidBoardUrl.searchParams.set("page", "1");
-      bidBoardUrl.searchParams.set("pageSize", "500");
-      bidBoardUrl.searchParams.set("_ts", String(Date.now()));
-
       const [projectsResponse, bidBoardResponse] = await Promise.all([
         fetch(projectsUrl.toString(), { cache: "no-store" }),
-        fetch(bidBoardUrl.toString(), { cache: "no-store" }),
+        fetch("/api/procore/estimating/bid-board-projects", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+          body: JSON.stringify({
+            fetchAll: true,
+            "filters[by_status]": "All",
+          }),
+        }),
       ]);
 
       if (!projectsResponse.ok) {
         throw new Error(`Projects request failed with ${projectsResponse.status}`);
       }
-      if (!bidBoardResponse.ok) {
-        throw new Error(`Bid Board request failed with ${bidBoardResponse.status}`);
+      const payload = (await projectsResponse.json()) as ApiResponse;
+      let bidPayload = (await bidBoardResponse.json()) as BidBoardApiResponse;
+
+      if (!bidBoardResponse.ok || !Array.isArray(bidPayload.projects)) {
+        const bidBoardUrl = new URL("/api/bid-board-live", window.location.origin);
+        bidBoardUrl.searchParams.set("page", "1");
+        bidBoardUrl.searchParams.set("pageSize", "2000");
+        bidBoardUrl.searchParams.set("_ts", String(Date.now()));
+
+        const fallbackResponse = await fetch(bidBoardUrl.toString(), { cache: "no-store" });
+        if (!fallbackResponse.ok) {
+          throw new Error(`Bid Board request failed with ${fallbackResponse.status}`);
+        }
+        bidPayload = (await fallbackResponse.json()) as BidBoardApiResponse;
       }
 
-      const payload = (await projectsResponse.json()) as ApiResponse;
-      const bidPayload = (await bidBoardResponse.json()) as BidBoardApiResponse;
       const projectItems = Array.isArray(payload.data) ? payload.data : [];
-      const bidItems = Array.isArray(bidPayload.data) ? bidPayload.data : [];
+      const bidItems = Array.isArray(bidPayload.projects)
+        ? bidPayload.projects.map((project) => ({
+            id: String(project.id || project.project_id || ""),
+            bidBoardId: String(project.id || ""),
+            procoreId: project.project_id ? String(project.project_id) : null,
+            projectName: project.name || null,
+            customer: project.customer_name || null,
+            status: project.status || null,
+            syncedAt: project.updated_at || null,
+          }))
+        : (Array.isArray(bidPayload.data) ? bidPayload.data : []);
 
       setRows(projectItems);
       setBidBoardRows(bidItems);
@@ -107,6 +142,7 @@ export default function ProjectsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          companyId: DEFAULT_PROCORE_COMPANY_ID,
           fetchAll: true,
           includeInactiveV1: true,
           includeTestProjects: true,
