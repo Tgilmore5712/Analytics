@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     // Lightweight default refresh for status updates without a full heavy sync.
     const syncPayload: Record<string, unknown> = {
       fetchAll,
+      forceUserOAuth: true,
       maxPages: fetchAll ? 1000 : 1,
       includeInactiveV1: false,
       includeTestProjects: false,

@@ -804,7 +804,8 @@ function SchedulingContent() {
       window.location.reload();
     } catch (error) {
       console.error("Failed to refresh Procore status:", error);
-      alert("Failed to refresh Procore status");
+      const message = error instanceof Error ? error.message : "Failed to refresh Procore status";
+      alert(`Failed to refresh Procore status: ${message}`);
     } finally {
       setRefreshingProcoreStatus(false);
     }
