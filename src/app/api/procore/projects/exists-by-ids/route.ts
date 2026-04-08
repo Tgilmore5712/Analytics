@@ -20,6 +20,17 @@ function parseIds(input: unknown): string[] {
     .filter(Boolean);
 }
 
+function resolveCompanyId(input: unknown, cookieCompanyId: unknown): string {
+  return readText(
+    input ||
+      cookieCompanyId ||
+      procoreConfig.companyId ||
+      process.env.PROCORE_COMPANY_ID ||
+      process.env.NEXT_PUBLIC_PROCORE_COMPANY_ID ||
+      ""
+  );
+}
+
 async function checkIds(params: { accessToken: string; companyId: string; ids: string[] }) {
   const { accessToken, companyId, ids } = params;
 
@@ -84,12 +95,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
 
     const accessToken = readText(cookieStore.get("procore_access_token")?.value);
-    const companyId = readText(
-      searchParams.get("companyId") ||
-        cookieStore.get("procore_company_id")?.value ||
-        procoreConfig.companyId ||
-        ""
-    );
+    const companyId = resolveCompanyId(searchParams.get("companyId"), cookieStore.get("procore_company_id")?.value);
     const ids = parseIds(searchParams.get("ids"));
 
     if (!accessToken) {
@@ -127,12 +133,7 @@ export async function POST(request: Request) {
     const cookieStore = await cookies();
 
     const accessToken = readText(cookieStore.get("procore_access_token")?.value || body?.accessToken);
-    const companyId = readText(
-      body?.companyId ||
-        cookieStore.get("procore_company_id")?.value ||
-        procoreConfig.companyId ||
-        ""
-    );
+    const companyId = resolveCompanyId(body?.companyId, cookieStore.get("procore_company_id")?.value);
     const ids = parseIds(body?.ids);
 
     if (!accessToken) {

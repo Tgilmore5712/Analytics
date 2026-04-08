@@ -31,6 +31,11 @@ export default function ProcoreProjectsFeedToolsPage() {
   const [bidFormsProjectId, setBidFormsProjectId] = useState<string>("");
   const [bidFormsPackageId, setBidFormsPackageId] = useState<string>("");
   const [projectIdsToCheck, setProjectIdsToCheck] = useState<string>("598134326375662,598134326375719,598134326376806");
+  const [bidBoardCompanyId, setBidBoardCompanyId] = useState<string>("598134325658789");
+  const [bidBoardStatusFilter, setBidBoardStatusFilter] = useState<string>("All");
+  const [lineItemGroupsCompanyId, setLineItemGroupsCompanyId] = useState<string>("598134325658789");
+  const [lineItemGroupsBidBoardProjectId, setLineItemGroupsBidBoardProjectId] = useState<string>("562949955352714");
+  const [lineItemGroupsProposalId, setLineItemGroupsProposalId] = useState<string>("3206336");
 
   // Preserve Procore page location on refresh
   useProcoreAuthAfterRefresh();
@@ -47,6 +52,12 @@ export default function ProcoreProjectsFeedToolsPage() {
       existsByIds: "/api/procore/projects/exists-by-ids?ids=598134326375662,598134326375719,598134326376806",
       syncCompareIds: "/api/procore/sync/all-projects (POST body: { fetchAll:true, includeInactiveV1:true, includeTestProjects:true, maxPages:1000, debugProjectIds:[...] })",
       primeContracts: "/api/procore/prime-contracts?projectId=YOUR_PROJECT_ID&page=1&perPage=100&persist=true",
+      bidBoardProjects: "/api/procore/estimating/bid-board-projects (POST body: { companyId, fetchAll, filters[by_status] })",
+      lineItemGroups: "/api/procore/estimating/proposal-line-item-groups (POST body: { companyId, bidBoardProjectId, proposalId, page, perPage })",
+      lineItems: "/api/procore/estimating/proposal-line-items (POST body: { companyId, bidBoardProjectId, proposalId, page, perPage })",
+      lineItemsBulk: "/api/procore/estimating/proposal-line-items-bulk (POST body: { companyId, fetchAll, filters[by_status] })",
+      lineItemsLiveApi: "/api/procore/estimating/proposal-line-items-live?page=1&pageSize=200&companyId=598134325658789",
+      lineItemsLivePage: "/procore/proposal-line-items-live",
     }),
     []
   );
@@ -244,6 +255,7 @@ export default function ProcoreProjectsFeedToolsPage() {
       .split(",")
       .map((v) => v.trim())
       .filter(Boolean);
+    const companyId = bidBoardCompanyId.trim();
 
     if (ids.length === 0) {
       setOutput(
@@ -257,8 +269,125 @@ export default function ProcoreProjectsFeedToolsPage() {
       return;
     }
 
-    const path = `/api/procore/projects/exists-by-ids?ids=${encodeURIComponent(ids.join(","))}`;
+    if (!companyId) {
+      setOutput(
+        toPrettyJson({
+          action: "Check Project IDs",
+          ok: false,
+          error: "Company ID is required.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    const path = `/api/procore/projects/exists-by-ids?companyId=${encodeURIComponent(companyId)}&ids=${encodeURIComponent(ids.join(","))}`;
     await runGet(path, "Check Project IDs");
+  }
+
+  async function runProposalLineItemGroupsFetch() {
+    const companyId = lineItemGroupsCompanyId.trim();
+    const bidBoardProjectId = lineItemGroupsBidBoardProjectId.trim();
+    const proposalId = lineItemGroupsProposalId.trim();
+
+    if (!companyId || !bidBoardProjectId || !proposalId) {
+      setOutput(
+        toPrettyJson({
+          action: "Fetch Proposal Line Item Groups",
+          ok: false,
+          error: "Company ID, Bid Board Project ID, and Proposal ID are required.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runPost("/api/procore/estimating/proposal-line-item-groups", "Fetch Proposal Line Item Groups", {
+      companyId,
+      bidBoardProjectId,
+      proposalId,
+      page: 1,
+      perPage: 100,
+    });
+  }
+
+  async function runProposalLineItemsFetch() {
+    const companyId = lineItemGroupsCompanyId.trim();
+    const bidBoardProjectId = lineItemGroupsBidBoardProjectId.trim();
+    const proposalId = lineItemGroupsProposalId.trim();
+
+    if (!companyId || !bidBoardProjectId || !proposalId) {
+      setOutput(
+        toPrettyJson({
+          action: "Fetch Proposal Line Items",
+          ok: false,
+          error: "Company ID, Bid Board Project ID, and Proposal ID are required.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runPost("/api/procore/estimating/proposal-line-items", "Fetch Proposal Line Items", {
+      companyId,
+      bidBoardProjectId,
+      proposalId,
+      page: 1,
+      perPage: 100,
+    });
+  }
+
+  async function runProposalLineItemsBulkFetch() {
+    const companyId = bidBoardCompanyId.trim();
+    const byStatus = bidBoardStatusFilter.trim() || "All";
+
+    if (!companyId) {
+      setOutput(
+        toPrettyJson({
+          action: "Fetch Proposal Line Items Bulk",
+          ok: false,
+          error: "Company ID is required.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runPost("/api/procore/estimating/proposal-line-items-bulk", "Fetch Proposal Line Items Bulk", {
+      companyId,
+      fetchAll: true,
+      persist: true,
+      perPage: 100,
+      "filters[by_status]": byStatus,
+      maxBidBoardProjects: 1000,
+      maxProposalsPerProject: 200,
+      maxLineItemsPages: 50,
+    });
+  }
+
+  async function runBidBoardProjectsFetch() {
+    const companyId = bidBoardCompanyId.trim();
+    const byStatus = bidBoardStatusFilter.trim() || "All";
+
+    if (!companyId) {
+      setOutput(
+        toPrettyJson({
+          action: "Fetch Bid Board Projects",
+          ok: false,
+          error: "Company ID is required.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runPost("/api/procore/estimating/bid-board-projects", "Fetch Bid Board Projects", {
+      companyId,
+      fetchAll: true,
+      page: 1,
+      perPage: 100,
+      "filters[by_status]": byStatus,
+    });
   }
 
   async function runSyncDebugCompare() {
@@ -679,6 +808,97 @@ export default function ProcoreProjectsFeedToolsPage() {
               >
                 {busyAction === "Generate Discrepancy Report" ? "Running..." : "15) Generate Discrepancy Report"}
               </button>
+
+              <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mb-2">
+                  Bid Board Projects: Company ID
+                </label>
+                <input
+                  type="text"
+                  value={bidBoardCompanyId}
+                  onChange={(e) => setBidBoardCompanyId(e.target.value)}
+                  placeholder="598134325658789"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mt-3 mb-2">
+                  filters[by_status]
+                </label>
+                <input
+                  type="text"
+                  value={bidBoardStatusFilter}
+                  onChange={(e) => setBidBoardStatusFilter(e.target.value)}
+                  placeholder="All"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+              </div>
+
+              <button
+                disabled={isBusy}
+                onClick={runBidBoardProjectsFetch}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-purple-700 text-white font-black text-xs uppercase tracking-widest hover:bg-purple-800 disabled:opacity-50"
+              >
+                {busyAction === "Fetch Bid Board Projects" ? "Running..." : "16) Fetch Bid Board Projects"}
+              </button>
+
+              <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mb-2">
+                  Proposal Line Item Groups: Company ID
+                </label>
+                <input
+                  type="text"
+                  value={lineItemGroupsCompanyId}
+                  onChange={(e) => setLineItemGroupsCompanyId(e.target.value)}
+                  placeholder="598134325658789"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mt-3 mb-2">
+                  Bid Board Project ID
+                </label>
+                <input
+                  type="text"
+                  value={lineItemGroupsBidBoardProjectId}
+                  onChange={(e) => setLineItemGroupsBidBoardProjectId(e.target.value)}
+                  placeholder="562949955352714"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+
+                <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mt-3 mb-2">
+                  Proposal ID
+                </label>
+                <input
+                  type="text"
+                  value={lineItemGroupsProposalId}
+                  onChange={(e) => setLineItemGroupsProposalId(e.target.value)}
+                  placeholder="3206336"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-gray-500"
+                />
+              </div>
+
+              <button
+                disabled={isBusy}
+                onClick={runProposalLineItemGroupsFetch}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-purple-800 text-white font-black text-xs uppercase tracking-widest hover:bg-purple-900 disabled:opacity-50"
+              >
+                {busyAction === "Fetch Proposal Line Item Groups" ? "Running..." : "17) Fetch Proposal Line Item Groups"}
+              </button>
+
+              <button
+                disabled={isBusy}
+                onClick={runProposalLineItemsFetch}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-indigo-800 text-white font-black text-xs uppercase tracking-widest hover:bg-indigo-900 disabled:opacity-50"
+              >
+                {busyAction === "Fetch Proposal Line Items" ? "Running..." : "18) Fetch Proposal Line Items"}
+              </button>
+
+              <button
+                disabled={isBusy}
+                onClick={runProposalLineItemsBulkFetch}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-indigo-950 text-white font-black text-xs uppercase tracking-widest hover:bg-black disabled:opacity-50"
+              >
+                {busyAction === "Fetch Proposal Line Items Bulk" ? "Running..." : "19) Fetch Proposal Line Items Bulk"}
+              </button>
             </div>
 
             <div className="pt-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
@@ -736,6 +956,85 @@ export default function ProcoreProjectsFeedToolsPage() {
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
                 {endpointExamples.primeContracts}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
+                  action: "Fetch Bid Board Projects",
+                  usePost: "/api/procore/estimating/bid-board-projects",
+                  payload: {
+                    companyId: "598134325658789",
+                    fetchAll: true,
+                    page: 1,
+                    perPage: 100,
+                    "filters[by_status]": "All",
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.bidBoardProjects}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
+                  action: "Fetch Proposal Line Item Groups",
+                  usePost: "/api/procore/estimating/proposal-line-item-groups",
+                  payload: {
+                    companyId: "598134325658789",
+                    bidBoardProjectId: "562949955352714",
+                    proposalId: "3206336",
+                    page: 1,
+                    perPage: 100,
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.lineItemGroups}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
+                  action: "Fetch Proposal Line Items",
+                  usePost: "/api/procore/estimating/proposal-line-items",
+                  payload: {
+                    companyId: "598134325658789",
+                    bidBoardProjectId: "562949955352714",
+                    proposalId: "3206336",
+                    page: 1,
+                    perPage: 100,
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.lineItems}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
+                  action: "Fetch Proposal Line Items Bulk",
+                  usePost: "/api/procore/estimating/proposal-line-items-bulk",
+                  payload: {
+                    companyId: "598134325658789",
+                    fetchAll: true,
+                    persist: true,
+                    perPage: 100,
+                    "filters[by_status]": "All",
+                    maxBidBoardProjects: 1000,
+                    maxProposalsPerProject: 200,
+                    maxLineItemsPages: 50,
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.lineItemsBulk}
+              </button>
+              <button
+                onClick={() => openInNewTab(endpointExamples.lineItemsLiveApi)}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.lineItemsLiveApi}
+              </button>
+              <button
+                onClick={() => openInNewTab(endpointExamples.lineItemsLivePage)}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.lineItemsLivePage}
               </button>
               <button
                 onClick={() => setOutput(toPrettyJson({
