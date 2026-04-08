@@ -24,7 +24,7 @@ type Schedule = {
   projectNumber?: string;
   projectName?: string;
   totalHours: number;
-  allocations: Array<{ month: string; percent: number }>;
+  allocations: Array<{ month: string; percent: number; hours?: number }>;
   status?: string;
 };
 
@@ -34,6 +34,8 @@ type Project = {
   projectName?: string;
   customer?: string;
   status?: string;
+  bidBoardStatus?: string | null;
+  procoreId?: string | null;
   sales?: number;
   cost?: number;
   hours?: number;
@@ -54,6 +56,43 @@ type KPIDrilldownEntry = {
   value: number;
   dateLabel: string;
 };
+
+function normalizeStatusValue(value: unknown) {
+  return (value ?? "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, " ");
+}
+
+function getProjectIdentityKeys(project: Pick<Project, "customer" | "projectNumber" | "projectName" | "procoreId">) {
+  const customer = (project.customer ?? "").toString();
+  const projectNumber = (project.projectNumber ?? "").toString();
+  const projectName = (project.projectName ?? "").toString();
+  const keys = new Set<string>([
+    `${customer}~${projectNumber}~${projectName}`,
+    `~${projectNumber}~${projectName}`,
+    `${customer}~~${projectName}`,
+  ]);
+
+  const procoreId = (project.procoreId ?? "").toString().trim();
+  if (procoreId) {
+    keys.add(`${customer}~${procoreId}~${projectName}`);
+    keys.add(`~${procoreId}~${projectName}`);
+  }
+
+  return Array.from(keys).filter((key) => key !== "~~");
+}
+
+function getScheduledSalesStatus(project: Pick<Project, "bidBoardStatus" | "status">) {
+  const bidBoardStatus = normalizeStatusValue(project.bidBoardStatus);
+  if (bidBoardStatus) return bidBoardStatus;
+  return normalizeStatusValue(project.status);
+}
+
+function isScheduledSalesQualifyingStatus(project: Pick<Project, "bidBoardStatus" | "status">) {
+  return new Set(["accepted", "in progress", "complete"]).has(getScheduledSalesStatus(project));
+}
 
 function parseDateValue(value: any) {
   if (!value) return null;
@@ -98,13 +137,45 @@ function isValidMonthKey(month: string) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
 }
 
-function normalizeAllocations(allocations: any): Array<{ month: string; percent: number }> {
+function normalizeAllocations(allocations: any): Array<{ month: string; percent: number; hours?: number }> {
   if (!allocations) return [];
-  if (Array.isArray(allocations)) return allocations;
+  if (Array.isArray(allocations)) {
+    const byMonth = new Map<string, { month: string; percent: number; hours?: number }>();
+
+    allocations.forEach((entry: any) => {
+      const month = String(entry?.month || "");
+      if (!month) return;
+
+      byMonth.set(month, {
+        month,
+        percent: Number(entry?.percent) || 0,
+        hours: typeof entry?.hours === "number" ? entry.hours : undefined,
+      });
+    });
+
+    return Array.from(byMonth.values());
+  }
+
   return Object.entries(allocations).map(([month, percent]) => ({
     month,
     percent: Number(percent) || 0,
   }));
+}
+
+function getScheduleAllocationRatio(
+  schedule: Pick<Schedule, "totalHours">,
+  allocation: { percent?: number; hours?: number }
+) {
+  const allocationHours = typeof allocation.hours === "number" ? allocation.hours : NaN;
+  const totalHours = Number(schedule.totalHours ?? 0);
+
+  if (Number.isFinite(allocationHours) && allocationHours > 0 && Number.isFinite(totalHours) && totalHours > 0) {
+    return allocationHours / totalHours;
+  }
+
+  const percent = Number(allocation.percent ?? 0);
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
+  return percent / 100;
 }
 
 function parseCsv(text: string): string[][] {
@@ -173,6 +244,10 @@ function formatCardValue(cardName: string, kpiName: string, rawValue: string) {
 
   // Format as currency for Revenue rows, Goals in Revenue By Month, and Subcontractor Allowance
   if ((cardName === "Revenue By Month") || kpiName === "Subcontractor Allowance") {
+    return `$${formatted}`;
+  }
+
+  if (cardName === "Sales By Month" && !kpiName.toLowerCase().includes("hour")) {
     return `$${formatted}`;
   }
 
@@ -318,8 +393,8 @@ function getSalesActHoursDate(project: any) {
 function selectBestProjectEntry(projects: Project[]) {
   if (projects.length === 0) return null;
 
-  const preferredStatuses = new Set(["Accepted", "In Progress"]);
-  const preferredCandidates = projects.filter((project) => preferredStatuses.has((project.status || "").toString().trim()));
+  const preferredStatuses = new Set(["accepted", "in progress"]);
+  const preferredCandidates = projects.filter((project) => preferredStatuses.has(normalizeStatusValue(project.status)));
   const candidates = preferredCandidates.length > 0 ? preferredCandidates : projects;
 
   return candidates.reduce((best, current) => {
@@ -709,7 +784,7 @@ function KPIPageContent({
     return `${customer ?? ""}~${projectNumber ?? ""}~${projectName ?? ""}`;
   };
 
-  const qualifyingStatuses = ["In Progress", "Accepted", "Complete"];
+  const qualifyingStatuses = new Set(["in progress", "accepted", "complete"]);
 
   const filteredProjects = useMemo(
     () => projects.filter((project: Project) => !isExcludedFromKPI(project)),
@@ -721,7 +796,7 @@ function KPIPageContent({
   const aggregatedProjects = useMemo(() => aggregateProjectsByFullKey(dedupedProjects), [dedupedProjects]);
 
   const aggregatedBidSubmittedProjects = useMemo(
-    () => aggregatedProjects.filter((project) => (project.status || "").toString().trim() === "Bid Submitted"),
+    () => aggregatedProjects.filter((project) => normalizeStatusValue(project.status) === "bid submitted"),
     [aggregatedProjects]
   );
 
@@ -737,8 +812,7 @@ function KPIPageContent({
   let bidSubmittedWithoutDates = 0;
   
   aggregatedBidSubmittedProjects.forEach((project) => {
-    const status = (project.status || "").toString().trim();
-    if (status !== "Bid Submitted") return;
+    if (normalizeStatusValue(project.status) !== "bid submitted") return;
     
     const sales = Number(project.sales ?? 0);
     bidSubmittedTotal += sales;
@@ -891,8 +965,8 @@ function KPIPageContent({
     const result: Record<string, KPIDrilldownEntry[]> = {};
 
     aggregatedProjects.forEach((project) => {
-      const status = (project.status || "").toString().trim();
-      if (!qualifyingStatuses.includes(status)) return;
+      const status = normalizeStatusValue(project.status);
+      if (!qualifyingStatuses.has(status)) return;
 
       const projectDate = getSalesActHoursDate(project);
       if (!projectDate) return;
@@ -922,27 +996,28 @@ function KPIPageContent({
     const keyToProject = new Map<string, Project>();
 
     aggregatedProjects.forEach((project) => {
-      const key = getProjectKey(project.customer, project.projectNumber, project.projectName);
-      keyToProject.set(key, project);
+      getProjectIdentityKeys(project).forEach((key) => {
+        keyToProject.set(key, project);
+      });
     });
 
     schedules.forEach((schedule: Schedule) => {
       const key = schedule.jobKey || getProjectKey(schedule.customer, schedule.projectNumber, schedule.projectName);
       const project = keyToProject.get(key);
       if (!project) return;
-      if (!qualifyingStatuses.includes((project.status || "").toString().trim())) return;
+      if (!isScheduledSalesQualifyingStatus(project)) return;
 
       const projectSales = Number(project.sales ?? 0);
       if (!Number.isFinite(projectSales) || projectSales <= 0) return;
 
       normalizeAllocations(schedule.allocations).forEach((alloc) => {
-        const percent = Number(alloc.percent ?? 0);
-        if (!Number.isFinite(percent) || percent <= 0) return;
+        const allocationRatio = getScheduleAllocationRatio(schedule, alloc);
+        if (!Number.isFinite(allocationRatio) || allocationRatio <= 0) return;
 
         const monthKey = alloc.month;
         if (!isValidMonthKey(monthKey)) return;
 
-        const monthlySales = projectSales * (percent / 100);
+        const monthlySales = projectSales * allocationRatio;
         if (!result[monthKey]) result[monthKey] = [];
 
         const scheduleProjectName = (schedule.projectName || "").toString().trim();
@@ -1054,8 +1129,7 @@ function KPIPageContent({
   
   // Use the same aggregated pool as Bid Submitted sales, so hours stay consistent
   aggregatedBidSubmittedProjects.forEach((project) => {
-    const status = (project.status || "").toString().trim();
-    if (status !== "Bid Submitted") return;
+    if (normalizeStatusValue(project.status) !== "bid submitted") return;
 
     const projectDate = getProjectDate(project);
     if (!projectDate) return;
@@ -1090,8 +1164,8 @@ function KPIPageContent({
   // In Progress hours calculation
   const inProgressHoursByMonth: Record<string, number> = {};
   aggregatedProjects.forEach((project) => {
-    const status = (project.status || "").trim();
-    if (!qualifyingStatuses.includes(status)) return;
+    const status = normalizeStatusValue(project.status);
+    if (!qualifyingStatuses.has(status)) return;
 
     const projectDate = getSalesActHoursDate(project);
     if (!projectDate) return;
@@ -1124,12 +1198,11 @@ function KPIPageContent({
     inProgressHoursYearMonthMap[year][Number(m)] = inProgressHoursByMonth[month];
   });
 
-  const renderCardRows = (cardName: string, color: string) => {
+  const getSortedCardRows = (cardName: string) => {
     const rawRows = cardLoadData[normalizeCardName(cardName)] || [];
-    if (rawRows.length === 0) return null;
+    if (rawRows.length === 0) return [];
 
-    // Sorting logic: prioritize Actuals first, then Goals/Allowances (Orange)
-    const rows = [...rawRows].sort((a, b) => {
+    return [...rawRows].sort((a, b) => {
       const aName = (a.kpi || "").toLowerCase();
       const bName = (b.kpi || "").toLowerCase();
       const isAGoal = aName.includes("goal") || aName.includes("allowance");
@@ -1139,6 +1212,11 @@ function KPIPageContent({
       if (!isAGoal && isBGoal) return -1; // a is not Goal, move to front
       return 0; // maintain original relative order otherwise
     });
+  };
+
+  const renderCardRows = (cardName: string, color: string, rowsOverride?: Array<{ kpi: string; values: string[] }>) => {
+    const rows = rowsOverride ?? getSortedCardRows(cardName);
+    if (rows.length === 0) return null;
 
     return rows.map((row: any, rowIndex: number) => {
       const rowLabel = (row.kpi || "").toLowerCase();
@@ -1240,14 +1318,15 @@ function KPIPageContent({
   
   const scheduleSalesMap = new Map<string, number>();
   aggregatedProjects.forEach((project: Project) => {
-    if (!qualifyingStatuses.includes(project.status || "")) return;
-    
-    const key = getProjectKey(project.customer, project.projectNumber, project.projectName);
+    if (!isScheduledSalesQualifyingStatus(project)) return;
+
     const sales = Number(project.sales ?? 0);
     if (!Number.isFinite(sales)) return;
-    
-    const currentTotal = scheduleSalesMap.get(key) || 0;
-    scheduleSalesMap.set(key, currentTotal + sales);
+
+    getProjectIdentityKeys(project).forEach((key) => {
+      const currentTotal = scheduleSalesMap.get(key) || 0;
+      scheduleSalesMap.set(key, currentTotal + sales);
+    });
   });
 
   schedules.forEach((schedule: Schedule) => {
@@ -1257,11 +1336,11 @@ function KPIPageContent({
     if (!projectSales) return;
 
     normalizeAllocations(schedule.allocations).forEach((alloc: any) => {
-      const percent = Number(alloc.percent ?? 0);
-      if (!Number.isFinite(percent) || percent <= 0) return;
+      const allocationRatio = getScheduleAllocationRatio(schedule, alloc);
+      if (!Number.isFinite(allocationRatio) || allocationRatio <= 0) return;
       const monthKey = alloc.month;
       if (!isValidMonthKey(monthKey)) return;
-      const monthlySales = projectSales * (percent / 100);
+      const monthlySales = projectSales * allocationRatio;
       scheduledSalesByMonth[monthKey] = (scheduledSalesByMonth[monthKey] || 0) + monthlySales;
     });
   });
@@ -2105,89 +2184,23 @@ function KPIPageContent({
                 </tr>
               </thead>
               <tbody>
-                <tr key="goal" style={{ borderBottom: "1px solid #eee", backgroundColor: "#f9f9f9" }}>
-                  <td style={{ padding: "4px 6px", color: "#E06C00", fontWeight: 700, fontSize: 13 }}>Goal</td>
-                  {monthNames.map((_, idx) => (
-                    <td key={idx} style={{ padding: "4px 2px", textAlign: "center", color: "#E06C00", fontWeight: 700, fontSize: 12 }}>
-                      $1,000,000
-                    </td>
-                  ))}
-                  <td style={{ padding: "4px 6px", textAlign: "center", color: "#E06C00", fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                    {renderTotalWithYtd(
-                      `$${(1000000 * 12).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-                      `$${(1000000 * ytdMonthCutoff).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                    )}
-                  </td>
-                </tr>
-                <tr key="actual-hours" style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
-                  <td style={{ padding: "4px 6px", color: "#15616D", fontWeight: 700, fontSize: 13 }}>Act Hrs</td>
-                  {monthNames.map((_, idx) => {
-                    let hours = 0;
-                    if (yearFilter) {
-                      hours = inProgressHoursYearMonthMap[yearFilter]?.[idx + 1] || 0;
-                    } else {
-                      hours = Object.values(inProgressHoursYearMonthMap).reduce((sum, yearData) => sum + (yearData[idx + 1] || 0), 0);
-                    }
-                    return (
-                      <td key={idx} style={{ padding: "4px 2px", textAlign: "center", fontSize: 12, color: hours > 0 ? "#15616D" : "#999", fontWeight: hours > 0 ? 700 : 400 }}>
-                        {hours > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => openKpiDrilldown(yearFilter ? `Sales Act Hrs ${monthNames[idx]} ${yearFilter}` : `Sales Act Hrs ${monthNames[idx]} (All Years)`, inProgressHoursProjectsByMonth, { year: yearFilter || null, month: idx + 1, valueLabel: "Data Point (Hours)", valuePrefix: "" })}
-                            style={{ background: "transparent", border: "none", color: "#15616D", cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
-                          >
-                            {hours.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </button>
-                        ) : "—"}
-                      </td>
-                    );
-                  })}
-                  <td style={{ padding: "4px 6px", textAlign: "center", color: "#15616D", fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                    {(() => {
-                      let total = 0;
-                      let ytdTotal = 0;
-                      if (yearFilter) {
-                        total = Object.values(inProgressHoursYearMonthMap[yearFilter] || {}).reduce((sum, val) => sum + val, 0);
-                        ytdTotal = monthNames.slice(0, ytdMonthCutoff).reduce((sum, _, idx) => sum + (inProgressHoursYearMonthMap[yearFilter]?.[idx + 1] || 0), 0);
-                      } else {
-                        total = Object.values(inProgressHoursYearMonthMap).reduce((sum, yearData) => sum + Object.values(yearData).reduce((s, v) => s + v, 0), 0);
-                        ytdTotal = Object.values(inProgressHoursYearMonthMap).reduce(
-                          (sum, yearData) => sum + monthNames.slice(0, ytdMonthCutoff).reduce((s, _, idx) => s + (yearData[idx + 1] || 0), 0),
-                          0
-                        );
-                      }
-                      return total > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => openKpiDrilldown(yearFilter ? `Sales Act Hrs ${yearFilter} Total` : "Sales Act Hrs Total (All Years)", inProgressHoursProjectsByMonth, { year: yearFilter || null, month: null, valueLabel: "Data Point (Hours)", valuePrefix: "" })}
-                          style={{ background: "transparent", border: "none", color: "#15616D", cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
-                        >
-                          {renderTotalWithYtd(
-                            total.toLocaleString(undefined, { maximumFractionDigits: 0 }),
-                            ytdTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                          )}
-                        </button>
-                      ) : renderTotalWithYtd(
-                        total.toLocaleString(undefined, { maximumFractionDigits: 0 }),
-                        ytdTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                      );
-                    })()}
-                  </td>
-                </tr>
-                <tr key="goal-hours" style={{ borderBottom: "1px solid #eee", backgroundColor: "#f9f9f9" }}>
-                  <td style={{ padding: "4px 6px", color: "#E06C00", fontWeight: 700 }}>Goal Hours</td>
-                  {monthNames.map((_, idx) => (
-                    <td key={idx} style={{ padding: "4px 2px", textAlign: "center", fontSize: 12, color: "#E06C00", fontWeight: 700 }}>
-                      4,300
-                    </td>
-                  ))}
-                  <td style={{ padding: "4px 6px", textAlign: "center", color: "#E06C00", fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                    {renderTotalWithYtd(
-                      (4300 * 12).toLocaleString(undefined, { maximumFractionDigits: 0 }),
-                      (4300 * ytdMonthCutoff).toLocaleString(undefined, { maximumFractionDigits: 0 })
-                    )}
-                  </td>
-                </tr>
+                {(() => {
+                  const salesCardRows = getSortedCardRows("Sales By Month");
+                  const firstGoalRowIndex = salesCardRows.findIndex((row) => {
+                    const label = (row.kpi || "").toLowerCase();
+                    return label.includes("goal") || label.includes("allowance");
+                  });
+
+                  const nonGoalRows = firstGoalRowIndex === -1 ? salesCardRows : salesCardRows.slice(0, firstGoalRowIndex);
+                  const goalRows = firstGoalRowIndex === -1 ? [] : salesCardRows.slice(firstGoalRowIndex);
+
+                  return (
+                    <>
+                      {renderCardRows("Sales By Month", "#E06C00", nonGoalRows)}
+                      {renderCardRows("Sales By Month", "#E06C00", goalRows)}
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
           </div>

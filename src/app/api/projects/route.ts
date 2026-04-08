@@ -36,11 +36,11 @@ export async function GET(request: NextRequest) {
     const customer = (searchParams.get('customer') || '').trim();
     const projectNumber = (searchParams.get('projectNumber') || '').trim();
     const projectName = (searchParams.get('projectName') || '').trim();
-    const statusesParam = (searchParams.get('statuses') || '').trim();
+    const statusesParam = (searchParams.get('statuses') || searchParams.get('filters[by_status]') || '').trim();
     const includeArchived = (searchParams.get('includeArchived') || '').trim().toLowerCase() === 'true';
     const endpointOnly = (searchParams.get('endpointOnly') || '').trim().toLowerCase() === 'true';
 
-    const statusList = statusesParam
+    const statusList = statusesParam && statusesParam.toLowerCase() !== 'all'
       ? statusesParam.split(',').map((value) => value.trim()).filter((value) => value.length > 0)
       : [];
 
@@ -343,16 +343,71 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const procoreProjectIds = Array.from(
+      new Set(
+        projects
+          .map((project) => {
+            const value = (project.procoreId || '').toString().trim();
+            return value.length > 0 ? value : null;
+          })
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+
+    const bidBoardStatusByProcoreId = new Map<string, string>();
+
+    if (procoreProjectIds.length > 0) {
+      const stagingRows = await prisma.procoreProjectStaging.findMany({
+        where: {
+          source: 'procore_v1_projects',
+          OR: [
+            { procoreProjectId: { in: procoreProjectIds } },
+            { externalId: { in: procoreProjectIds } },
+          ],
+        },
+        select: {
+          procoreProjectId: true,
+          externalId: true,
+          bidBoardStatus: true,
+          syncedAt: true,
+        },
+        orderBy: {
+          syncedAt: 'desc',
+        },
+      });
+
+      for (const row of stagingRows) {
+        const bidBoardStatus = (row.bidBoardStatus || '').toString().trim();
+        if (!bidBoardStatus) continue;
+
+        const identifiers = [row.procoreProjectId, row.externalId]
+          .map((value) => (value || '').toString().trim())
+          .filter((value) => value.length > 0);
+
+        for (const identifier of identifiers) {
+          if (!bidBoardStatusByProcoreId.has(identifier)) {
+            bidBoardStatusByProcoreId.set(identifier, bidBoardStatus);
+          }
+        }
+      }
+    }
+
     let projectsWithPMC: Array<Record<string, unknown>> = projects.map((project) => {
       const customFields = getCanonicalProjectCustomFields(project.customFields);
 
       const projectId = typeof project.id === 'string' ? project.id : String(project.id || '');
       const fallback = pmcFromDetailsByProjectId.get(projectId);
       const identity = getCanonicalProjectIdentity(project);
+      const bidBoardStatusValue =
+        project['bidBoardStatus'] ??
+        customFields.bidBoardStatus ??
+        (identity.procoreId ? bidBoardStatusByProcoreId.get(identity.procoreId) : null) ??
+        null;
 
       return {
         ...project,
         ...identity,
+        bidBoardStatus: typeof bidBoardStatusValue === 'string' ? bidBoardStatusValue : null,
         pmcGroup: customFields.pmcGroup ?? fallback?.pmcGroup ?? null,
         pmcBreakdown: customFields.pmcBreakdown ?? fallback?.pmcBreakdown ?? null,
         pmcMappingSource: customFields.pmcMappingSource ?? fallback?.pmcMappingSource ?? null,
