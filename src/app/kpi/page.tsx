@@ -1223,6 +1223,17 @@ function KPIPageContent({
       const isGoalRow = rowLabel.includes("goal") || rowLabel.includes("allowance");
       const rowColor = isGoalRow ? "#E06C00" : "#15616D";
       let rowValues = [...(row.values || [])]; // Default to template values
+
+      if (normalizeCardName(cardName) === normalizeCardName("Sales By Month") && rowLabel.includes("bid subm")) {
+        const selectedYear = yearFilter || new Date().getFullYear().toString();
+        rowValues = monthNames.map((_, idx) => {
+          const month = idx + 1;
+          const manualValue = kpiData.find((k: any) => k.year === selectedYear && k.month === month)?.bidSubmittedSales;
+          const calculatedValue = bidSubmittedSalesYearMonthMap[selectedYear]?.[month] || 0;
+          const value = manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue;
+          return value > 0 ? value.toString() : "";
+        });
+      }
       
       // Check if this is a percentage column (contains % values)
       const isPercentage = rowValues.some((val: any) => String(val).includes("%"));
@@ -1652,14 +1663,22 @@ function KPIPageContent({
                       const calculatedValue = scheduledSalesYearMonthMap[year]?.[idx + 1] || 0;
                       return sum + (manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue);
                     }, 0);
-                    const bidSubmittedTotal = monthNames.reduce((sum, _, idx) => {
-                      const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + calculatedValue;
-                    }, 0);
-                    const bidSubmittedYtdTotal = monthNames.slice(0, ytdMonthCutoff).reduce((sum, _, idx) => {
-                      const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + calculatedValue;
-                    }, 0);
+                    const bidSubmittedMonthValues = monthNames.map((_, idx) => {
+                      const month = idx + 1;
+                      const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.bidSubmittedSales;
+                      const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[month] || 0;
+                      const isManual = manualValue !== undefined && manualValue !== null;
+                      return {
+                        month,
+                        sales: isManual ? manualValue : calculatedValue,
+                        isManual,
+                      };
+                    });
+                    const hasManualBidSubmitted = bidSubmittedMonthValues.some(({ isManual }) => isManual);
+                    const bidSubmittedTotal = bidSubmittedMonthValues.reduce((sum, { sales }) => sum + sales, 0);
+                    const bidSubmittedYtdTotal = bidSubmittedMonthValues
+                      .filter(({ month }) => month <= ytdMonthCutoff)
+                      .reduce((sum, { sales }) => sum + sales, 0);
                     return (
                     <React.Fragment key={year}>
                       <tr style={{ borderBottom: "1px solid #eee", backgroundColor: (yearIndex * 2) % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
@@ -1712,13 +1731,11 @@ function KPIPageContent({
                       </tr>
                       <tr style={{ borderBottom: "1px solid #eee", backgroundColor: (yearIndex * 2 + 1) % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
                         <td style={{ padding: "4px 6px", color: (yearIndex * 2 + 1) % 2 === 0 ? "#15616D" : "#E06C00", fontWeight: 700, fontSize: 13 }}>Bid Subm.</td>
-                        {monthNames.map((_, idx) => {
-                          const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[idx + 1] || 0;
-                          const sales = calculatedValue;
+                        {bidSubmittedMonthValues.map(({ month, sales, isManual }, idx) => {
                           
                           return (
                             <td 
-                              key={idx} 
+                              key={month} 
                               style={{ 
                                 padding: "4px 2px", 
                                 textAlign: "center", 
@@ -1727,20 +1744,20 @@ function KPIPageContent({
                                 fontSize: 12
                               }}
                             >
-                              {sales > 0 ? (
+                              {sales > 0 && !isManual ? (
                                 <button
                                   type="button"
-                                  onClick={() => openKpiDrilldown(`Bid Submitted ${monthNames[idx]} ${year}`, bidSubmittedSalesProjectsByMonth, { year, month: idx + 1, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
+                                  onClick={() => openKpiDrilldown(`Bid Submitted ${monthNames[idx]} ${year}`, bidSubmittedSalesProjectsByMonth, { year, month, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
                                   style={{ background: "transparent", border: "none", color: (yearIndex * 2 + 1) % 2 === 0 ? "#15616D" : "#E06C00", cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
                                 >
                                   ${sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                 </button>
-                              ) : "—"}
+                              ) : sales > 0 ? `$${sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
                             </td>
                           );
                         })}
                         <td style={{ padding: "4px 6px", textAlign: "center", color: (yearIndex * 2 + 1) % 2 === 0 ? "#15616D" : "#E06C00", fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                          {bidSubmittedTotal > 0 ? (
+                          {bidSubmittedTotal > 0 && !hasManualBidSubmitted ? (
                             <button
                               type="button"
                               onClick={() => openKpiDrilldown(`Bid Submitted ${year} Total`, bidSubmittedSalesProjectsByMonth, { year, month: null, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
@@ -1788,17 +1805,23 @@ function KPIPageContent({
                   const value = manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue;
                   return sum + value;
                 }, 0);
-                
-                const bidSubmittedTotal = allYearMonths.reduce((sum, { year, month }) => {
+                const bidSubmittedValues = allYearMonths.map(({ year, month, label }) => {
+                  const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.bidSubmittedSales;
                   const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[month] || 0;
-                  const value = calculatedValue;
-                  return sum + value;
-                }, 0);
-                const bidSubmittedYtdTotal = allYearMonths.reduce((sum, { year, month }) => {
+                  const isManual = manualValue !== undefined && manualValue !== null;
+                  return {
+                    year,
+                    month,
+                    label,
+                    sales: isManual ? manualValue : calculatedValue,
+                    isManual,
+                  };
+                });
+                const hasManualBidSubmitted = bidSubmittedValues.some(({ isManual }) => isManual);
+                const bidSubmittedTotal = bidSubmittedValues.reduce((sum, { sales }) => sum + sales, 0);
+                const bidSubmittedYtdTotal = bidSubmittedValues.reduce((sum, { month, sales }) => {
                   if (month > ytdMonthCutoff) return sum;
-                  const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[month] || 0;
-                  const value = calculatedValue;
-                  return sum + value;
+                  return sum + sales;
                 }, 0);
                 
                 return (
@@ -1853,9 +1876,7 @@ function KPIPageContent({
                       </tr>
                       <tr style={{ borderBottom: "1px solid #eee", backgroundColor: "#f9f9f9" }}>
                         <td style={{ padding: "4px 6px", color: "#E06C00", fontWeight: 700, fontSize: 13 }}>Bid Subm.</td>
-                        {allYearMonths.map(({ year, month }, idx) => {
-                          const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[month] || 0;
-                          const sales = calculatedValue;
+                        {bidSubmittedValues.map(({ year, month, sales, isManual }, idx) => {
                           return (
                             <td 
                               key={idx} 
@@ -1867,7 +1888,7 @@ function KPIPageContent({
                                 fontSize: 12
                               }}
                             >
-                              {sales > 0 ? (
+                              {sales > 0 && !isManual ? (
                                 <button
                                   type="button"
                                   onClick={() => openKpiDrilldown(`Bid Submitted ${monthNames[month - 1]} ${year}`, bidSubmittedSalesProjectsByMonth, { year, month, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
@@ -1875,12 +1896,23 @@ function KPIPageContent({
                                 >
                                   ${sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                 </button>
-                              ) : "—"}
+                              ) : sales > 0 ? `$${sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
                             </td>
                           );
                         })}
                         <td style={{ padding: "4px 6px", textAlign: "center", color: "#E06C00", fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                          {renderTotalWithYtd(
+                          {bidSubmittedTotal > 0 && !hasManualBidSubmitted ? (
+                            <button
+                              type="button"
+                              onClick={() => openKpiDrilldown(`Bid Submitted Total (All Years)`, bidSubmittedSalesProjectsByMonth, { year: null, month: null, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
+                              style={{ background: "transparent", border: "none", color: "#E06C00", cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
+                            >
+                              {renderTotalWithYtd(
+                                `$${bidSubmittedTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+                                `$${bidSubmittedYtdTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                              )}
+                            </button>
+                          ) : renderTotalWithYtd(
                             `$${bidSubmittedTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
                             `$${bidSubmittedYtdTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                           )}
@@ -1923,23 +1955,30 @@ function KPIPageContent({
 
                   estimateYears.forEach((year) => {
                     const bidsColor = rowColors[rowIndex % 2];
-                    const bidsTotal = monthNames.reduce((sum, _, idx) => {
-                      const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + calculatedValue;
-                    }, 0);
-                    const bidsYtdTotal = monthNames.slice(0, ytdMonthCutoff).reduce((sum, _, idx) => {
-                      const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + calculatedValue;
-                    }, 0);
+                    const bidsMonthValues = monthNames.map((_, idx) => {
+                      const month = idx + 1;
+                      const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.bidSubmittedSales;
+                      const calculatedValue = bidSubmittedSalesYearMonthMap[year]?.[month] || 0;
+                      const isManual = manualValue !== undefined && manualValue !== null;
+                      return {
+                        month,
+                        value: isManual ? manualValue : calculatedValue,
+                        isManual,
+                      };
+                    });
+                    const hasManualBidsSubmitted = bidsMonthValues.some(({ isManual }) => isManual);
+                    const bidsTotal = bidsMonthValues.reduce((sum, { value }) => sum + value, 0);
+                    const bidsYtdTotal = bidsMonthValues
+                      .filter(({ month }) => month <= ytdMonthCutoff)
+                      .reduce((sum, { value }) => sum + value, 0);
 
                     rows.push(
                       <tr key={year} style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
                         <td style={{ padding: "4px 6px", color: bidsColor, fontWeight: 700, fontSize: 13 }}>{yearFilter ? "Bids Submitted" : `Bids Submitted ${year}`}</td>
-                        {monthNames.map((_, idx) => {
-                          const value = bidSubmittedSalesYearMonthMap[year]?.[idx + 1] || 0;
+                        {bidsMonthValues.map(({ month, value, isManual }, idx) => {
                           return (
                             <td
-                              key={idx}
+                              key={month}
                               style={{
                                 padding: "4px 2px",
                                 textAlign: "center",
@@ -1948,20 +1987,20 @@ function KPIPageContent({
                                 fontSize: 12
                               }}
                             >
-                              {value > 0 ? (
+                              {value > 0 && !isManual ? (
                                 <button
                                   type="button"
-                                  onClick={() => openKpiDrilldown(`Bids Submitted ${monthNames[idx]} ${year}`, bidSubmittedSalesProjectsByMonth, { year, month: idx + 1, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
+                                  onClick={() => openKpiDrilldown(`Bids Submitted ${monthNames[idx]} ${year}`, bidSubmittedSalesProjectsByMonth, { year, month, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
                                   style={{ background: "transparent", border: "none", color: bidsColor, cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
                                 >
                                   ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                 </button>
-                              ) : "—"}
+                              ) : value > 0 ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
                             </td>
                           );
                         })}
                         <td style={{ padding: "4px 6px", textAlign: "center", color: bidsColor, fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                          {bidsTotal > 0 ? (
+                          {bidsTotal > 0 && !hasManualBidsSubmitted ? (
                             <button
                               type="button"
                               onClick={() => openKpiDrilldown(`Bids Submitted ${year} Total`, bidSubmittedSalesProjectsByMonth, { year, month: null, valueLabel: "Data Point (Sales)", valuePrefix: "$" })}
@@ -1982,23 +2021,30 @@ function KPIPageContent({
                     rowIndex += 1;
 
                     const newBidsColor = rowColors[rowIndex % 2];
-                    const newBidsTotal = monthNames.reduce((sum, _, idx) => {
-                      const calculatedValue = newBidsSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + calculatedValue;
-                    }, 0);
-                    const newBidsYtdTotal = monthNames.slice(0, ytdMonthCutoff).reduce((sum, _, idx) => {
-                      const calculatedValue = newBidsSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + calculatedValue;
-                    }, 0);
+                    const newBidsMonthValues = monthNames.map((_, idx) => {
+                      const month = idx + 1;
+                      const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.estimates;
+                      const calculatedValue = newBidsSalesYearMonthMap[year]?.[month] || 0;
+                      const isManual = manualValue !== undefined && manualValue !== null;
+                      return {
+                        month,
+                        value: isManual ? manualValue : calculatedValue,
+                        isManual,
+                      };
+                    });
+                    const hasManualNewBids = newBidsMonthValues.some(({ isManual }) => isManual);
+                    const newBidsTotal = newBidsMonthValues.reduce((sum, { value }) => sum + value, 0);
+                    const newBidsYtdTotal = newBidsMonthValues
+                      .filter(({ month }) => month <= ytdMonthCutoff)
+                      .reduce((sum, { value }) => sum + value, 0);
 
                     rows.push(
                       <tr key={`new-bids-${year}`} style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
                         <td style={{ padding: "4px 6px", color: newBidsColor, fontWeight: 700, fontSize: 13 }}>{yearFilter ? "New Bids" : `New Bids ${year}`}</td>
-                        {monthNames.map((_, idx) => {
-                          const value = newBidsSalesYearMonthMap[year]?.[idx + 1] || 0;
+                        {newBidsMonthValues.map(({ month, value, isManual }, idx) => {
                           return (
                             <td
-                              key={idx}
+                              key={month}
                               style={{
                                 padding: "4px 2px",
                                 textAlign: "center",
@@ -2007,10 +2053,10 @@ function KPIPageContent({
                                 fontSize: 12
                               }}
                             >
-                              {value > 0 ? (
+                              {value > 0 && !isManual ? (
                                 <button
                                   type="button"
-                                  onClick={() => openNewBidsDrilldown(year, idx + 1)}
+                                  onClick={() => openNewBidsDrilldown(year, month)}
                                   style={{
                                     background: "transparent",
                                     border: "none",
@@ -2025,12 +2071,12 @@ function KPIPageContent({
                                 >
                                   ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                 </button>
-                              ) : "—"}
+                              ) : value > 0 ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
                             </td>
                           );
                         })}
                         <td style={{ padding: "4px 6px", textAlign: "center", color: newBidsColor, fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                          {newBidsTotal > 0 ? (
+                          {newBidsTotal > 0 && !hasManualNewBids ? (
                             <button
                               type="button"
                               onClick={() => openNewBidsDrilldown(year, null)}
