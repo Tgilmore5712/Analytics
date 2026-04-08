@@ -4,68 +4,97 @@ import { denyDiagnosticsInProduction } from '@/lib/diagnosticsGate';
 
 export const dynamic = 'force-dynamic';
 
+type StatusCountRow = {
+  status: string | null;
+  total: number;
+};
+
+type InProgressSampleRow = {
+  externalid: string | null;
+  name: string | null;
+  bidboardstatus: string | null;
+  companyid: string | null;
+};
+
 export async function GET() {
   const blocked = denyDiagnosticsInProduction();
   if (blocked) return blocked;
 
   try {
-    // Check how many staging records exist
     const totalStaging = await prisma.procoreProjectStaging.count({
       where: {
         source: 'procore_v1_projects',
       }
     });
 
-    // Get samples
-    const inProgressCount = await prisma.procoreProjectStaging.count({
-      where: {
-        source: 'procore_v1_projects',
-        bidBoardStatus: 'IN_PROGRESS',
-      }
-    });
+    const statusCounts = await prisma.$queryRawUnsafe<StatusCountRow[]>(`
+      SELECT
+        NULLIF(
+          UPPER(
+            TRIM(
+              COALESCE(
+                payload->>'bidBoardStatus',
+                payload->>'bid_board_status',
+                status,
+                ''
+              )
+            )
+          ),
+          ''
+        ) AS status,
+        COUNT(*)::int AS total
+      FROM procore_project_staging
+      WHERE source = 'procore_v1_projects'
+      GROUP BY 1
+    `);
 
-    const bidSubmittedCount = await prisma.procoreProjectStaging.count({
-      where: {
-        source: 'procore_v1_projects',
-        bidBoardStatus: 'BID_SUBMITTED',
-      }
-    });
+    const countsByStatus = new Map<string, number>();
+    let nullStatusCount = 0;
 
-    const estimatingCount = await prisma.procoreProjectStaging.count({
-      where: {
-        source: 'procore_v1_projects',
-        bidBoardStatus: 'ESTIMATING',
+    for (const row of statusCounts) {
+      if (row.status) {
+        countsByStatus.set(row.status, Number(row.total || 0));
+      } else {
+        nullStatusCount = Number(row.total || 0);
       }
-    });
+    }
 
-    const completeCount = await prisma.procoreProjectStaging.count({
-      where: {
-        source: 'procore_v1_projects',
-        bidBoardStatus: 'COMPLETE',
-      }
-    });
-
-    const nullStatusCount = await prisma.procoreProjectStaging.count({
-      where: {
-        source: 'procore_v1_projects',
-        bidBoardStatus: null,
-      }
-    });
-
-    // Get sample IN_PROGRESS projects
-    const inProgressSamples = await prisma.procoreProjectStaging.findMany({
-      where: {
-        source: 'procore_v1_projects',
-        bidBoardStatus: 'IN_PROGRESS',
-      },
-      take: 5,
-      select: {
-        externalId: true,
-        name: true,
-        bidBoardStatus: true,
-        companyId: true,
-      }
-    });
+    const inProgressSamples = await prisma.$queryRawUnsafe<InProgressSampleRow[]>(`
+      SELECT
+        external_id AS externalId,
+        name,
+        NULLIF(
+          UPPER(
+            TRIM(
+              COALESCE(
+                payload->>'bidBoardStatus',
+                payload->>'bid_board_status',
+                status,
+                ''
+              )
+            )
+          ),
+          ''
+        ) AS bidBoardStatus,
+        company_id AS companyId
+      FROM procore_project_staging
+      WHERE source = 'procore_v1_projects'
+        AND NULLIF(
+          UPPER(
+            TRIM(
+              COALESCE(
+                payload->>'bidBoardStatus',
+                payload->>'bid_board_status',
+                status,
+                ''
+              )
+            )
+          ),
+          ''
+        ) = 'IN_PROGRESS'
+      ORDER BY synced_at DESC
+      LIMIT 5
+    `);
 
     // Check budget line items
     const budgetCount = await prisma.budgetLineItem.count();
@@ -87,13 +116,18 @@ export async function GET() {
       staging: {
         total: totalStaging,
         statuses: {
-          IN_PROGRESS: inProgressCount,
-          BID_SUBMITTED: bidSubmittedCount,
-          ESTIMATING: estimatingCount,
-          COMPLETE: completeCount,
+          IN_PROGRESS: countsByStatus.get('IN_PROGRESS') || 0,
+          BID_SUBMITTED: countsByStatus.get('BID_SUBMITTED') || 0,
+          ESTIMATING: countsByStatus.get('ESTIMATING') || 0,
+          COMPLETE: countsByStatus.get('COMPLETE') || 0,
           NULL: nullStatusCount,
         },
-        inProgressSamples,
+        inProgressSamples: inProgressSamples.map((row) => ({
+          externalId: row.externalid,
+          name: row.name,
+          bidBoardStatus: row.bidboardstatus,
+          companyId: row.companyid,
+        })),
       },
       budget: {
         totalCount: budgetCount,
