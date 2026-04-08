@@ -278,93 +278,34 @@ function SchedulingContent() {
   }, [validMonths, yearFilter]);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchData() {
       try {
-        let schedulesArray: JobSchedule[] = [];
-        const projectsData: Project[] = [];
-
-        // Fetch projects with budget from procore staging (IN_PROGRESS projects)
-        let budgetProjectsList: Project[] = [];
-        
-        try {
-          const budgetProjectsRes = await fetch("/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS");
-          console.log(`[Scheduling] Budget endpoint response status: ${budgetProjectsRes.status}`);
-          
-          if (budgetProjectsRes.ok) {
-            const budgetProjectsJson = await readJsonResponse<{ success?: boolean; data?: Array<Record<string, unknown>> }>(budgetProjectsRes, {
-              label: "projects-with-budget",
-              fallback: { data: [] },
-            });
-            const budgetProjects = (budgetProjectsJson.data || []) as Array<{
-              projectId?: string;
-              projectName?: string;
-              customer?: string;
-              bidBoardStatus?: string;
-              totalQuantity?: number;
-              [key: string]: unknown;
-            }>;
-
-            console.log(`[Scheduling] Found ${budgetProjects.length} IN_PROGRESS projects in staging`);
-            
-            if (budgetProjects.length > 0) {
-              console.log('[Scheduling] Sample budget project:', JSON.stringify(budgetProjects[0], null, 2));
-            }
-
-            // Auto-create Schedule entries for new projects
-            let successCount = 0;
-            for (const project of budgetProjects) {
-              if (!project.projectId || !project.projectName) {
-                console.warn(`[Scheduling] Skipping project with missing id or name:`, project);
-                continue;
+        const [budgetProjectsList, schedulesResult] = await Promise.all([
+          (async (): Promise<Project[]> => {
+            try {
+              const budgetProjectsRes = await fetch("/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS");
+              if (!budgetProjectsRes.ok) {
+                console.warn(`[Scheduling] Budget endpoint returned status ${budgetProjectsRes.status}`);
+                return [];
               }
-              
-              try {
-                const autoCreateRes = await fetch("/api/scheduling/auto-create-from-staging", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    projectId: project.projectId,
-                    projectName: project.projectName,
-                    customer: String(project.customer || ""),
-                    bidBoardStatus: project.bidBoardStatus,
-                    totalQuantity: project.totalQuantity || 0,
-                  }),
-                });
 
-                if (autoCreateRes.ok) {
-                  successCount++;
-                  const autoCreateData = await autoCreateRes.json();
-                  // Add budget project to project list
-                  const projData: Project = {
-                    id: String(project.projectId),
-                    projectName: String(project.projectName),
-                    projectNumber: String(project.projectId),
-                    customer: String(project.customer || ""),
-                    status: "In Progress",
-                    hours: Number(project.totalQuantity) || 0,
-                    pmcgroup: false,
-                    projectArchived: false,
-                  };
-                  console.log(`[Scheduling] Adding budget project: ${String(project.projectName)} (hours: ${Number(project.totalQuantity)})`);
-                  budgetProjectsList.push(projData);
-                } else {
-                  console.warn(`[Scheduling] Auto-create returned non-ok status:`, autoCreateRes.status);
-                  // Still add the project even if auto-create failed
-                  budgetProjectsList.push({
-                    id: String(project.projectId),
-                    projectName: String(project.projectName),
-                    projectNumber: String(project.projectId),
-                    customer: String(project.customer || ""),
-                    status: "In Progress",
-                    hours: Number(project.totalQuantity) || 0,
-                    pmcgroup: false,
-                    projectArchived: false,
-                  });
-                }
-              } catch (err) {
-                console.warn(`Failed to auto-create schedule for project ${project.projectId}:`, err);
-                // Still add the project even if auto-create failed
-                budgetProjectsList.push({
+              const budgetProjectsJson = await readJsonResponse<{ success?: boolean; data?: Array<Record<string, unknown>> }>(budgetProjectsRes, {
+                label: "projects-with-budget",
+                fallback: { data: [] },
+              });
+
+              const budgetProjects = (budgetProjectsJson.data || []) as Array<{
+                projectId?: string;
+                projectName?: string;
+                customer?: string;
+                totalQuantity?: number;
+              }>;
+
+              return budgetProjects
+                .filter((project) => project.projectId && project.projectName)
+                .map((project) => ({
                   id: String(project.projectId),
                   projectName: String(project.projectName),
                   projectNumber: String(project.projectId),
@@ -373,100 +314,29 @@ function SchedulingContent() {
                   hours: Number(project.totalQuantity) || 0,
                   pmcgroup: false,
                   projectArchived: false,
-                });
-              }
+                }));
+            } catch (err) {
+              console.warn("Failed to fetch projects-with-budget:", err);
+              return [];
             }
-            console.log(`[Scheduling] Successfully added ${successCount} out of ${budgetProjects.length} projects`);
-          } else {
-            console.warn(`[Scheduling] Budget endpoint returned status ${budgetProjectsRes.status}`);
-          }
-        } catch (err) {
-          console.warn("Failed to fetch projects-with-budget:", err);
-        }
-
-        // Use budget/staging projects as the source of truth for Scheduling.
-        // Keep merge logic structure in case a secondary source is added later.
-        const budgetById = new Map<string, Project>(
-          budgetProjectsList
-            .filter((p) => Boolean(p.id))
-            .map((p) => [String(p.id), p])
-        );
-
-        const enrichedApiProjects = projectsData.map((project) => {
-          const budgetProject = budgetById.get(String(project.id));
-          if (!budgetProject) return project;
-
-          const existingHours = Number(project.hours) || 0;
-          const budgetHours = Number(budgetProject.hours) || 0;
-          const existingCustomer = (project.customer || "").toString().trim();
-          const budgetCustomer = (budgetProject.customer || "").toString().trim();
-
-          return {
-            ...project,
-            customer: existingCustomer || budgetCustomer,
-            hours: existingHours > 0 ? existingHours : budgetHours,
-          };
-        });
-
-        const apiProjectIds = new Set(enrichedApiProjects.map((p) => p.id));
-        const uniqueBudgetProjects = budgetProjectsList.filter((p) => !apiProjectIds.has(p.id));
-        const allProjects = [...enrichedApiProjects, ...uniqueBudgetProjects];
-
-        console.log(`[Scheduling] Total projects loaded: ${allProjects.length} (Budget source)`);
-
-        if (allProjects.length > 0) {
-          setProjects(allProjects);
-        } else {
-          console.warn("No projects found from either API or budget source");
-          setProjects([]);
-        }
-
-        // Fetch saved schedule allocations from database
-        try {
-          const schedulesRaw = await fetchAllPages<ApiSchedule>("/api/scheduling");
-          const transformedSchedules = mapApiSchedulesToJobSchedules(schedulesRaw);
-          schedulesArray = transformedSchedules;
-          setSchedules(transformedSchedules);
-        } catch (err) {
-          console.warn("Failed to load schedules from API:", err);
-          schedulesArray = [];
-          setSchedules([]);
-        }
-
-        // Fetch scopes from Gantt V2 API
-        try {
-          const scopesRes = await fetch("/api/gantt-v2/projects");
-          if (!scopesRes.ok) throw new Error("Failed to fetch Gantt V2 scopes");
-          const scopesJson = await readJsonResponse<{ data?: Array<Record<string, unknown>> }>(scopesRes, {
-            label: "Gantt V2 projects",
-          });
-          const ganttProjects = scopesJson.data || [];
-          const scopesMap: Record<string, ApiScope[]> = {};
-          
-          ganttProjects.forEach((project) => {
-            const jobKey = `${String(project.customer || '')}~${String(project.projectNumber || '')}~${String(project.projectName || '')}`;
-            
-            if (project.scopes && Array.isArray(project.scopes)) {
-              scopesMap[jobKey] = project.scopes.map((scope) => ({
-                jobKey,
-                title: String((scope as Record<string, unknown>).title || ""),
-                startDate: String((scope as Record<string, unknown>).startDate || ""),
-                endDate: String((scope as Record<string, unknown>).endDate || ""),
-                hours:
-                  typeof (scope as Record<string, unknown>).scheduledHours === "number"
-                    ? ((scope as Record<string, unknown>).scheduledHours as number)
-                    : 0,
-                description: String((scope as Record<string, unknown>).notes || ''),
-                tasks: [],
-              }));
+          })(),
+          (async (): Promise<JobSchedule[]> => {
+            try {
+              const schedulesRaw = await fetchAllPages<ApiSchedule>("/api/scheduling");
+              return mapApiSchedulesToJobSchedules(schedulesRaw);
+            } catch (err) {
+              console.warn("Failed to load schedules from API:", err);
+              return [];
             }
-          });
-          
-          setScopesByJobKey(scopesMap);
-        } catch (error) {
-          console.warn("Failed to load scopes from Gantt V2 API:", error);
-          setScopesByJobKey({});
-        }
+          })(),
+        ]);
+
+        if (cancelled) return;
+
+        setProjects(budgetProjectsList);
+        setSchedules(schedulesResult);
+
+        const schedulesArray = schedulesResult;
 
         // Collect all months that have scheduled hours (valid months only)
         const scheduledMonths = new Set<string>();
@@ -484,13 +354,58 @@ function SchedulingContent() {
         if (allMonths.join("|") !== normalizeMonths(months).join("|")) {
           setMonths(allMonths);
         }
+
+        void (async () => {
+          try {
+            const scopesRes = await fetch("/api/gantt-v2/projects");
+            if (!scopesRes.ok) throw new Error("Failed to fetch Gantt V2 scopes");
+            const scopesJson = await readJsonResponse<{ data?: Array<Record<string, unknown>> }>(scopesRes, {
+              label: "Gantt V2 projects",
+            });
+            const ganttProjects = scopesJson.data || [];
+            const scopesMap: Record<string, ApiScope[]> = {};
+
+            ganttProjects.forEach((project) => {
+              const jobKey = `${String(project.customer || "")}~${String(project.projectNumber || "")}~${String(project.projectName || "")}`;
+
+              if (project.scopes && Array.isArray(project.scopes)) {
+                scopesMap[jobKey] = project.scopes.map((scope) => ({
+                  jobKey,
+                  title: String((scope as Record<string, unknown>).title || ""),
+                  startDate: String((scope as Record<string, unknown>).startDate || ""),
+                  endDate: String((scope as Record<string, unknown>).endDate || ""),
+                  hours:
+                    typeof (scope as Record<string, unknown>).scheduledHours === "number"
+                      ? ((scope as Record<string, unknown>).scheduledHours as number)
+                      : 0,
+                  description: String((scope as Record<string, unknown>).notes || ""),
+                  tasks: [],
+                }));
+              }
+            });
+
+            if (!cancelled) {
+              setScopesByJobKey(scopesMap);
+            }
+          } catch (error) {
+            console.warn("Failed to load scopes from Gantt V2 API:", error);
+            if (!cancelled) {
+              setScopesByJobKey({});
+            }
+          }
+        })();
       } catch (error) {
         console.error("Failed to load data:", error);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
     fetchData();
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
