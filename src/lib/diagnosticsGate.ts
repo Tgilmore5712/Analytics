@@ -8,6 +8,7 @@ export const DIAGNOSTICS_OR_TEST_API_ROUTES = [
   "/api/procore/diagnostics/user-access",
   "/api/gantt-v2/debug-sync",
   "/api/scheduling/diagnostics",
+  "/api/scheduling/debug-data",
 ] as const;
 
 export const DIAGNOSTICS_OR_TEST_PAGE_ROUTES = [
