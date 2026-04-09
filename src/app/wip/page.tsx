@@ -1202,7 +1202,7 @@ function WIPReportContent() {
         <div style={{ background: "#ffffff", borderRadius: 12, padding: 24, border: "1px solid #ddd", marginBottom: 12 }}>
           <h2 style={{ color: "#15616D", marginBottom: 16 }}>Scheduled Hours Trend</h2>
           <div style={{ width: "100%", height: 400 }}>
-            <HoursLineChart months={filteredMonths} monthlyData={filteredMonthlyData} projects={projects} yearFilter={yearFilter} />
+            <HoursLineChart months={filteredMonths} monthlyData={filteredMonthlyData} allMonthlyData={monthlyData} projects={projects} yearFilter={yearFilter} />
           </div>
         </div>
       )}
@@ -1601,7 +1601,7 @@ function WIPReportContent() {
   );
 }
 
-function HoursLineChart({ months, monthlyData, projects, yearFilter }: { months: string[]; monthlyData: Record<string, any>; projects: any[]; yearFilter: string }) {
+function HoursLineChart({ months, monthlyData, allMonthlyData, projects, yearFilter }: { months: string[]; monthlyData: Record<string, any>; allMonthlyData: Record<string, any>; projects: any[]; yearFilter: string }) {
   const sortedMonths = months.sort();
   const hours = sortedMonths.map(month => monthlyData[month]?.hours || 0);
   const labels = sortedMonths.map(month => {
@@ -1611,27 +1611,31 @@ function HoursLineChart({ months, monthlyData, projects, yearFilter }: { months:
   // Determine current month (today's month/year)
   const now = new Date();
   const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const currentMonthIndex = sortedMonths.indexOf(currentYearMonth);
+  const allSortedMonths = Object.keys(allMonthlyData).sort();
   
   // Calculate Leadtime - Box pattern with all hours:
   // Past months: frozen at month-end backlog (remaining hours AFTER that month).
   // Current month and beyond: dynamic using current total scheduled backlog.
-  const totalAllHours = sortedMonths.reduce((sum, month) => {
-    return sum + (monthlyData[month]?.hours || 0);
+  const totalCurrentAndRemainingHours = allSortedMonths
+    .filter(month => month >= currentYearMonth)
+    .reduce((sum, month) => {
+    return sum + (allMonthlyData[month]?.hours || 0);
   }, 0);
   
   const leadtimeData: (number | null)[] = [];
   
-  sortedMonths.forEach((month, index) => {
-    if (index < currentMonthIndex) {
+  sortedMonths.forEach((month) => {
+    if (month < currentYearMonth) {
       // Past months: locked at month-end remaining backlog
-      const remainingAfterMonth = sortedMonths.slice(index + 1).reduce((sum, m) => {
-        return sum + (monthlyData[m]?.hours || 0);
+      const remainingAfterMonth = allSortedMonths
+        .filter(futureMonth => futureMonth > month)
+        .reduce((sum, futureMonth) => {
+        return sum + (allMonthlyData[futureMonth]?.hours || 0);
       }, 0);
       leadtimeData.push(remainingAfterMonth / 3938);
     } else {
-      // Current month and future: dynamic using all hours total
-      leadtimeData.push(totalAllHours / 3938);
+      // Current month and future: dynamic using current month plus all future backlog across years
+      leadtimeData.push(totalCurrentAndRemainingHours / 3938);
     }
   });
 

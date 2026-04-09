@@ -48,6 +48,19 @@ type Project = {
   projectManager?: string;
 };
 
+type LeadtimeBudgetProject = {
+  id: string;
+  jobKey?: string;
+  projectNumber?: string;
+  projectName?: string;
+  customer?: string;
+  status?: string;
+  hours?: number;
+  pmcgroup?: boolean;
+  projectArchived?: boolean;
+  dateCreated?: unknown;
+};
+
 type KPIDrilldownEntry = {
   id: string;
   projectName: string;
@@ -258,6 +271,52 @@ function normalizeCardName(name: string) {
   return name.replace(/^\uFEFF/, "").trim().toLowerCase();
 }
 
+function parseJobKeyParts(jobKey: string): { customer: string; projectNumber: string; projectName: string } {
+  const [customer = "", projectNumber = "", projectName = ""] = (jobKey || "").split("~");
+  return { customer, projectNumber, projectName };
+}
+
+function normalizeCustomerValue(value: unknown): string {
+  const normalized = (value ?? "").toString().trim();
+  if (!normalized) return "";
+
+  const lower = normalized.toLowerCase();
+  const placeholders = new Set(["unknown", "unk", "n/a", "na", "none", "null", "undefined", "no customer"]);
+  if (placeholders.has(lower)) return "";
+
+  return normalized;
+}
+
+function resolveLeadtimeProjectCustomer(project: Pick<LeadtimeBudgetProject, "customer" | "jobKey">): string {
+  const directCustomer = normalizeCustomerValue(project.customer);
+  if (directCustomer) return directCustomer;
+
+  const parsed = parseJobKeyParts((project.jobKey ?? "").toString());
+  return normalizeCustomerValue(parsed.customer);
+}
+
+function resolveLeadtimeScheduleCustomer(schedule: Pick<Schedule, "customer" | "jobKey">): string {
+  const directCustomer = normalizeCustomerValue(schedule.customer);
+  if (directCustomer) return directCustomer;
+
+  const parsed = parseJobKeyParts(schedule.jobKey || "");
+  return normalizeCustomerValue(parsed.customer);
+}
+
+function parseDateFromUnknown(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "object" && value !== null && "toDate" in value && typeof (value as any).toDate === "function") {
+    const date = (value as any).toDate();
+    return date instanceof Date && !isNaN(date.getTime()) ? date : null;
+  }
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
 const defaultCardLoadData: Record<string, { kpi: string; values: string[] }[]> = {
   [normalizeCardName("Revenue By Month")]: [
     {
@@ -460,6 +519,7 @@ function aggregateProjectsByFullKey(projects: Project[]) {
 export default function KPIPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsForHours, setProjectsForHours] = useState<LeadtimeBudgetProject[]>([]);
   const [kpiData, setKpiData] = useState<any[]>([]);
   const [cardLoadData, setCardLoadData] = useState<Record<string, { kpi: string; values: string[] }[]>>(defaultCardLoadData);
   const [loading, setLoading] = useState(true);
@@ -501,6 +561,7 @@ export default function KPIPage() {
       try {
         let projectsData: Project[] = [];
         let schedulesData: any[] = [];
+        let projectsForHoursData: LeadtimeBudgetProject[] = [];
 
         // Helper: fetch first page to get total, then all remaining pages in parallel
         async function fetchAllParallel<T>(baseUrl: string, rowKey = 'data'): Promise<T[]> {
@@ -523,15 +584,38 @@ export default function KPIPage() {
 
         try {
           console.log("[KPI] Fetching projects and schedules in parallel...");
-          [projectsData, schedulesData] = await Promise.all([
+          const [loadedProjects, loadedSchedules, budgetProjectsRes] = await Promise.all([
             fetchAllParallel<Project>('/api/projects?mode=dashboard'),
             fetchAllParallel<any>('/api/scheduling', 'data'),
+            fetch('/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS'),
           ]);
+          projectsData = loadedProjects;
+          schedulesData = loadedSchedules;
+
+          if (budgetProjectsRes.ok) {
+            const budgetJson = await budgetProjectsRes.json();
+            const budgetRows = Array.isArray(budgetJson?.data) ? budgetJson.data : [];
+            projectsForHoursData = budgetRows.map((project: any) => ({
+              id: String(project.projectId || ""),
+              projectName: String(project.projectName || ""),
+              projectNumber: String(project.projectId || ""),
+              customer: String(project.customer || ""),
+              status: "In Progress",
+              hours: Number(project.totalQuantity) || 0,
+              pmcgroup: false,
+              projectArchived: false,
+            }));
+          } else {
+            console.warn("[KPI] projects-with-budget endpoint not available");
+          }
+
           setProjects(projectsData);
+          setProjectsForHours(projectsForHoursData);
           console.log("[KPI] Loaded projects:", projectsData.length, "schedules:", schedulesData.length);
         } catch (err) {
           console.warn("[KPI] Error fetching data:", err);
           setProjects([]);
+          setProjectsForHours([]);
         }
 
         // Build O(1) lookup map instead of O(n×m) scan
@@ -554,6 +638,7 @@ export default function KPIPage() {
       } catch (error) {
         console.warn("[KPI] Error loading data (using empty defaults):", error);
         setProjects([]);
+        setProjectsForHours([]);
         setSchedules([]);
       } finally {
         setLoading(false);
@@ -568,6 +653,7 @@ export default function KPIPage() {
       setSchedules={setSchedules}
       projects={projects}
       setProjects={setProjects}
+      projectsForHours={projectsForHours}
       kpiData={kpiData}
       setKpiData={setKpiData}
       cardLoadData={cardLoadData}
@@ -594,6 +680,7 @@ function KPIPageContent({
   setSchedules,
   projects,
   setProjects,
+  projectsForHours,
   kpiData,
   setKpiData,
   cardLoadData,
@@ -799,6 +886,246 @@ function KPIPageContent({
     () => aggregatedProjects.filter((project) => normalizeStatusValue(project.status) === "bid submitted"),
     [aggregatedProjects]
   );
+
+  const leadtimeScheduleJobs = useMemo(() => {
+    const qualifyingStatuses = ["In Progress", "IN_PROGRESS"];
+    const priorityStatuses = ["In Progress", "IN_PROGRESS"];
+
+    const activeProjects = projectsForHours.filter((project) => {
+      if (project.projectArchived) return false;
+      const customer = (project.customer ?? "").toString().toLowerCase();
+      if (customer.includes("sop inc")) return false;
+      const projectName = (project.projectName ?? "").toString().toLowerCase();
+      if (projectName === "pmc operations") return false;
+      if (projectName === "pmc shop time") return false;
+      if (projectName === "pmc test project") return false;
+      if (projectName.includes("sandbox")) return false;
+      if (projectName.includes("raymond king")) return false;
+      if (projectName === "alexander drive addition latest") return false;
+      const projectNumber = (project.projectNumber ?? "").toString().toLowerCase();
+      if (projectNumber === "701 poplar church rd") return false;
+      return true;
+    });
+
+    const projectIdentifierMap = new Map<string, LeadtimeBudgetProject[]>();
+    activeProjects.forEach((project) => {
+      const identifier = (project.projectNumber || project.projectName || "").toString().trim();
+      if (!identifier) return;
+      if (!projectIdentifierMap.has(identifier)) {
+        projectIdentifierMap.set(identifier, []);
+      }
+      projectIdentifierMap.get(identifier)!.push(project);
+    });
+
+    const dedupedByCustomer: LeadtimeBudgetProject[] = [];
+    projectIdentifierMap.forEach((projectList) => {
+      const customerMap = new Map<string, LeadtimeBudgetProject[]>();
+      projectList.forEach((project) => {
+        const customer = resolveLeadtimeProjectCustomer(project);
+        if (!customerMap.has(customer)) {
+          customerMap.set(customer, []);
+        }
+        customerMap.get(customer)!.push(project);
+      });
+
+      if (customerMap.size > 1) {
+        let selectedProjects: LeadtimeBudgetProject[] = [];
+        let foundPriorityCustomer = false;
+        const customerEntries = Array.from(customerMap.entries()).sort(([a], [b]) => {
+          if (a && !b) return -1;
+          if (!a && b) return 1;
+          return 0;
+        });
+
+        customerEntries.forEach(([, customerProjects]) => {
+          const hasPriorityStatus = customerProjects.some((project) => priorityStatuses.includes(project.status || ""));
+          if (hasPriorityStatus && !foundPriorityCustomer) {
+            selectedProjects = customerProjects;
+            foundPriorityCustomer = true;
+          }
+        });
+
+        if (!foundPriorityCustomer) {
+          let latestNonEmptyCustomer = "";
+          let latestNonEmptyDate: Date | null = null;
+          let latestAnyCustomer = "";
+          let latestAnyDate: Date | null = null;
+
+          customerEntries.forEach(([customer, customerProjects]) => {
+            const mostRecentProject = customerProjects.reduce((latest, current) => {
+              const currentDate = parseDateFromUnknown(current.dateCreated);
+              const latestDate = parseDateFromUnknown(latest.dateCreated);
+              if (!currentDate) return latest;
+              if (!latestDate) return current;
+              return currentDate.getTime() > latestDate.getTime() ? current : latest;
+            }, customerProjects[0]);
+
+            const projectDate = parseDateFromUnknown(mostRecentProject.dateCreated);
+            if (projectDate && (!latestAnyDate || projectDate.getTime() > latestAnyDate.getTime())) {
+              latestAnyDate = projectDate;
+              latestAnyCustomer = customer;
+            }
+            if (customer && projectDate && (!latestNonEmptyDate || projectDate.getTime() > latestNonEmptyDate.getTime())) {
+              latestNonEmptyDate = projectDate;
+              latestNonEmptyCustomer = customer;
+            }
+          });
+
+          const preferredCustomer = latestNonEmptyCustomer || latestAnyCustomer;
+          selectedProjects = customerMap.get(preferredCustomer) || [];
+
+          if (!selectedProjects.length) {
+            const firstNonEmpty = customerEntries.find(([customer]) => Boolean(customer));
+            if (firstNonEmpty) selectedProjects = firstNonEmpty[1];
+          }
+        }
+
+        dedupedByCustomer.push(...selectedProjects);
+      } else {
+        projectList.forEach((project) => dedupedByCustomer.push(project));
+      }
+    });
+
+    const filteredByStatus = dedupedByCustomer.filter((project) => {
+      if (!qualifyingStatuses.includes(project.status || "")) return false;
+      if (project.pmcgroup) return false;
+      return true;
+    });
+
+    const keyMap = new Map<string, LeadtimeBudgetProject[]>();
+    filteredByStatus.forEach((project) => {
+      const resolvedCustomer = resolveLeadtimeProjectCustomer(project);
+      const key = `${resolvedCustomer}~${project.projectNumber ?? ""}~${project.projectName ?? ""}`;
+      if (!keyMap.has(key)) {
+        keyMap.set(key, []);
+      }
+      keyMap.get(key)!.push(project);
+    });
+
+    const schedulesByExactKey = new Map<string, Schedule>();
+    const schedulesByProjectNumName = new Map<string, Schedule>();
+    const schedulesByProjectNumber = new Map<string, Schedule[]>();
+
+    schedules.forEach((schedule: Schedule) => {
+      schedulesByExactKey.set(schedule.jobKey, schedule);
+      const parts = parseJobKeyParts(schedule.jobKey);
+      const numNameKey = `${parts.projectNumber}~${parts.projectName}`;
+      if (parts.projectNumber || parts.projectName) {
+        schedulesByProjectNumName.set(numNameKey, schedule);
+      }
+      if (parts.projectNumber) {
+        const matchingSchedules = schedulesByProjectNumber.get(parts.projectNumber) || [];
+        matchingSchedules.push(schedule);
+        schedulesByProjectNumber.set(parts.projectNumber, matchingSchedules);
+      }
+    });
+
+    const results: Schedule[] = [];
+    keyMap.forEach((projectGroup, key) => {
+      const representative = projectGroup[0];
+      const totalHours = projectGroup.reduce((sum, project) => sum + (project.hours ?? 0), 0);
+
+      const keyParts = parseJobKeyParts(key);
+      let matchedSchedule = schedulesByExactKey.get(key);
+      if (!matchedSchedule) {
+        matchedSchedule = schedulesByProjectNumName.get(`${keyParts.projectNumber}~${keyParts.projectName}`);
+      }
+      if (!matchedSchedule && keyParts.projectNumber) {
+        const byNumber = schedulesByProjectNumber.get(keyParts.projectNumber) || [];
+        if (byNumber.length === 1) {
+          matchedSchedule = byNumber[0];
+        }
+      }
+
+      const mergedCustomer =
+        resolveLeadtimeProjectCustomer(representative) ||
+        (matchedSchedule ? resolveLeadtimeScheduleCustomer(matchedSchedule) : "") ||
+        normalizeCustomerValue(keyParts.customer);
+
+      results.push({
+        id: matchedSchedule?.id || key,
+        jobKey: key,
+        customer: mergedCustomer || "Unknown",
+        projectNumber: representative.projectNumber ?? "",
+        projectName: representative.projectName ?? "Unnamed",
+        totalHours,
+        status: "In Progress",
+        allocations: normalizeAllocations(matchedSchedule?.allocations || []),
+      });
+    });
+
+    return results;
+  }, [projectsForHours, schedules]);
+
+  const leadtimeHoursByMonth = useMemo(() => {
+    const monthlyHours: Record<string, number> = {};
+
+    leadtimeScheduleJobs.forEach((schedule) => {
+      normalizeAllocations(schedule.allocations).forEach((allocation) => {
+        if (!isValidMonthKey(allocation.month)) return;
+
+        const allocatedHours = typeof allocation.hours === "number"
+          ? allocation.hours
+          : schedule.totalHours * (allocation.percent / 100);
+
+        monthlyHours[allocation.month] = (monthlyHours[allocation.month] || 0) + allocatedHours;
+      });
+    });
+
+    return monthlyHours;
+  }, [leadtimeScheduleJobs]);
+
+  const leadtimeMonths = useMemo(() => Object.keys(leadtimeHoursByMonth).sort(), [leadtimeHoursByMonth]);
+
+  const leadtimeHoursByKey = useMemo(() => {
+    const now = new Date();
+    const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const totalCurrentAndRemainingHours = leadtimeMonths
+      .filter((month) => month >= currentYearMonth)
+      .reduce((sum, month) => sum + (leadtimeHoursByMonth[month] || 0), 0);
+    const byMonth: Record<string, number> = {};
+
+    leadtimeMonths.forEach((month, index) => {
+      void index;
+      const leadtimeHours = month < currentYearMonth
+        ? leadtimeMonths
+            .filter((futureMonth) => futureMonth > month)
+            .reduce((sum, futureMonth) => sum + (leadtimeHoursByMonth[futureMonth] || 0), 0)
+        : totalCurrentAndRemainingHours;
+      byMonth[month] = leadtimeHours;
+    });
+
+    return byMonth;
+  }, [leadtimeHoursByMonth, leadtimeMonths]);
+
+  const leadtimeYearMonthMap = useMemo(() => {
+    const map: Record<string, Record<number, number>> = {};
+    leadtimeMonths.forEach((monthKey) => {
+      const [year, month] = monthKey.split("-");
+      if (!map[year]) {
+        map[year] = {};
+      }
+      map[year][Number(month)] = leadtimeHoursByKey[monthKey];
+    });
+    return map;
+  }, [leadtimeMonths, leadtimeHoursByKey]);
+
+  const leadtimeYears = useMemo(() => Object.keys(leadtimeYearMonthMap).sort(), [leadtimeYearMonthMap]);
+
+  const visibleLeadtimeYears = useMemo(
+    () => yearFilter ? leadtimeYears.filter((year) => year === yearFilter) : leadtimeYears,
+    [leadtimeYears, yearFilter]
+  );
+
+  const formatLeadtimeValue = (value: number | undefined) => {
+    if (value === undefined || !Number.isFinite(value)) return "—";
+    return value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  };
+
+  const formatLeadtimeMonthsValue = (value: number | undefined) => {
+    if (value === undefined || !Number.isFinite(value)) return "—";
+    return (value / 3938).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  };
 
   console.log("[KPI] Total projects:", projects.length);
   console.log("[KPI] Filtered projects:", filteredProjects.length);
@@ -1214,14 +1541,19 @@ function KPIPageContent({
     });
   };
 
-  const renderCardRows = (cardName: string, color: string, rowsOverride?: Array<{ kpi: string; values: string[] }>) => {
+  const renderCardRows = (
+    cardName: string,
+    color: string,
+    rowsOverride?: Array<{ kpi: string; values: string[] }>,
+    startIndex = 0
+  ) => {
     const rows = rowsOverride ?? getSortedCardRows(cardName);
     if (rows.length === 0) return null;
 
     return rows.map((row: any, rowIndex: number) => {
       const rowLabel = (row.kpi || "").toLowerCase();
       const isGoalRow = rowLabel.includes("goal") || rowLabel.includes("allowance");
-      const rowColor = isGoalRow ? "#E06C00" : "#15616D";
+      const rowColor = (rowIndex + startIndex) % 2 === 0 ? "#15616D" : "#E06C00";
       let rowValues = [...(row.values || [])]; // Default to template values
 
       if (normalizeCardName(cardName) === normalizeCardName("Sales By Month") && rowLabel.includes("bid subm")) {
@@ -1973,7 +2305,7 @@ function KPIPageContent({
                       .reduce((sum, { value }) => sum + value, 0);
 
                     rows.push(
-                      <tr key={year} style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
+                      <tr key={year} style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
                         <td style={{ padding: "4px 6px", color: bidsColor, fontWeight: 700, fontSize: 13 }}>{yearFilter ? "Bids Submitted" : `Bids Submitted ${year}`}</td>
                         {bidsMonthValues.map(({ month, value, isManual }, idx) => {
                           return (
@@ -2039,7 +2371,7 @@ function KPIPageContent({
                       .reduce((sum, { value }) => sum + value, 0);
 
                     rows.push(
-                      <tr key={`new-bids-${year}`} style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
+                      <tr key={`new-bids-${year}`} style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
                         <td style={{ padding: "4px 6px", color: newBidsColor, fontWeight: 700, fontSize: 13 }}>{yearFilter ? "New Bids" : `New Bids ${year}`}</td>
                         {newBidsMonthValues.map(({ month, value, isManual }, idx) => {
                           return (
@@ -2111,7 +2443,7 @@ function KPIPageContent({
 
                   const goalColor = rowColors[rowIndex % 2];
                   rows.push(
-                    <tr key="goal" style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
+                    <tr key="goal" style={{ borderBottom: "1px solid #eee", backgroundColor: "#f9f9f9" }}>
                       <td style={{ padding: "4px 6px", color: goalColor, fontWeight: 700, fontSize: 13 }}>Goal</td>
                   {monthNames.map((_, idx) => (
                     <td key={idx} style={{ padding: "4px 2px", textAlign: "center", color: goalColor, fontWeight: 700, fontSize: 12 }}>
@@ -2130,7 +2462,7 @@ function KPIPageContent({
 
                   const actHoursColor = rowColors[rowIndex % 2];
                   rows.push(
-                <tr key="actual-hours" style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
+                <tr key="actual-hours" style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
                   <td style={{ padding: "4px 6px", color: actHoursColor, fontWeight: 700, fontSize: 13 }}>Act Hrs</td>
                   {monthNames.map((_, idx) => {
                     let hours = 0;
@@ -2190,7 +2522,7 @@ function KPIPageContent({
 
                   const goalHoursColor = rowColors[rowIndex % 2];
                   rows.push(
-                <tr key="goal-hours" style={{ borderBottom: "1px solid #eee", backgroundColor: rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
+                <tr key="goal-hours" style={{ borderBottom: "1px solid #eee", backgroundColor: "#f9f9f9" }}>
                   <td style={{ padding: "4px 6px", color: goalHoursColor, fontWeight: 700, fontSize: 13 }}>Goal Hrs</td>
                   {monthNames.map((_, idx) => (
                     <td key={idx} style={{ padding: "4px 2px", textAlign: "center", color: goalHoursColor, fontWeight: 700, fontSize: 12 }}>
@@ -2242,8 +2574,8 @@ function KPIPageContent({
 
                   return (
                     <>
-                      {renderCardRows("Sales By Month", "#E06C00", nonGoalRows)}
-                      {renderCardRows("Sales By Month", "#E06C00", goalRows)}
+                      {renderCardRows("Sales By Month", "#E06C00", nonGoalRows, 0)}
+                      {renderCardRows("Sales By Month", "#E06C00", goalRows, nonGoalRows.length)}
                     </>
                   );
                 })()}
@@ -2382,65 +2714,76 @@ function KPIPageContent({
                       {name.substring(0, 3)}
                     </th>
                   ))}
-                  <th style={{ padding: "4px 6px", textAlign: "center", fontSize: 12, color: "#666", fontWeight: 600, width: "110px" }}>Total</th>
+                  <th style={{ padding: "4px 6px", textAlign: "center", fontSize: 12, color: "#666", fontWeight: 600, width: "110px" }}>Latest</th>
                 </tr>
               </thead>
               <tbody>
-                <tr style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
-                  <td style={{ padding: "6px 6px", color: "#15616D", fontWeight: 700, fontSize: 13 }}>Leadtime Hours</td>
-                  {monthNames.map((_, idx) => {
-                    let hours = 0;
-                    if (yearFilter) {
-                      hours = bidSubmittedHoursYearMonthMap[yearFilter]?.[idx + 1] || 0;
-                    } else {
-                      hours = Object.values(bidSubmittedHoursYearMonthMap).reduce((sum, yearData) => sum + (yearData[idx + 1] || 0), 0);
-                    }
-                    return (
-                      <td key={idx} style={{ padding: "6px 2px", textAlign: "center", color: hours > 0 ? "#15616D" : "#999", fontWeight: hours > 0 ? 700 : 400, fontSize: 12 }}>
-                        {hours > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => openKpiDrilldown(yearFilter ? `Leadtime Hours ${monthNames[idx]} ${yearFilter}` : `Leadtime Hours ${monthNames[idx]} (All Years)`, bidSubmittedHoursProjectsByMonth, { year: yearFilter || null, month: idx + 1, valueLabel: "Data Point (Hours)", valuePrefix: "" })}
-                            style={{ background: "transparent", border: "none", color: "#15616D", cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
-                          >
-                            {hours.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </button>
-                        ) : "—"}
+                {visibleLeadtimeYears.length > 0 ? visibleLeadtimeYears.flatMap((year, yearIndex) => {
+                  const hourRowColor = (yearIndex * 2) % 2 === 0 ? "#15616D" : "#E06C00";
+                  const monthRowColor = (yearIndex * 2 + 1) % 2 === 0 ? "#15616D" : "#E06C00";
+                  const monthValues = monthNames.map((_, idx) => idx + 1 <= ytdMonthCutoff ? leadtimeYearMonthMap[year]?.[idx + 1] : undefined);
+                  const latestValue = [...monthValues].reverse().find((value) => value !== undefined);
+
+                  return [
+                    <tr key={`leadtime-hours-${year}`} style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
+                      <td style={{ padding: "6px 6px", color: hourRowColor, fontWeight: 700, fontSize: 13 }}>
+                        {yearFilter ? "Leadtime Hours" : `Leadtime Hours ${year}`}
                       </td>
-                    );
-                  })}
-                  <td style={{ padding: "6px 6px", textAlign: "center", color: "#15616D", fontWeight: 700, fontSize: 12, borderLeft: "2px solid #ddd" }}>
-                    {(() => {
-                      let total = 0;
-                      let ytdTotal = 0;
-                      if (yearFilter) {
-                        total = Object.values(bidSubmittedHoursYearMonthMap[yearFilter] || {}).reduce((sum, val) => sum + val, 0);
-                        ytdTotal = monthNames.slice(0, ytdMonthCutoff).reduce((sum, _, idx) => sum + (bidSubmittedHoursYearMonthMap[yearFilter]?.[idx + 1] || 0), 0);
-                      } else {
-                        total = Object.values(bidSubmittedHoursYearMonthMap).reduce((sum, yearData) => sum + Object.values(yearData).reduce((s, v) => s + v, 0), 0);
-                        ytdTotal = Object.values(bidSubmittedHoursYearMonthMap).reduce(
-                          (sum, yearData) => sum + monthNames.slice(0, ytdMonthCutoff).reduce((s, _, idx) => s + (yearData[idx + 1] || 0), 0),
-                          0
+                      {monthValues.map((value, idx) => {
+                        const formatted = formatLeadtimeValue(value);
+                        return (
+                          <td key={idx} style={{ padding: "6px 2px", textAlign: "center", color: formatted !== "—" ? hourRowColor : "#999", fontWeight: formatted !== "—" ? 700 : 400, fontSize: 12 }}>
+                            {formatted}
+                          </td>
                         );
-                      }
-                      return total > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => openKpiDrilldown(yearFilter ? `Leadtime Hours ${yearFilter} Total` : "Leadtime Hours Total (All Years)", bidSubmittedHoursProjectsByMonth, { year: yearFilter || null, month: null, valueLabel: "Data Point (Hours)", valuePrefix: "" })}
-                          style={{ background: "transparent", border: "none", color: "#15616D", cursor: "pointer", fontWeight: 700, fontSize: 12, textDecoration: "underline", padding: 0 }}
-                        >
-                          {renderTotalWithYtd(
-                            total.toLocaleString(undefined, { maximumFractionDigits: 0 }),
-                            ytdTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                          )}
-                        </button>
-                      ) : renderTotalWithYtd(
-                        total.toLocaleString(undefined, { maximumFractionDigits: 0 }),
-                        ytdTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                      );
-                    })()}
-                  </td>
-                </tr>
+                      })}
+                      <td style={{ padding: "6px 6px", textAlign: "center", color: latestValue !== undefined ? hourRowColor : "#999", fontWeight: latestValue !== undefined ? 700 : 400, fontSize: 12, borderLeft: "2px solid #ddd" }}>
+                        {formatLeadtimeValue(latestValue)}
+                      </td>
+                    </tr>,
+                    <tr key={`leadtime-months-${year}`} style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
+                      <td style={{ padding: "6px 6px", color: monthRowColor, fontWeight: 700, fontSize: 13 }}>
+                        {yearFilter ? "Leadtime Months" : `Leadtime Months ${year}`}
+                      </td>
+                      {monthValues.map((value, idx) => {
+                        const formatted = formatLeadtimeMonthsValue(value);
+                        return (
+                          <td key={idx} style={{ padding: "6px 2px", textAlign: "center", color: formatted !== "—" ? monthRowColor : "#999", fontWeight: formatted !== "—" ? 700 : 400, fontSize: 12 }}>
+                            {formatted}
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding: "6px 6px", textAlign: "center", color: latestValue !== undefined ? monthRowColor : "#999", fontWeight: latestValue !== undefined ? 700 : 400, fontSize: 12, borderLeft: "2px solid #ddd" }}>
+                        {formatLeadtimeMonthsValue(latestValue)}
+                      </td>
+                    </tr>
+                  ];
+                }) : (
+                  <>
+                    <tr style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
+                      <td style={{ padding: "6px 6px", color: "#15616D", fontWeight: 700, fontSize: 13 }}>Leadtime Hours</td>
+                      {monthNames.map((_, idx) => (
+                        <td key={idx} style={{ padding: "6px 2px", textAlign: "center", color: "#999", fontWeight: 400, fontSize: 12 }}>
+                          —
+                        </td>
+                      ))}
+                      <td style={{ padding: "6px 6px", textAlign: "center", color: "#999", fontWeight: 400, fontSize: 12, borderLeft: "2px solid #ddd" }}>
+                        —
+                      </td>
+                    </tr>
+                    <tr style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
+                      <td style={{ padding: "6px 6px", color: "#E06C00", fontWeight: 700, fontSize: 13 }}>Leadtime Months</td>
+                      {monthNames.map((_, idx) => (
+                        <td key={idx} style={{ padding: "6px 2px", textAlign: "center", color: "#999", fontWeight: 400, fontSize: 12 }}>
+                          —
+                        </td>
+                      ))}
+                      <td style={{ padding: "6px 6px", textAlign: "center", color: "#999", fontWeight: 400, fontSize: 12, borderLeft: "2px solid #ddd" }}>
+                        —
+                      </td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
           </div>
