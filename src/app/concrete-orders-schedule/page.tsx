@@ -44,6 +44,13 @@ function formatDateKey(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function getRelativeDateKey(offsetDays: number): string {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + offsetDays);
+  return formatDateKey(date);
+}
+
 function formatHeaderDate(dateKey: string): string {
   const d = new Date(`${dateKey}T00:00:00`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -57,6 +64,7 @@ export default function ConcreteOrdersSchedulePage() {
   const [orders, setOrders] = useState<ConcreteOrder[]>([]);
   const [taskSummaries, setTaskSummaries] = useState<TaskConcreteSummary[]>([]);
   const [activeProject, setActiveProject] = useState<ConcreteRow | null>(null);
+  const minVisibleDate = getRelativeDateKey(-1);
 
   useEffect(() => {
     void loadSchedule();
@@ -182,10 +190,10 @@ export default function ConcreteOrdersSchedulePage() {
         ...orders.map((order) => order.date),
         ...taskSummaries.map((summary) => summary.date),
       ])
-    ).sort((a, b) =>
-      a.localeCompare(b)
-    );
-  }, [orders, taskSummaries]);
+    )
+      .filter((dateKey) => dateKey >= minVisibleDate)
+      .sort((a, b) => a.localeCompare(b));
+  }, [minVisibleDate, orders, taskSummaries]);
 
   const ordersByProjectDate = useMemo(() => {
     const summary: Record<string, ConcreteOrderCellSummary> = {};
@@ -225,19 +233,40 @@ export default function ConcreteOrdersSchedulePage() {
   const orderCountByProject = useMemo(() => {
     const counts: Record<string, number> = {};
     orders.forEach((order) => {
+      if (order.date < minVisibleDate) return;
       counts[order.jobKey] = (counts[order.jobKey] || 0) + 1;
     });
     return counts;
-  }, [orders]);
+  }, [minVisibleDate, orders]);
+
+  const visibleConcreteJobKeys = useMemo(() => {
+    const jobKeys = new Set<string>();
+
+    orders.forEach((order) => {
+      if (order.date >= minVisibleDate) {
+        jobKeys.add(order.jobKey);
+      }
+    });
+
+    taskSummaries.forEach((summary) => {
+      if (summary.date >= minVisibleDate) {
+        jobKeys.add(summary.jobKey);
+      }
+    });
+
+    return jobKeys;
+  }, [minVisibleDate, orders, taskSummaries]);
 
   const displayRows = useMemo(() => {
     const rowMap = new Map<string, ConcreteRow>();
 
     rows.forEach((row) => {
+      if (!visibleConcreteJobKeys.has(row.jobKey)) return;
       rowMap.set(row.jobKey, row);
     });
 
     orders.forEach((order) => {
+      if (order.date < minVisibleDate) return;
       if (rowMap.has(order.jobKey)) return;
       const [customer = "", projectNumber = "", parsedProjectName = ""] = String(order.jobKey || "").split("~");
       rowMap.set(order.jobKey, {
@@ -249,6 +278,7 @@ export default function ConcreteOrdersSchedulePage() {
     });
 
     taskSummaries.forEach((summary) => {
+      if (summary.date < minVisibleDate) return;
       if (rowMap.has(summary.jobKey)) return;
       const [customer = "", projectNumber = "", projectName = ""] = String(summary.jobKey || "").split("~");
       rowMap.set(summary.jobKey, {
@@ -260,7 +290,7 @@ export default function ConcreteOrdersSchedulePage() {
     });
 
     return Array.from(rowMap.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
-  }, [orders, rows, taskSummaries]);
+  }, [minVisibleDate, orders, rows, taskSummaries, visibleConcreteJobKeys]);
 
   return (
     <main className="min-h-screen bg-neutral-100 p-2 md:p-4 font-sans text-slate-900">
