@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,47 +7,39 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== PROJECTS ====================
 model Project {
-  id              String    @id @default(cuid())
-  procoreId       String?
-  bidBoardId      String?
-  projectNumber   String?
-  projectName     String
-  customer        String?
-  customerSource  String?
-  status          String? // "Bid Submitted", "Estimating", "In Progress", etc.
-  statusSource    String?
-  sales           Float?
-  cost            Float?
-  hours           Float?
-  laborSales      Float?
-  laborCost       Float?
-  dateUpdated     DateTime?
-  dateCreated     DateTime?
-  projectArchived Boolean?  @default(false)
-  estimator       String?
-  projectManager  String?
-
-  // Flexible data (store as JSON for fields not explicitly modeled)
-  customFields Json?
-
-  // Relationships
-  scopes                ProjectScope[]
-  schedules             Schedule[]
-  activeSchedules       ActiveSchedule[]
-  scopeTrackings        ScopeTracking[]
-  productivityLogs      ProductivityLog[]
-  timecardEntries       TimecardEntry[]
-  timecardTimeTypes     TimecardTimeType[]
-  commitmentContracts   CommitmentContract[]
-  commitmentChangeOrders CommitmentChangeOrder[]
-  commitmentChangeOrderLineItems CommitmentChangeOrderLineItem[]
-  purchaseOrderContracts PurchaseOrderContract[]
+  id                                   String                                @id @default(cuid())
+  projectNumber                        String?
+  projectName                          String
+  customer                             String?
+  status                               String?
+  sales                                Float?
+  cost                                 Float?
+  hours                                Float?
+  laborSales                           Float?
+  laborCost                            Float?
+  dateUpdated                          DateTime?
+  dateCreated                          DateTime?
+  projectArchived                      Boolean?                              @default(false)
+  estimator                            String?
+  projectManager                       String?
+  customFields                         Json?
+  createdAt                            DateTime                              @default(now())
+  updatedAt                            DateTime                              @updatedAt
+  procoreId                            String?
+  bidBoardId                           String?
+  customerSource                       String?
+  statusSource                         String?
+  activeSchedules                      ActiveSchedule[]
+  commitmentContracts                  CommitmentContract[]
+  productivityLogs                     ProductivityLog[]
+  scopes                               ProjectScope[]
+  purchaseOrderContracts               PurchaseOrderContract[]
   purchaseOrderLineItemContractDetails PurchaseOrderLineItemContractDetail[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  schedules                            Schedule[]
+  scopeTrackings                       ScopeTracking[]
+  timecardEntries                      TimecardEntry[]
+  timecardTimeTypes                    TimecardTimeType[]
 
   @@index([projectNumber])
   @@index([projectName])
@@ -62,50 +51,43 @@ model Project {
   @@index([projectArchived, status])
 }
 
-// ==================== PROJECT SCOPES (Gantt Chart) ====================
 model ProjectScope {
-  id        String   @id @default(cuid())
-  jobKey    String // Format: "customer~projectNumber~projectName"
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  title       String // Scope title/name
-  startDate   String? // YYYY-MM-DD format
-  endDate     String? // YYYY-MM-DD format
-  manpower    Float? // Daily manpower
-  hours       Float? // Total hours
-  description String? @db.Text
-  tasks       Json? // Array of task strings
-  color       String? // Hex color code for scope (e.g., "#3B82F6")
-  taskColors  Json? // Map of task names to color codes for individual task colors
-  schedulingMode String @default("contiguous") // contiguous | specific-days
-  selectedDays Json? // Array<{ date: string, hours: number, foreman?: string | null }>
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  jobKey         String
+  projectId      String?
+  startDate      String?
+  endDate        String?
+  hours          Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  description    String?
+  manpower       Float?
+  tasks          Json?
+  title          String
+  schedulingMode String   @default("contiguous")
+  selectedDays   Json?
+  color          String?  @db.VarChar(7)
+  taskColors     Json?
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([jobKey])
   @@index([projectId])
 }
 
-// ==================== SCHEDULES (WIP - Work In Progress) ====================
 model Schedule {
-  id        String   @id @default(cuid())
-  jobKey    String   @unique
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  customer      String?
-  projectNumber String?
-  projectName   String?
-  status        String?
-  totalHours    Float?
-
-  // Normalized allocations table (single source of truth)
+  id              String               @id @default(cuid())
+  jobKey          String               @unique
+  projectId       String?
+  customer        String?
+  projectNumber   String?
+  projectName     String?
+  status          String?
+  totalHours      Float?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  scheduleData    Json?
+  project         Project?             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   allocationsList ScheduleAllocation[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@index([jobKey])
   @@index([projectId])
@@ -114,19 +96,16 @@ model Schedule {
   @@index([status])
 }
 
-// ==================== SCHEDULE ALLOCATIONS (Monthly/Weekly breakdown) ====================
 model ScheduleAllocation {
   id         String   @id @default(cuid())
   scheduleId String
-  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-
-  period     String @db.VarChar(10) // "2026-03" for month, "2026-W10" for week
-  periodType String @default("month") // "month" or "week"
+  period     String   @db.VarChar(10)
+  periodType String   @default("month")
   hours      Float
-  percent    Float? // Percentage of total hours
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  percent    Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@unique([scheduleId, period])
   @@index([scheduleId])
@@ -134,92 +113,80 @@ model ScheduleAllocation {
   @@index([periodType])
 }
 
-// ==================== ACTIVE SCHEDULE ====================
 model ActiveSchedule {
-  id        String   @id @default(cuid())
-  jobKey    String
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  scopeOfWork String
-  date        String  @db.VarChar(10) // YYYY-MM-DD format
-  hours       Float
-  foreman     String?
-  manpower    Int?
-  source      String // 'gantt' | 'short-term' | 'long-term' | 'schedules'
-
+  id           String   @id @default(cuid())
+  jobKey       String
+  projectId    String?
+  scopeOfWork  String
+  date         String   @db.VarChar(10)
+  hours        Float
+  foreman      String?
+  manpower     Int?
+  source       String
   lastModified DateTime @default(now()) @updatedAt
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  @@unique([jobKey, scopeOfWork, date]) // Composite unique constraint
+  @@unique([jobKey, scopeOfWork, date])
   @@index([jobKey])
   @@index([projectId])
   @@index([date])
 }
 
-// ==================== SCOPE TRACKING ====================
 model ScopeTracking {
-  id        String   @id @default(cuid())
-  jobKey    String
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
+  id               String   @id @default(cuid())
+  jobKey           String
+  projectId        String?
   scopeOfWork      String
   totalHours       Float
   scheduledHours   Float
   unscheduledHours Float
-
-  lastUpdated DateTime @default(now()) @updatedAt
+  lastUpdated      DateTime @default(now()) @updatedAt
+  project          Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([jobKey, scopeOfWork])
   @@index([jobKey])
   @@index([projectId])
 }
 
-// ==================== PRODUCTIVITY ====================
 model ProductivityLog {
-  id        String   @id @default(cuid())
-  jobKey    String?
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  date        DateTime
-  foreman     String?
-  crew        String?
-  hours       Float?
-  scopeOfWork String?
-  notes       String?
-
-  // Procore payload columns – promoted from customFields for direct queryability
-  procoreId             String?
-  procoreCompanyId      String?
-  procoreProjectId      String?
-  status                String?
-  company               String?
-  contract              String?
-  lineItemId            String?
-  lineItemDescription   String?
-  lineItemHolderId      String?
-  lineItemHolderType    String?
-  lineItemHolderTitle   String?
-  lineItemHolderNumber  String?
-  quantityUsed          Float?
-  quantityDelivered     Float?
-  previouslyUsed        Float?
-  previouslyDelivered   Float?
-  position              Int?
-  createdById           String?
-  createdByName         String?
-  createdByLogin        String?
-  createdByCollaborator Boolean?
-  procoreCreatedAt      DateTime?
-  procoreUpdatedAt      DateTime?
-  procoreDeletedAt      DateTime?
-
-  // Flexible data
-  customFields Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                               String                             @id @default(cuid())
+  jobKey                           String?
+  projectId                        String?
+  date                             DateTime
+  foreman                          String?
+  crew                             String?
+  hours                            Float?
+  scopeOfWork                      String?
+  notes                            String?
+  customFields                     Json?
+  createdAt                        DateTime                           @default(now())
+  updatedAt                        DateTime                           @updatedAt
+  procoreId                        String?
+  procoreCompanyId                 String?
+  procoreProjectId                 String?
+  status                           String?
+  company                          String?
+  contract                         String?
+  lineItemId                       String?
+  lineItemDescription              String?
+  lineItemHolderId                 String?
+  lineItemHolderType               String?
+  lineItemHolderTitle              String?
+  lineItemHolderNumber             String?
+  quantityUsed                     Float?
+  quantityDelivered                Float?
+  previouslyUsed                   Float?
+  previouslyDelivered              Float?
+  position                         Int?
+  createdById                      String?
+  createdByName                    String?
+  createdByLogin                   String?
+  createdByCollaborator            Boolean?
+  procoreCreatedAt                 DateTime?                          @db.Timestamptz(6)
+  procoreUpdatedAt                 DateTime?                          @db.Timestamptz(6)
+  procoreDeletedAt                 DateTime?                          @db.Timestamptz(6)
+  project                          Project?                           @relation(fields: [projectId], references: [id])
+  productivity_log_unpacked_fields productivity_log_unpacked_fields[]
 
   @@index([jobKey])
   @@index([projectId])
@@ -230,18 +197,13 @@ model ProductivityLog {
   @@index([contract])
 }
 
-// ==================== TIMECARD ENTRIES ====================
 model TimecardEntry {
-  id        String   @id @default(cuid())
-  jobKey    String?
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  date  DateTime
-  hours Float?
-  party String? // party.name (who worked)
-
-  // Procore payload columns – promoted from customFields for direct queryability
+  id                   String                       @id @default(cuid())
+  jobKey               String?
+  projectId            String?
+  date                 DateTime                     @db.Timestamptz(6)
+  hours                Float?
+  party                String?
   procoreId            String?
   procoreCompanyId     String?
   procoreProjectId     String?
@@ -265,48 +227,42 @@ model TimecardEntry {
   timeOut              String?
   lunchTime            Float?
   totalHoursWorked     Float?
-  procoreCreatedAt     DateTime?
-  procoreUpdatedAt     DateTime?
-  procoreDeletedAt     DateTime?
+  procoreCreatedAt     DateTime?                    @db.Timestamptz(6)
+  procoreUpdatedAt     DateTime?                    @db.Timestamptz(6)
+  procoreDeletedAt     DateTime?                    @db.Timestamptz(6)
+  customFields         Json?
+  createdAt            DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  project              Project?                     @relation(fields: [projectId], references: [id], onUpdate: NoAction, map: "fk_timecard_entry_project")
+  unpackedFields       TimecardEntryUnpackedField[]
 
-  // Flexible data
-  customFields Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  unpackedFields    TimecardEntryUnpackedField[]
-
-  @@index([jobKey])
-  @@index([projectId])
-  @@index([date])
-  @@index([procoreId])
-  @@index([party])
-  @@index([status])
-  @@index([costCodeId])
+  @@index([costCodeId], map: "idx_timecard_entry_cost_code_id")
+  @@index([date], map: "idx_timecard_entry_date")
+  @@index([jobKey], map: "idx_timecard_entry_job_key")
+  @@index([party], map: "idx_timecard_entry_party")
+  @@index([procoreId], map: "idx_timecard_entry_procore_id")
+  @@index([projectId], map: "idx_timecard_entry_project_id")
+  @@index([status], map: "idx_timecard_entry_status")
 }
 
 model TimecardTimeType {
-  id               String   @id @default(cuid())
-  jobKey           String?
-  projectId        String?
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  procoreId        String?
-  procoreCompanyId String?
-  procoreProjectId String?
-  name             String?
-  active           Boolean?
-  global           Boolean?
-
-  procoreCreatedAt DateTime?
-  procoreUpdatedAt DateTime?
-  procoreDeletedAt DateTime?
-
-  customFields Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                                 String                               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  jobKey                             String?
+  projectId                          String?
+  procoreId                          String?
+  procoreCompanyId                   String?
+  procoreProjectId                   String?
+  name                               String?
+  active                             Boolean?
+  global                             Boolean?
+  procoreCreatedAt                   DateTime?                            @db.Timestamptz(6)
+  procoreUpdatedAt                   DateTime?                            @db.Timestamptz(6)
+  procoreDeletedAt                   DateTime?                            @db.Timestamptz(6)
+  customFields                       Json?
+  createdAt                          DateTime                             @default(now()) @db.Timestamptz(6)
+  updatedAt                          DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
+  project                            Project?                             @relation(fields: [projectId], references: [id], onUpdate: NoAction)
+  timecard_time_type_unpacked_fields timecard_time_type_unpacked_fields[]
 
   @@index([jobKey])
   @@index([projectId])
@@ -315,35 +271,32 @@ model TimecardTimeType {
 }
 
 model CommitmentContract {
-  id               String   @id @default(cuid())
-  jobKey           String?
-  projectId        String?
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  procoreId           String?
-  procoreCompanyId    String?
-  procoreProjectId    String?
-  title               String?
-  number              String?
-  status              String?
-  vendorId            String?
-  vendorName          String?
-  value               Float?
-  originalValue       Float?
-  startDate           DateTime?
-  completionDate      DateTime?
-  approvalLetterDate  DateTime?
-  signedContractDate  DateTime?
-  notes               String?
-
-  procoreCreatedAt DateTime?
-  procoreUpdatedAt DateTime?
-  procoreDeletedAt DateTime?
-
-  customFields Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                                  String                                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  jobKey                              String?
+  projectId                           String?
+  procoreId                           String?
+  procoreCompanyId                    String?
+  procoreProjectId                    String?
+  title                               String?
+  number                              String?
+  status                              String?
+  vendorId                            String?
+  vendorName                          String?
+  value                               Float?
+  originalValue                       Float?
+  startDate                           DateTime?                             @db.Timestamptz(6)
+  completionDate                      DateTime?                             @db.Timestamptz(6)
+  approvalLetterDate                  DateTime?                             @db.Timestamptz(6)
+  signedContractDate                  DateTime?                             @db.Timestamptz(6)
+  notes                               String?
+  procoreCreatedAt                    DateTime?                             @db.Timestamptz(6)
+  procoreUpdatedAt                    DateTime?                             @db.Timestamptz(6)
+  procoreDeletedAt                    DateTime?                             @db.Timestamptz(6)
+  customFields                        Json?
+  createdAt                           DateTime                              @default(now()) @db.Timestamptz(6)
+  updatedAt                           DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+  project                             Project?                              @relation(fields: [projectId], references: [id], onUpdate: NoAction)
+  commitment_contract_unpacked_fields commitment_contract_unpacked_fields[]
 
   @@index([jobKey])
   @@index([projectId])
@@ -354,215 +307,197 @@ model CommitmentContract {
 }
 
 model CommitmentChangeOrder {
-  id               String   @id @default(cuid())
-  jobKey           String?
-  projectId        String?
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id                String    @id @default(cuid())
+  jobKey            String?
+  projectId         String?
+  procoreId         String?
+  procoreCompanyId  String?
+  procoreProjectId  String?
+  procoreContractId String?
+  title             String?
+  number            String?
+  status            String?
+  dueDate           DateTime? @db.Timestamptz(6)
+  invoicedDate      DateTime? @db.Timestamptz(6)
+  approvedDate      DateTime? @db.Timestamptz(6)
+  value             Float?
+  customFields      Json?
+  procoreCreatedAt  DateTime? @db.Timestamptz(6)
+  procoreUpdatedAt  DateTime? @db.Timestamptz(6)
+  procoreDeletedAt  DateTime? @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  procoreId            String?
-  procoreCompanyId     String?
-  procoreProjectId     String?
-  procoreContractId    String?
-
-  title            String?
-  number           String?
-  status           String?
-  dueDate          DateTime?
-  invoicedDate     DateTime?
-  approvedDate     DateTime?
-  value            Float?
-
-  customFields     Json?
-
-  procoreCreatedAt DateTime?
-  procoreUpdatedAt DateTime?
-  procoreDeletedAt DateTime?
-
-  lineItems        CommitmentChangeOrderLineItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([jobKey])
-  @@index([projectId])
-  @@index([procoreId])
-  @@index([procoreContractId])
-  @@index([number])
-  @@index([status])
+  @@index([procoreContractId], map: "idx_cco_contract_id")
+  @@index([jobKey], map: "idx_cco_job_key")
+  @@index([number], map: "idx_cco_number")
+  @@index([procoreId], map: "idx_cco_procore_id")
+  @@index([projectId], map: "idx_cco_project_id")
+  @@index([status], map: "idx_cco_status")
 }
 
 model CommitmentChangeOrderLineItem {
-  id               String   @id @default(cuid())
-  jobKey           String?
-  projectId        String?
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id                                                String                                              @id @default(cuid())
+  jobKey                                            String?
+  projectId                                         String?
+  changeOrderId                                     String?
+  procoreId                                         String?
+  procoreCompanyId                                  String?
+  procoreProjectId                                  String?
+  procoreChangeOrderId                              String?
+  description                                       String?
+  quantity                                          Float?
+  unitCost                                          Float?
+  totalAmount                                       Float?
+  uom                                               String?
+  position                                          Int?
+  wbsCode                                           String?
+  costCode                                          String?
+  costType                                          String?
+  customFields                                      Json?
+  procoreCreatedAt                                  DateTime?                                           @db.Timestamptz(6)
+  procoreUpdatedAt                                  DateTime?                                           @db.Timestamptz(6)
+  createdAt                                         DateTime                                            @default(now()) @db.Timestamptz(6)
+  updatedAt                                         DateTime                                            @default(now()) @updatedAt @db.Timestamptz(6)
+  commitment_change_order_line_item_unpacked_fields commitment_change_order_line_item_unpacked_fields[]
 
-  changeOrderId    String?
-  changeOrder      CommitmentChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
-
-  procoreId            String?
-  procoreCompanyId     String?
-  procoreProjectId     String?
-  procoreChangeOrderId String?
-
-  description      String?
-  quantity         Float?
-  unitCost         Float?
-  totalAmount      Float?
-  uom              String?
-  position         Int?
-  wbsCode          String?
-  costCode         String?
-  costType         String?
-
-  customFields     Json?
-
-  procoreCreatedAt DateTime?
-  procoreUpdatedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([jobKey])
-  @@index([projectId])
-  @@index([changeOrderId])
-  @@index([procoreId])
-  @@index([procoreChangeOrderId])
-  @@index([costCode])
+  @@index([changeOrderId], map: "idx_ccoli_change_order_id")
+  @@index([costCode], map: "idx_ccoli_cost_code")
+  @@index([jobKey], map: "idx_ccoli_job_key")
+  @@index([procoreChangeOrderId], map: "idx_ccoli_procore_co_id")
+  @@index([procoreId], map: "idx_ccoli_procore_id")
+  @@index([projectId], map: "idx_ccoli_project_id")
 }
 
 model PurchaseOrderContract {
-  id               String   @id @default(cuid())
-  jobKey           String?
-  projectId        String?
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  procoreId            String?
-  procoreCompanyId     String?
-  procoreProjectId     String?
-
-  title            String?
-  number           String?
-  status           String?
-  vendorId         String?
-  vendorName       String?
-  value            Float?
-  originalValue    Float?
-  startDate        DateTime?
-  completionDate   DateTime?
-
-  customFields     Json?
-
-  procoreCreatedAt DateTime?
-  procoreUpdatedAt DateTime?
-  procoreDeletedAt DateTime?
-
-  lineItemContractDetails PurchaseOrderLineItemContractDetail[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([jobKey])
-  @@index([projectId])
-  @@index([procoreId])
-  @@index([number])
-  @@index([status])
-  @@index([vendorId])
-}
-
-model PurchaseOrderLineItemContractDetail {
-  id               String   @id @default(cuid())
-  jobKey           String?
-  projectId        String?
-  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  purchaseOrderContractId String?
-  purchaseOrderContract   PurchaseOrderContract? @relation(fields: [purchaseOrderContractId], references: [id], onDelete: SetNull)
-
+  id                      String                                @id @default(cuid())
+  jobKey                  String?
+  projectId               String?
   procoreId               String?
   procoreCompanyId        String?
   procoreProjectId        String?
-  procorePurchaseOrderContractId String?
+  title                   String?
+  number                  String?
+  status                  String?
+  vendorId                String?
+  vendorName              String?
+  value                   Float?
+  originalValue           Float?
+  startDate               DateTime?                             @db.Timestamptz(6)
+  completionDate          DateTime?                             @db.Timestamptz(6)
+  customFields            Json?
+  procoreCreatedAt        DateTime?                             @db.Timestamptz(6)
+  procoreUpdatedAt        DateTime?                             @db.Timestamptz(6)
+  procoreDeletedAt        DateTime?                             @db.Timestamptz(6)
+  createdAt               DateTime                              @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+  project                 Project?                              @relation(fields: [projectId], references: [id], onUpdate: NoAction, map: "fk_poc_project")
+  lineItemContractDetails PurchaseOrderLineItemContractDetail[]
 
-  description      String?
-  quantity         Float?
-  unitCost         Float?
-  totalAmount      Float?
-  uom              String?
-  position         Int?
-  wbsCode          String?
-  costCode         String?
-  costType         String?
+  @@index([jobKey], map: "idx_poc_job_key")
+  @@index([number], map: "idx_poc_number")
+  @@index([procoreId], map: "idx_poc_procore_id")
+  @@index([projectId], map: "idx_poc_project_id")
+  @@index([status], map: "idx_poc_status")
+  @@index([vendorId], map: "idx_poc_vendor_id")
+}
 
-  customFields     Json?
+model PurchaseOrderLineItemContractDetail {
+  id                                                       String                                                     @id @default(cuid())
+  jobKey                                                   String?
+  projectId                                                String?
+  purchaseOrderContractId                                  String?
+  procoreId                                                String?
+  procoreCompanyId                                         String?
+  procoreProjectId                                         String?
+  procorePurchaseOrderContractId                           String?
+  description                                              String?
+  quantity                                                 Float?
+  unitCost                                                 Float?
+  totalAmount                                              Float?
+  uom                                                      String?
+  position                                                 Int?
+  wbsCode                                                  String?
+  costCode                                                 String?
+  costType                                                 String?
+  customFields                                             Json?
+  procoreCreatedAt                                         DateTime?                                                  @db.Timestamptz(6)
+  procoreUpdatedAt                                         DateTime?                                                  @db.Timestamptz(6)
+  createdAt                                                DateTime                                                   @default(now()) @db.Timestamptz(6)
+  updatedAt                                                DateTime                                                   @default(now()) @updatedAt @db.Timestamptz(6)
+  purchaseOrderContract                                    PurchaseOrderContract?                                     @relation(fields: [purchaseOrderContractId], references: [id], onUpdate: NoAction, map: "fk_pold_contract")
+  project                                                  Project?                                                   @relation(fields: [projectId], references: [id], onUpdate: NoAction, map: "fk_pold_project")
+  purchase_order_line_item_contract_detail_unpacked_fields purchase_order_line_item_contract_detail_unpacked_fields[]
 
-  procoreCreatedAt DateTime?
-  procoreUpdatedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([jobKey])
-  @@index([projectId])
-  @@index([purchaseOrderContractId])
-  @@index([procoreId])
-  @@index([procorePurchaseOrderContractId])
-  @@index([costCode])
+  @@index([purchaseOrderContractId], map: "idx_pold_contract_id")
+  @@index([procorePurchaseOrderContractId], map: "idx_pold_contract_procore_id")
+  @@index([costCode], map: "idx_pold_cost_code")
+  @@index([jobKey], map: "idx_pold_job_key")
+  @@index([procoreId], map: "idx_pold_procore_id")
+  @@index([projectId], map: "idx_pold_project_id")
 }
 
 model commitment_change_order_line_item_unpacked_fields {
-  id              BigInt   @id @default(autoincrement())
-  line_item_id    String
-  field_path      String
-  value_type      String
-  value_text      String?
-  value_number    Float?
-  value_boolean   Boolean?
-  value_json      Json
-  created_at      DateTime @default(now()) @db.Timestamptz
-  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz
+  id                            BigInt                        @id @default(autoincrement())
+  line_item_id                  String
+  field_path                    String
+  value_type                    String
+  value_text                    String?
+  value_number                  Float?
+  value_boolean                 Boolean?
+  value_json                    Json
+  created_at                    DateTime                      @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+  CommitmentChangeOrderLineItem CommitmentChangeOrderLineItem @relation(fields: [line_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ccoli_unpacked_line_item")
 
-  @@unique([line_item_id, field_path])
+  @@unique([line_item_id, field_path], map: "commitment_change_order_line_item_u_line_item_id_field_path_key")
   @@index([field_path], map: "idx_ccoli_uf_field_path")
   @@index([value_text], map: "idx_ccoli_uf_value_text")
   @@index([value_number], map: "idx_ccoli_uf_value_number")
   @@index([value_boolean], map: "idx_ccoli_uf_value_boolean")
   @@index([field_path, value_text], map: "idx_ccoli_uf_path_text")
+  @@index([field_path], map: "idx_ccoli_unpacked_field_path")
+  @@index([field_path, value_text], map: "idx_ccoli_unpacked_path_text")
+  @@index([value_boolean], map: "idx_ccoli_unpacked_value_boolean")
+  @@index([value_number], map: "idx_ccoli_unpacked_value_number")
+  @@index([value_text], map: "idx_ccoli_unpacked_value_text")
 }
 
 model commitment_contract_unpacked_fields {
-  id           BigInt    @id @default(autoincrement())
-  contract_id  String
-  field_path   String
-  value_type   String
-  value_text   String?
-  value_number Float?
-  value_boolean Boolean?
-  value_json   Json
-  created_at   DateTime  @default(now()) @db.Timestamptz
-  updated_at   DateTime  @default(now()) @updatedAt @db.Timestamptz
+  id                 BigInt             @id @default(autoincrement())
+  contract_id        String
+  field_path         String
+  value_type         String
+  value_text         String?
+  value_number       Float?
+  value_boolean      Boolean?
+  value_json         Json
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  CommitmentContract CommitmentContract @relation(fields: [contract_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_commitment_unpacked_contract")
 
   @@unique([contract_id, field_path])
-  @@index([field_path])
-  @@index([value_text])
-  @@index([value_number])
-  @@index([value_boolean])
-  @@index([field_path, value_text])
+  @@index([field_path], map: "idx_cc_unpacked_field_path")
+  @@index([field_path, value_text], map: "idx_cc_unpacked_path_text")
+  @@index([value_boolean], map: "idx_cc_unpacked_value_boolean")
+  @@index([value_number], map: "idx_cc_unpacked_value_number")
+  @@index([value_text], map: "idx_cc_unpacked_value_text")
 }
 
 model purchase_order_line_item_contract_detail_unpacked_fields {
-  id              BigInt   @id @default(autoincrement())
-  detail_id       String
-  field_path      String
-  value_type      String
-  value_text      String?
-  value_number    Float?
-  value_boolean   Boolean?
-  value_json      Json
-  created_at      DateTime @default(now()) @db.Timestamptz
-  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz
+  id                                  BigInt                              @id @default(autoincrement())
+  detail_id                           String
+  field_path                          String
+  value_type                          String
+  value_text                          String?
+  value_number                        Float?
+  value_boolean                       Boolean?
+  value_json                          Json
+  created_at                          DateTime                            @default(now()) @db.Timestamptz(6)
+  updated_at                          DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
+  PurchaseOrderLineItemContractDetail PurchaseOrderLineItemContractDetail @relation(fields: [detail_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pold_unpacked_detail")
 
-  @@unique([detail_id, field_path])
+  @@unique([detail_id, field_path], map: "purchase_order_line_item_contract_deta_detail_id_field_path_key")
   @@index([field_path], map: "idx_pold_uf_field_path")
   @@index([value_text], map: "idx_pold_uf_value_text")
   @@index([value_number], map: "idx_pold_uf_value_number")
@@ -578,85 +513,68 @@ model PmcGroupMapping {
   costItemNorm String
   costTypeNorm String
   source       String?  @default("manual")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@unique([costItem, costTypeNorm, pmcGroup])
-  @@index([costItemNorm])
-  @@index([costTypeNorm])
-  @@index([pmcGroup])
+  @@index([costItemNorm], map: "PmcGroupMapping_costitem_idx")
+  @@index([costTypeNorm], map: "PmcGroupMapping_costtype_idx")
+  @@index([pmcGroup], map: "PmcGroupMapping_group_idx")
 }
 
-// ==================== DASHBOARD SUMMARY ====================
 model DashboardSummary {
-  id String @id @default("summary")
-
-  totalSales Float
-  totalCost  Float
-  totalHours Float
-
-  statusGroups   Json // Record<string, { sales, cost, hours, count, laborByGroup }>
-  contractors    Json // Record<string, { sales, cost, hours, count, byStatus }>
-  pmcGroupHours  Json // Record<string, number>
-  laborBreakdown Json? // Record<string, number>
-
-  lastUpdated DateTime @updatedAt
+  id             String   @id @default("summary")
+  totalSales     Float
+  totalCost      Float
+  totalHours     Float
+  statusGroups   Json
+  contractors    Json
+  pmcGroupHours  Json
+  laborBreakdown Json?
+  lastUpdated    DateTime @updatedAt
 
   @@index([id])
 }
 
-// ==================== KPI DATA ====================
 model KPIEntry {
-  id        String @id @default(cuid())
-  entryKey  String @unique // Format: "2026-01" (year-month)
-  year      String
-  month     Int
-  monthName String
-
-  // Financial Metrics - Database Fed
-  bidSubmittedSales Float?
-  scheduledSales    Float?
-  bidSubmittedHours Float?
-  scheduledHours    Float?
-  leadtimes         Float?
-
-  // Financial Metrics - Manual Entry
-  revenueActual        Float? // Revenue by Month - manual
-  estimates            Float? // Estimates by Month - Goal (manual)
-  estimatesActualHours Float? // Estimates by Month - Actual Hours (manual)
-  salesActualHours     Float? // Sales by Month - Actual Hours (manual)
-  revenueActualHours   Float? // Revenue Hours by Month - Actual Hours (manual)
-  subsAllowance        Float? // Subs by Month - Subcontractor Allowance (manual)
-  subActualHours       Float? // Subs by Month - Sub Actual Hours (manual)
-  gpActualPercent      Float? // Gross Profit by Month - GP Actual % (manual)
-  profitActualPercent  Float? // Profit by Month - Profit Actual % (manual)
-
-  // Legacy/Unused Fields
-  subs        Float? // Deprecated: use subActualHours
-  grossProfit Float? // Deprecated: use gpActualPercent
-  cost        Float? // Deprecated: not currently used
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Optional: Link to user who created/edited
-  createdByEmail String?
-  updatedByEmail String?
+  id                   String   @id @default(cuid())
+  entryKey             String   @unique
+  year                 String
+  month                Int
+  monthName            String
+  bidSubmittedSales    Float?
+  scheduledSales       Float?
+  subs                 Float?
+  estimates            Float?
+  grossProfit          Float?
+  cost                 Float?
+  bidSubmittedHours    Float?
+  scheduledHours       Float?
+  leadtimes            Float?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdByEmail       String?
+  updatedByEmail       String?
+  estimatesActualHours Float?
+  gpActualPercent      Float?
+  profitActualPercent  Float?
+  revenueActual        Float?
+  revenueActualHours   Float?
+  salesActualHours     Float?
+  subActualHours       Float?
+  subsAllowance        Float?
 
   @@index([year, month])
   @@index([entryKey])
 }
 
-// ==================== AUDIT LOG ====================
 model AuditLog {
   id        String   @id @default(cuid())
-  action    String // "CREATE", "UPDATE", "DELETE"
-  entity    String // "Project", "KPIEntry", etc.
+  action    String
+  entity    String
   entityId  String
   userEmail String
-  changes   Json? // Store what changed
+  changes   Json?
   createdAt DateTime @default(now())
 
   @@index([entityId])
@@ -664,24 +582,18 @@ model AuditLog {
   @@index([createdAt])
 }
 
-// ==================== EMPLOYEES ====================
 model Employee {
-  id        String  @id @default(cuid())
-  firstName String
-  lastName  String
-  jobTitle  String?
-  email     String? @unique
-  phone     String?
-  isActive  Boolean @default(true)
-
-  // Flexible data for additional fields
-  customFields Json?
-
-  // Relations
+  id             String          @id @default(cuid())
+  firstName      String
+  lastName       String
+  jobTitle       String?
+  email          String?         @unique
+  phone          String?
+  isActive       Boolean         @default(true)
+  customFields   Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   certifications Certification[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@index([jobTitle])
   @@index([isActive])
@@ -698,70 +610,60 @@ model JobTitle {
   @@index([title])
 }
 
-// ==================== HOLIDAYS ====================
 model Holiday {
-  id          String  @id @default(cuid())
-  date        String  @db.VarChar(10) // YYYY-MM-DD format
+  id          String   @id @default(cuid())
+  date        String   @db.VarChar(10)
   name        String
   description String?
-  isPaid      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isPaid      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([date])
 }
 
-// ==================== TIME OFF REQUESTS ====================
 model TimeOffRequest {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   employeeId   String
   employeeName String?
-  dates        Json // Array of date strings
+  dates        Json
   reason       String?
-  status       String  @default("pending") // pending, approved, denied
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status       String   @default("pending")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([employeeId])
   @@index([status])
 }
 
-// ==================== CREW TEMPLATES ====================
 model CrewTemplate {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
-  members     Json // Array of employee IDs or employee data
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  members     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([name])
 }
 
-// ==================== HANDBOOK SIGNOFFS ====================
 model HandbookSignoff {
   id          String   @id @default(cuid())
   email       String   @unique @db.VarChar(255)
   displayName String?
   userAgent   String?
   signedAt    DateTime @default(now())
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([email])
 }
 
-// ==================== ESTIMATING CONSTANTS ====================
 model EstimatingConstant {
-  id       String @id @default(cuid())
-  name     String @unique
-  value    String // Can be numeric string or any value
-  category String @default("General")
-
+  id        String   @id @default(cuid())
+  name      String   @unique
+  value     String
+  category  String   @default("General")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -769,53 +671,46 @@ model EstimatingConstant {
 }
 
 model RebarConstant {
-  id      String @id @default(cuid())
-  size    String // e.g., "#1", "#2", etc.
-  weight  Float // Weight per unit
-  spacing Float? // Spacing information
-
+  id        String   @id @default(cuid())
+  size      String
+  weight    Float
+  spacing   Float?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([size])
 }
 
-// ==================== CERTIFICATIONS ====================
 model Certification {
-  id         String   @id @default(cuid())
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
+  id             String   @id @default(cuid())
+  employeeId     String
   type           String
-  issueDate      String // YYYY-MM-DD
-  expirationDate String // YYYY-MM-DD
-  notes          String? @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  issueDate      String
+  expirationDate String
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
   @@index([expirationDate])
   @@index([employeeId, expirationDate])
 }
 
-// ==================== EQUIPMENT ====================
 model Equipment {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   name         String
-  type         String // e.g., "Truck", "Excavator", etc.
+  type         String
   make         String?
   model        String?
-  serialNumber String? @unique
-
-  status     String  @default("Available") // Available, In Use, Maintenance
-  hourlyRate Float?
-  dailyRate  Float?
-  notes      String? @db.Text
-  isActive   Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  serialNumber String?  @unique
+  status       String   @default("Available")
+  hourlyRate   Float?
+  dailyRate    Float?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([type])
   @@index([status])
@@ -824,42 +719,36 @@ model Equipment {
 }
 
 model EquipmentAssignment {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   equipmentId String
   projectId   String?
   scopeId     String?
-
-  startDate String // YYYY-MM-DD
-  endDate   String // YYYY-MM-DD
-  notes     String? @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  startDate   String
+  endDate     String
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([equipmentId])
   @@index([projectId])
   @@index([startDate])
 }
 
-// ==================== ONBOARDING ====================
 model OnboardingSubmission {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   email       String
   displayName String?
-
   submittedAt DateTime
-  hasBooklet  Boolean? // Understanding of Handbook
-  hasHandbook Boolean? // Employee Handbook Receipt
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  hasBooklet  Boolean?
+  hasHandbook Boolean?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([email])
   @@index([submittedAt])
   @@index([email, submittedAt])
 }
 
-// ==================== STATUS CSV SNAPSHOT ====================
 model Status {
   id             String   @id @default(cuid())
   customer       String?
@@ -885,17 +774,14 @@ model Status {
   @@map("Status")
 }
 
-// ==================== ESTIMATES ====================
 model Estimate {
-  id        String  @id @default(cuid())
-  projectId String?
-
+  id             String   @id @default(cuid())
+  projectId      String?
   title          String
-  description    String? @db.Text
+  description    String?
   estimatedHours Float?
   estimatedCost  Float?
-  status         String  @default("Draft") // Draft, Submitted, Approved, Completed
-
+  status         String   @default("Draft")
   createdByEmail String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -904,43 +790,33 @@ model Estimate {
   @@index([status])
 }
 
-// ==================== PMC GROUPS & CLASSIFICATION ====================
 model PMCGroup {
-  id           String  @id @default(cuid())
-  code         String // e.g., "SITE", "FOUNDATION", "STRUCTURES", "INTERIOR", "SPECIAL"
-  name         String // Display name: "Site Work", "Foundation", etc.
-  description  String? @db.Text
-  color        String? // Hex color for UI: #FF5733
-  displayOrder Int     @default(0)
-  isActive     Boolean @default(true)
-
-  // Relationships
+  id               String               @id @default(cuid())
+  code             String               @unique
+  name             String
+  description      String?
+  color            String?
+  displayOrder     Int                  @default(0)
+  isActive         Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
   costitemMappings CostitemPMCMapping[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([code])
   @@index([code])
   @@index([isActive])
 }
 
 model CostitemPMCMapping {
-  id         String    @id @default(cuid())
-  costitem   String    @unique // The exact Costitem string from CSV (e.g., "Slab On Grade Labor")
-  pmcGroupId String?
-  pmcGroup   PMCGroup? @relation(fields: [pmcGroupId], references: [id], onDelete: SetNull)
-
-  // Fallback PMC code if relation is null (useful for imports before PMCGroup exists)
-  pmcGroupCode String? // e.g., "FOUNDATION"
-
-  // Audit trail
+  id            String    @id @default(cuid())
+  costitem      String    @unique
+  pmcGroupId    String?
+  pmcGroupCode  String?
   mappedByEmail String?
-  source        String  @default("seed") // "seed", "imported", "manual"
-  notes         String? @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  source        String    @default("seed")
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  pmcGroup      PMCGroup? @relation(fields: [pmcGroupId], references: [id])
 
   @@index([costitem])
   @@index([pmcGroupId])
@@ -949,7 +825,7 @@ model CostitemPMCMapping {
 }
 
 model ProcoreCostCodeStaging {
-  id         BigInt   @id @default(autoincrement()) @db.BigInt
+  id         BigInt   @id @default(autoincrement())
   companyId  String   @map("company_id")
   projectId  String   @map("project_id")
   subJobId   String?  @map("sub_job_id")
@@ -964,334 +840,349 @@ model ProcoreCostCodeStaging {
   syncedAt   DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
 
   @@unique([companyId, projectId, subJobId, costCodeId])
-  @@index([projectId])
-  @@index([companyId])
-  @@index([costCodeId])
   @@map("procore_cost_code_staging")
 }
 
 model ProcoreEstimatingCatalogItemStaging {
-  id         BigInt   @id @default(autoincrement()) @db.BigInt
-  companyId  String   @map("company_id")
-  itemId     String   @map("item_id")
-  baseUrl    String   @map("base_url")
-  name       String?
-  code       String?
-  costCodeId String?  @map("cost_code_id")
-  payload    Json
-  syncedAt   DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+  id             BigInt   @id @default(autoincrement())
+  companyId      String   @map("company_id")
+  itemId         String   @map("item_id")
+  baseUrl        String   @map("base_url")
+  name           String?
+  code           String?
+  costCodeId     String?  @map("cost_code_id")
+  payload        Json
+  syncedAt       DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+  dynamic_fields Json?
 
-  @@unique([companyId, itemId, baseUrl])
-  @@index([companyId])
-  @@index([itemId])
+  @@unique([companyId, itemId, baseUrl], map: "procore_estimating_catalog_item_company_id_item_id_base_url_key")
   @@map("procore_estimating_catalog_item_staging")
 }
 
 model ProcoreProjectStaging {
-  id                 BigInt   @id @default(autoincrement()) @db.BigInt
-  companyId          String   @map("company_id")
-  projectId          String?  @map("project_id")
-  externalId         String?  @map("external_id")
-  procoreProjectId   String?  @map("procore_project_id")
-  customer           String?
-  source             String?
+  id                 BigInt    @id @default(autoincrement())
+  source             String
+  companyId          String    @map("company_id")
+  externalId         String    @map("external_id")
+  procoreProjectId   String?   @map("procore_project_id")
   name               String?
-  displayName        String?  @map("display_name")
-  projectNumber      String?  @map("project_number")
-  projectOwnerType   String?  @map("project_owner_type")
-  projectOwnerTypeId String?  @map("project_owner_type_id")
   status             String?
-  createdAt          DateTime? @map("procore_created_at")
-  updatedAt          DateTime? @map("procore_updated_at")
+  customer           String?
   payload            Json
-  syncedAt           DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+  syncedAt           DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  projectId          String?   @map("project_id")
+  displayName        String?   @map("display_name")
+  projectNumber      String?   @map("project_number")
+  projectOwnerType   String?   @map("project_owner_type")
+  projectOwnerTypeId String?   @map("project_owner_type_id")
+  createdAt          DateTime? @map("procore_created_at") @db.Timestamptz(6)
+  updatedAt          DateTime? @map("procore_updated_at") @db.Timestamptz(6)
+  bidBoardStatus     String?   @map("bid_board_status")
 
-  @@index([companyId])
-  @@index([projectId])
-  @@index([projectNumber])
+  @@unique([source, companyId, externalId], map: "procore_project_staging_source_company_external_key")
+  @@unique([source, companyId, externalId])
+  @@index([companyId], map: "ProcoreProjectStaging_companyId_idx")
+  @@index([projectId], map: "ProcoreProjectStaging_projectId_idx")
+  @@index([projectNumber], map: "ProcoreProjectStaging_projectNumber_idx")
   @@map("procore_project_staging")
 }
 
 model ProcoreProjectStagingUnpackedField {
-  id                 BigInt    @id @default(autoincrement()) @db.BigInt
-  companyId          String    @map("company_id")
-  projectId          String    @map("project_id")
-  procoreProjectId   String    @map("procore_project_id")
-  fieldPath          String    @map("field_path")
-  valueType          String    @map("value_type")
-  valueText          String?   @map("value_text")
-  valueNumber        Float?    @map("value_number")
-  valueBoolean       Boolean?  @map("value_boolean")
-  valueJson          Json      @map("value_json")
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               BigInt   @id @default(autoincrement())
+  companyId        String   @map("company_id")
+  projectId        String   @map("project_id")
+  procoreProjectId String   @map("procore_project_id")
+  fieldPath        String   @map("field_path")
+  valueType        String   @map("value_type")
+  valueText        String?  @map("value_text")
+  valueNumber      Float?   @map("value_number")
+  valueBoolean     Boolean? @map("value_boolean")
+  valueJson        Json     @map("value_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([companyId, projectId, procoreProjectId, fieldPath])
-  @@index([companyId])
-  @@index([projectId])
-  @@index([procoreProjectId])
-  @@index([fieldPath])
-  @@index([valueText])
+  @@unique([companyId, projectId, procoreProjectId, fieldPath], map: "procore_project_staging_unpac_company_id_project_id_procore_key")
+  @@index([companyId], map: "idx_ppsu_company")
+  @@index([fieldPath], map: "idx_ppsu_field_path")
+  @@index([procoreProjectId], map: "idx_ppsu_procore_project")
+  @@index([projectId], map: "idx_ppsu_project")
+  @@index([valueText], map: "idx_ppsu_value_text")
   @@map("procore_project_staging_unpacked_fields")
 }
 
-// ==================== PROCORE PROJECT FEED ====================
 model ProcoreProjectFeed {
-  id                 BigInt    @id @default(autoincrement()) @db.BigInt
-  companyId          String    @map("company_id")
-  syncSource         String    @map("sync_source")
-  externalId         String    @map("external_id")
-  procoreId          String?   @map("procore_id")
-  projectNumber      String?   @map("project_number")
-  projectName        String    @map("project_name")
-  status             String?
-  customer           String?
-  customerSource     String?   @map("customer_source")
-  officeName         String?   @map("office_name")
-  city               String?
-  stateCode          String?   @map("state_code")
-  countryCode        String?   @map("country_code")
-  stageName          String?   @map("stage_name")
-  dueDate            DateTime? @map("due_date") @db.Timestamptz(6)
-  createdOn          DateTime? @map("created_on") @db.Timestamptz(6)
-  sourceId           String?   @map("source_id")
-  sourceName         String?   @map("source_name")
-  sourceCreatedBy    String?   @map("source_created_by")
-  sourceCreatedAt    DateTime? @map("source_created_at") @db.Timestamptz(6)
-  lastModifiedAt     DateTime? @map("last_modified_at") @db.Timestamptz(6)
-  estimatedValue     Float?    @map("estimated_value")
-  linkedProjectId    String?   @map("linked_project_id")
-  matchConfidence    String?   @map("match_confidence")
-  matchedAt          DateTime? @map("matched_at") @db.Timestamptz(6)
-  softDeleted        Boolean   @default(false) @map("soft_deleted")
-  syncedAt           DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  payload            Json
+  id              BigInt    @id(map: "procore_project_feed_reordered_pkey1") @default(autoincrement())
+  companyId       String    @map("company_id")
+  syncSource      String    @map("sync_source")
+  externalId      String    @map("external_id")
+  procoreId       String?   @map("procore_id")
+  projectNumber   String?   @map("project_number")
+  projectName     String    @map("project_name")
+  status          String?
+  customer        String?
+  customerSource  String?   @map("customer_source")
+  officeName      String?   @map("office_name")
+  city            String?
+  stateCode       String?   @map("state_code")
+  countryCode     String?   @map("country_code")
+  stageName       String?   @map("stage_name")
+  dueDate         DateTime? @map("due_date") @db.Timestamptz(6)
+  createdOn       DateTime? @map("created_on") @db.Timestamptz(6)
+  sourceId        String?   @map("source_id")
+  sourceName      String?   @map("source_name")
+  sourceCreatedBy String?   @map("source_created_by")
+  sourceCreatedAt DateTime? @map("source_created_at") @db.Timestamptz(6)
+  lastModifiedAt  DateTime? @map("last_modified_at") @db.Timestamptz(6)
+  estimatedValue  Float?    @map("estimated_value")
+  linkedProjectId String?   @map("linked_project_id")
+  matchConfidence String?   @map("match_confidence")
+  matchedAt       DateTime? @map("matched_at") @db.Timestamptz(6)
+  softDeleted     Boolean   @default(false) @map("soft_deleted")
+  syncedAt        DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payload         Json
 
-  @@unique([companyId, syncSource, externalId])
-  @@index([companyId])
-  @@index([projectName])
-  @@index([customer])
-  @@index([syncedAt])
-  @@index([linkedProjectId])
-  @@index([softDeleted])
+  @@unique([companyId, syncSource, externalId], map: "procore_project_feed_reordere_company_id_sync_source_exter_key1")
+  @@index([companyId], map: "ProcoreProjectFeed_companyId_idx")
+  @@index([customer], map: "ProcoreProjectFeed_customer_idx")
+  @@index([linkedProjectId], map: "ProcoreProjectFeed_linkedProjectId_idx")
+  @@index([projectName], map: "ProcoreProjectFeed_projectName_idx")
+  @@index([softDeleted], map: "ProcoreProjectFeed_softDeleted_idx")
+  @@index([syncedAt], map: "ProcoreProjectFeed_syncedAt_idx")
+  @@index([city], map: "idx_procore_project_feed_city")
+  @@index([companyId], map: "idx_procore_project_feed_company")
+  @@index([createdOn], map: "idx_procore_project_feed_created_on")
+  @@index([customer], map: "idx_procore_project_feed_customer")
+  @@index([dueDate], map: "idx_procore_project_feed_due_date")
+  @@index([projectName], map: "idx_procore_project_feed_name")
+  @@index([officeName], map: "idx_procore_project_feed_office_name")
+  @@index([softDeleted], map: "idx_procore_project_feed_soft_deleted")
+  @@index([sourceCreatedAt], map: "idx_procore_project_feed_source_created_at")
+  @@index([sourceCreatedBy], map: "idx_procore_project_feed_source_created_by")
+  @@index([sourceId], map: "idx_procore_project_feed_source_id")
+  @@index([stateCode], map: "idx_procore_project_feed_state_code")
+  @@index([syncedAt(sort: Desc)], map: "idx_procore_project_feed_synced_at")
+  @@index([linkedProjectId], map: "idx_procore_project_feed_unmatched")
   @@map("procore_project_feed")
 }
 
-// ==================== GANTT V2 SCHEMA ====================
 model GanttV2Project {
-  id            String                @id @db.Text
-  projectName   String                @map("project_name")
-  customer      String?               @db.Text
-  projectNumber String?               @db.Text
-  status        String?               @db.Text
-  createdAt     DateTime              @default(now()) @map("created_at")
-  updatedAt     DateTime              @updatedAt @map("updated_at")
-  
-  scopes        GanttV2Scope[]
+  id             String         @id
+  projectName    String         @map("project_name")
+  customer       String?
+  project_number String?
+  status         String?
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  scopes         GanttV2Scope[]
 
+  @@index([createdAt(sort: Desc)], map: "idx_gantt_v2_projects_created_at")
+  @@index([status], map: "idx_gantt_v2_projects_status")
   @@map("gantt_v2_projects")
 }
 
 model GanttV2Scope {
-  id            String                    @id @db.Text
-  projectId     String                    @map("project_id")
-  predecessorScopeId String?              @map("predecessor_scope_id") @db.Text
-  title         String                    @db.Text
-  startDate     DateTime?                 @map("start_date") @db.Date
-  endDate       DateTime?                 @map("end_date") @db.Date
-  totalHours    Float                     @default(0) @map("total_hours")
-  crewSize      Float?                    @map("crew_size")
-  notes         String?                   @db.Text
-  createdAt     DateTime                  @default(now()) @map("created_at")
-  updatedAt     DateTime                  @updatedAt @map("updated_at")
-  
-  project       GanttV2Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  predecessor   GanttV2Scope?             @relation("GanttV2ScopeDependency", fields: [predecessorScopeId], references: [id], onDelete: SetNull)
-  successors    GanttV2Scope[]            @relation("GanttV2ScopeDependency")
-  scheduleEntries GanttV2ScheduleEntry[]
+  id                 String                 @id
+  projectId          String                 @map("project_id")
+  title              String
+  startDate          DateTime?              @map("start_date") @db.Date
+  endDate            DateTime?              @map("end_date") @db.Date
+  totalHours         Float                  @default(0) @map("total_hours")
+  crewSize           Float?                 @map("crew_size")
+  notes              String?
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  predecessorScopeId String?                @map("predecessor_scope_id")
+  scheduleEntries    GanttV2ScheduleEntry[]
+  project            GanttV2Project         @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_gantt_v2_project")
+  predecessor        GanttV2Scope?          @relation("GanttV2ScopeDependency", fields: [predecessorScopeId], references: [id], onUpdate: NoAction)
+  successors         GanttV2Scope[]         @relation("GanttV2ScopeDependency")
 
-  @@index([projectId])
-  @@index([predecessorScopeId])
+  @@index([createdAt], map: "idx_gantt_v2_scopes_created_at")
+  @@index([predecessorScopeId], map: "idx_gantt_v2_scopes_predecessor_scope_id")
+  @@index([projectId], map: "idx_gantt_v2_scopes_project_id")
   @@map("gantt_v2_scopes")
 }
 
 model GanttV2ScheduleEntry {
-  id              String        @id @db.Text
-  scopeId         String        @map("scope_id")
-  workDate        DateTime      @map("work_date") @db.Date
-  scheduledHours  Float         @default(0) @map("scheduled_hours")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
-  
-  scope           GanttV2Scope  @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  id             String       @id
+  scopeId        String       @map("scope_id")
+  workDate       DateTime     @map("work_date") @db.Date
+  scheduledHours Float        @default(0) @map("scheduled_hours")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  scope          GanttV2Scope @relation(fields: [scopeId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_gantt_v2_scope")
 
-  @@index([scopeId])
+  @@index([scopeId], map: "idx_gantt_v2_schedule_entries_scope_id")
+  @@index([workDate], map: "idx_gantt_v2_schedule_entries_work_date")
+  @@index([scopeId], map: "idx_gantt_v2_schedule_scope_id")
   @@map("gantt_v2_schedule_entries")
 }
 
-// ==================== BUDGET LINE ITEMS ====================
 model BudgetLineItem {
-  id                        BigInt    @id @default(autoincrement()) @db.BigInt
-  companyId                 String    @map("company_id")
-  projectId                 String    @map("project_id")
-  budgetLineItemId          String    @map("budget_line_item_id")
-  name                      String?
-  costCode                  String?   @map("cost_code")
-  costCodeDescription       String?   @map("cost_code_description")
-  wbsCodeId                 String?   @map("wbs_code_id")
-  lineItemType              String?   @map("line_item_type")
-  uom                       String?
-  quantity                  Float?
-  unitCost                  Float?    @map("unit_cost")
-  originalBudgetAmount      Float?    @map("original_budget_amount")
-  amount                    Float?
-  calculationStrategy       String?   @map("calculation_strategy")
-  currencyIsoCode           String?   @map("currency_iso_code")
-  sourceCreatedAt           DateTime? @map("source_created_at") @db.Timestamptz(6)
-  sourceUpdatedAt           DateTime? @map("source_updated_at") @db.Timestamptz(6)
-  payload                   Json
-  syncedAt                  DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
-  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   BigInt    @id @default(autoincrement())
+  companyId            String    @map("company_id")
+  projectId            String    @map("project_id")
+  budgetLineItemId     String    @map("budget_line_item_id")
+  name                 String?
+  costCode             String?   @map("cost_code")
+  lineItemType         String?   @map("line_item_type")
+  amount               Float?
+  sourceCreatedAt      DateTime? @map("source_created_at") @db.Timestamptz(6)
+  payload              Json
+  syncedAt             DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  costCodeDescription  String?   @map("cost_code_description")
+  wbsCodeId            String?   @map("wbs_code_id")
+  uom                  String?
+  quantity             Float?
+  unitCost             Float?    @map("unit_cost")
+  originalBudgetAmount Float?    @map("original_budget_amount")
+  calculationStrategy  String?   @map("calculation_strategy")
+  currencyIsoCode      String?   @map("currency_iso_code")
+  sourceUpdatedAt      DateTime? @map("source_updated_at") @db.Timestamptz(6)
 
   @@unique([companyId, projectId, budgetLineItemId])
-  @@index([companyId])
-  @@index([projectId])
+  @@index([budgetLineItemId], map: "idx_budgetlineitems_budget_line_item_id")
+  @@index([companyId], map: "idx_budgetlineitems_company")
+  @@index([costCode], map: "idx_budgetlineitems_cost_code")
+  @@index([projectId], map: "idx_budgetlineitems_project")
+  @@index([syncedAt(sort: Desc)], map: "idx_budgetlineitems_synced_at")
+  @@index([wbsCodeId], map: "idx_budgetlineitems_wbs_code_id")
   @@map("budgetlineitems")
 }
 
 model BudgetLineItemUnpackedField {
-  id                BigInt        @id @default(autoincrement()) @db.BigInt
-  companyId         String        @map("company_id")
-  projectId         String        @map("project_id")
-  budgetLineItemId  String        @map("budget_line_item_id")
-  fieldPath         String        @map("field_path")
-  valueType         String        @map("value_type")
-  valueText         String?       @map("value_text")
-  valueNumber       Float?        @map("value_number")
-  valueBoolean      Boolean?      @map("value_boolean")
-  valueJson         Json          @map("value_json")
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               BigInt   @id @default(autoincrement())
+  companyId        String   @map("company_id")
+  projectId        String   @map("project_id")
+  budgetLineItemId String   @map("budget_line_item_id")
+  fieldPath        String   @map("field_path")
+  valueType        String   @map("value_type")
+  valueText        String?  @map("value_text")
+  valueNumber      Float?   @map("value_number")
+  valueBoolean     Boolean? @map("value_boolean")
+  valueJson        Json     @map("value_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([companyId, projectId, budgetLineItemId, fieldPath])
-  @@index([companyId])
-  @@index([projectId])
-  @@index([budgetLineItemId])
+  @@unique([companyId, projectId, budgetLineItemId, fieldPath], map: "budgetlineitem_unpacked_field_company_id_project_id_budget__key")
+  @@index([companyId, projectId, budgetLineItemId], map: "idx_budgetlineitem_unpacked_item")
+  @@index([fieldPath], map: "idx_budgetlineitem_unpacked_path")
+  @@index([fieldPath, valueText], map: "idx_budgetlineitem_unpacked_path_text")
+  @@index([valueText], map: "idx_budgetlineitem_unpacked_text")
   @@map("budgetlineitem_unpacked_fields")
 }
 
-// ==================== CONCRETE ORDERS ====================
 model ConcreteOrder {
-  id              String    @id @db.Text
-  jobKey          String    @map("job_key")
-  projectName     String    @map("project_name")
-  concreteCompany String    @map("concrete_company")
-  date            String    @db.Text
-  time            String    @db.Text
-  totalYards      Float     @map("total_yards")
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String   @id
+  jobKey          String   @map("job_key")
+  projectName     String   @map("project_name")
+  concreteCompany String   @map("concrete_company")
+  date            String
+  time            String
+  totalYards      Float    @map("total_yards")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([jobKey])
+  @@index([date, time])
   @@map("concrete_orders")
 }
 
-// ==================== PROCORE PROJECT VENDORS ====================
 model ProcoreProjectVendor {
-  id                BigInt    @id @default(autoincrement()) @db.BigInt
-  companyId         String    @map("company_id")
-  projectId         String    @map("project_id")
-  procoreVendorId   String    @map("procore_vendor_id")
-  name              String?
-  abbreviatedName   String?   @map("abbreviated_name")
-  isActive          Boolean?  @map("is_active")
-  businessPhone     String?   @map("business_phone")
-  addressCity       String?   @map("address_city")
-  addressStateCode  String?   @map("address_state_code")
+  id                 BigInt   @id @default(autoincrement())
+  companyId          String   @map("company_id")
+  projectId          String   @map("project_id")
+  procoreVendorId    String   @map("procore_vendor_id")
+  name               String?
+  abbreviatedName    String?  @map("abbreviated_name")
+  isActive           Boolean? @map("is_active")
+  businessPhone      String?  @map("business_phone")
+  addressCity        String?  @map("address_city")
+  addressStateCode   String?  @map("address_state_code")
   addressCountryCode String?  @map("address_country_code")
-  emailAddress      String?   @map("email_address")
-  vendorType        String?   @map("vendor_type")
-  isEmployee        Boolean?  @map("is_employee")
-  softDeleted       Boolean   @default(false) @map("soft_deleted")
-  syncedAt          DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  payload           Json
+  emailAddress       String?  @map("email_address")
+  vendorType         String?  @map("vendor_type")
+  isEmployee         Boolean? @map("is_employee")
+  softDeleted        Boolean  @default(false) @map("soft_deleted")
+  syncedAt           DateTime @default(now()) @map("synced_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payload            Json
 
   @@unique([companyId, projectId, procoreVendorId])
-  @@index([companyId, projectId])
-  @@index([procoreVendorId])
-  @@index([name])
-  @@index([softDeleted])
-  @@index([syncedAt])
+  @@index([companyId, projectId], map: "ProcoreProjectVendor_companyId_projectId_idx")
+  @@index([name], map: "ProcoreProjectVendor_name_idx")
+  @@index([procoreVendorId], map: "ProcoreProjectVendor_procoreVendorId_idx")
+  @@index([softDeleted], map: "ProcoreProjectVendor_softDeleted_idx")
+  @@index([syncedAt], map: "ProcoreProjectVendor_syncedAt_idx")
+  @@index([companyId, projectId], map: "idx_procore_project_vendors_company_project")
+  @@index([name], map: "idx_procore_project_vendors_name")
+  @@index([softDeleted], map: "idx_procore_project_vendors_soft_deleted")
+  @@index([syncedAt(sort: Desc)], map: "idx_procore_project_vendors_synced_at")
+  @@index([procoreVendorId], map: "idx_procore_project_vendors_vendor_id")
   @@map("procore_project_vendors")
 }
 
-// ==================== TIMECARD ENTRY UNPACKED FIELDS ====================
 model TimecardEntryUnpackedField {
-  id            BigInt       @id @default(autoincrement()) @db.BigInt
-  entryId       String       @map("entry_id")
-  fieldPath     String       @map("field_path")
-  valueType     String       @map("value_type")
-  valueText     String?      @map("value_text")
-  valueNumber   Float?       @map("value_number")
-  valueBoolean  Boolean?     @map("value_boolean")
-  valueJson     Json         @map("value_json")
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  entry         TimecardEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  id           BigInt        @id @default(autoincrement())
+  entryId      String        @map("entry_id")
+  fieldPath    String        @map("field_path")
+  valueType    String        @map("value_type")
+  valueText    String?       @map("value_text")
+  valueNumber  Float?        @map("value_number")
+  valueBoolean Boolean?      @map("value_boolean")
+  valueJson    Json          @map("value_json")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  entry        TimecardEntry @relation(fields: [entryId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_timecard_unpacked_entry")
 
   @@unique([entryId, fieldPath])
-  @@index([fieldPath])
+  @@index([fieldPath], map: "idx_tc_unpacked_field_path")
+  @@index([fieldPath, valueText], map: "idx_tc_unpacked_path_text")
+  @@index([valueBoolean], map: "idx_tc_unpacked_value_boolean")
+  @@index([valueNumber], map: "idx_tc_unpacked_value_number")
+  @@index([valueText], map: "idx_tc_unpacked_value_text")
   @@map("timecard_entry_unpacked_fields")
 }
 
-// ==================== TIMECARD COST CODE MAPPINGS ====================
 model TimecardCostCodeMapping {
-  id               String    @id
-  procoreProjectId String    @map("procore_project_id")
-  projectId        String?   @map("project_id")
-  timecardCostCode String    @map("timecard_cost_code")
-  poCostCode       String    @map("po_cost_code")
-  matchType        String    @default("manual") @map("match_type")
+  id               String   @id
+  procoreProjectId String   @map("procore_project_id")
+  projectId        String?  @map("project_id")
+  timecardCostCode String   @map("timecard_cost_code")
+  poCostCode       String   @map("po_cost_code")
+  matchType        String   @default("manual") @map("match_type")
   confidence       Float?
-  isPrimary        Boolean   @default(false) @map("is_primary")
-  isActive         Boolean   @default(true) @map("is_active")
+  isPrimary        Boolean  @default(false) @map("is_primary")
+  isActive         Boolean  @default(true) @map("is_active")
   notes            String?
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([procoreProjectId, timecardCostCode, poCostCode])
-  @@index([procoreProjectId])
-  @@index([projectId])
-  @@index([timecardCostCode])
-  @@index([poCostCode])
-  @@index([isPrimary])
-  @@index([isActive])
+  @@unique([procoreProjectId, timecardCostCode, poCostCode], map: "idx_tccm_unique_map")
+  @@index([isPrimary, isActive], map: "idx_tccm_flags")
+  @@index([poCostCode], map: "idx_tccm_po_code")
+  @@index([procoreProjectId], map: "idx_tccm_project")
+  @@index([projectId], map: "idx_tccm_project_id")
+  @@index([timecardCostCode], map: "idx_tccm_timecard_code")
   @@map("timecard_cost_code_mappings")
 }
 
-// ==================== COST CODE CATEGORIES ====================
-// Master lookup: maps every cost code to a labor category.
-// Both timecard entries and PO line items join here so hours can
-// be compared at the category level (e.g. "Foundation Labor").
 model CostCodeCategory {
   id            String   @id @default(cuid())
   costCode      String   @unique @map("cost_code")
   costName      String   @map("cost_name")
   category      String
-  // When set, all codes in this category roll up to this single canonical code
-  // for consistent XX-XXX-XX-XX formatting in reports.
-  canonicalCode String?  @map("canonical_code")
   itemType      String   @default("Labor") @map("item_type")
   name          String
   description   String?
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  canonicalCode String?  @map("canonical_code")
 
   @@index([category])
   @@index([canonicalCode])
@@ -1299,3 +1190,519 @@ model CostCodeCategory {
   @@map("cost_code_categories")
 }
 
+model bidforms {
+  id                BigInt    @id @default(autoincrement())
+  company_id        String
+  project_id        String
+  bid_package_id    String
+  bid_form_id       String
+  name              String?
+  status            String?
+  created_by        String?
+  source_created_at DateTime? @db.Timestamptz(6)
+  payload           Json
+  synced_at         DateTime  @default(now()) @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, project_id, bid_package_id, bid_form_id])
+  @@index([bid_form_id], map: "idx_bidforms_bid_form_id")
+  @@index([bid_package_id], map: "idx_bidforms_bid_package")
+  @@index([company_id], map: "idx_bidforms_company")
+  @@index([name], map: "idx_bidforms_name")
+  @@index([project_id], map: "idx_bidforms_project")
+  @@index([synced_at(sort: Desc)], map: "idx_bidforms_synced_at")
+}
+
+model bidpackages {
+  id                BigInt    @id @default(autoincrement())
+  company_id        String
+  project_id        String
+  bid_package_id    String
+  name              String?
+  status            String?
+  source_created_at DateTime? @db.Timestamptz(6)
+  payload           Json
+  synced_at         DateTime  @default(now()) @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, project_id, bid_package_id])
+  @@index([bid_package_id], map: "idx_bidpackages_bid_package_id")
+  @@index([company_id], map: "idx_bidpackages_company")
+  @@index([project_id], map: "idx_bidpackages_project")
+  @@index([synced_at(sort: Desc)], map: "idx_bidpackages_synced_at")
+}
+
+model bids {
+  id                BigInt    @id @default(autoincrement())
+  company_id        String
+  project_id        String
+  bid_id            String
+  name              String?
+  status            String?
+  created_by        String?
+  source_created_at DateTime? @db.Timestamptz(6)
+  payload           Json
+  synced_at         DateTime  @default(now()) @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, project_id, bid_id])
+  @@index([bid_id], map: "idx_bids_bid_id")
+  @@index([company_id], map: "idx_bids_company")
+  @@index([name], map: "idx_bids_name")
+  @@index([project_id], map: "idx_bids_project")
+  @@index([synced_at(sort: Desc)], map: "idx_bids_synced_at")
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model job_titles {
+  id         String   @id
+  title      String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model long_term_pm_assignments {
+  assignment_key String   @id
+  job_key        String
+  pm_id          String
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([job_key])
+  @@index([pm_id])
+}
+
+model procore_bid_board_live {
+  bid_board_id       String   @id
+  company_id         String?
+  procore_project_id String?
+  name               String?
+  status             String?
+  status_raw         String?
+  customer           String?
+  payload            Json
+  synced_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([procore_project_id])
+  @@index([status])
+  @@index([synced_at(sort: Desc)])
+}
+
+model procore_prime_contracts_live {
+  prime_contract_id             String    @id
+  company_id                    String?
+  project_id                    String?
+  project_procore_id            String?
+  number                        String?
+  title                         String?
+  status                        String?
+  contract_date                 DateTime? @db.Timestamptz(6)
+  signed_contract_received_date DateTime? @db.Timestamptz(6)
+  execution_date                DateTime? @db.Timestamptz(6)
+  contract_start_date           DateTime? @db.Timestamptz(6)
+  payload                       Json
+  synced_at                     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([project_id])
+  @@index([project_procore_id])
+  @@index([synced_at(sort: Desc)])
+}
+
+model procore_project_stages_live {
+  project_stage_id String   @id
+  company_id       String?
+  name             String?
+  category         String?
+  is_bidding_stage Boolean?
+  payload          Json
+  synced_at        DateTime @default(now()) @db.Timestamptz(6)
+  default_stage    Boolean?
+  has_children     Boolean?
+
+  @@index([name])
+  @@index([synced_at(sort: Desc)])
+}
+
+model procore_projects_v1_live {
+  procore_project_id String   @id
+  company_id         String?
+  name               String?
+  project_number     String?
+  status             String?
+  status_raw         String?
+  customer           String?
+  payload            Json
+  synced_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([status])
+  @@index([synced_at(sort: Desc)])
+}
+
+model procore_proposal_line_items_live {
+  id                   BigInt   @id @default(autoincrement())
+  company_id           String
+  bid_board_project_id String
+  proposal_id          String
+  line_item_id         String
+  name                 String?
+  status               String?
+  cost_code            String?
+  payload              Json
+  synced_at            DateTime @default(now()) @db.Timestamptz(6)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+  project_name         String?
+  customer_name        String?
+  proposal_name        String?
+
+  @@unique([company_id, bid_board_project_id, proposal_id, line_item_id], map: "procore_proposal_line_items_l_company_id_bid_board_project__key")
+  @@index([company_id], map: "procore_proposal_line_items_live_company_idx")
+  @@index([bid_board_project_id], map: "procore_proposal_line_items_live_project_idx")
+  @@index([proposal_id], map: "procore_proposal_line_items_live_proposal_idx")
+  @@index([synced_at(sort: Desc)])
+}
+
+model procore_trades {
+  id                 BigInt    @id @default(autoincrement())
+  company_id         String
+  procore_trade_id   String
+  name               String?
+  active             Boolean?
+  procore_created_at DateTime? @db.Timestamptz(6)
+  procore_updated_at DateTime? @db.Timestamptz(6)
+  procore_deleted_at DateTime? @db.Timestamptz(6)
+  soft_deleted       Boolean   @default(false)
+  payload            Json
+  synced_at          DateTime  @default(now()) @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, procore_trade_id])
+  @@index([active], map: "idx_procore_trades_active")
+  @@index([company_id], map: "idx_procore_trades_company_id")
+  @@index([name], map: "idx_procore_trades_name")
+  @@index([soft_deleted], map: "idx_procore_trades_soft_deleted")
+  @@index([synced_at(sort: Desc)], map: "idx_procore_trades_synced_at")
+}
+
+model productivity_log_unpacked_fields {
+  id              BigInt          @id @default(autoincrement())
+  log_id          String
+  field_path      String
+  value_type      String
+  value_text      String?
+  value_number    Float?
+  value_boolean   Boolean?
+  value_json      Json
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime        @default(now()) @db.Timestamptz(6)
+  ProductivityLog ProductivityLog @relation(fields: [log_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_productivity_unpacked_log")
+
+  @@unique([log_id, field_path])
+  @@index([field_path], map: "idx_prod_unpacked_field_path")
+  @@index([field_path, value_text], map: "idx_prod_unpacked_path_text")
+  @@index([value_boolean], map: "idx_prod_unpacked_value_boolean")
+  @@index([value_number], map: "idx_prod_unpacked_value_number")
+  @@index([value_text], map: "idx_prod_unpacked_value_text")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_dedupe_backup_20260408_075936 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_dedupe_priority_backup_20260408_081442 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_dedupe_second_backup_20260408_080523 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_hard_delete_backup_20260408_082011 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_manual_delete_backup_20260408_084330 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_promote_keepers_backup_20260408_083541 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_promote_keepers_backup_20260408_083634 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_promote_keepers_backup_20260408_083738 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_zero_sales_backup_20260408_080726 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model project_zero_sales_backup_20260408_080834 {
+  id              String?
+  projectNumber   String?
+  projectName     String?
+  customer        String?
+  status          String?
+  sales           Float?
+  cost            Float?
+  hours           Float?
+  laborSales      Float?
+  laborCost       Float?
+  dateUpdated     DateTime?
+  dateCreated     DateTime?
+  projectArchived Boolean?
+  estimator       String?
+  projectManager  String?
+  customFields    Json?
+  createdAt       DateTime?
+  updatedAt       DateTime?
+  procoreId       String?
+  bidBoardId      String?
+  customerSource  String?
+  statusSource    String?
+
+  @@ignore
+}
+
+model timecard_time_type_unpacked_fields {
+  id               BigInt           @id @default(autoincrement())
+  type_id          String
+  field_path       String
+  value_type       String
+  value_text       String?
+  value_number     Float?
+  value_boolean    Boolean?
+  value_json       Json
+  created_at       DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime         @default(now()) @db.Timestamptz(6)
+  TimecardTimeType TimecardTimeType @relation(fields: [type_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_tc_time_type_unpacked")
+
+  @@unique([type_id, field_path])
+  @@index([field_path], map: "idx_tc_tt_unpacked_field_path")
+  @@index([field_path, value_text], map: "idx_tc_tt_unpacked_path_text")
+  @@index([value_text], map: "idx_tc_tt_unpacked_value_text")
+}
