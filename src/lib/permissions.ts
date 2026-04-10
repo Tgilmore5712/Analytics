@@ -5,13 +5,13 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     "home", "dashboard", "kpi", "scheduling", "wip", "productivity", "short-term-schedule", "crew-dispatch", "crew-management",
     "long-term-schedule", "concrete-orders-schedule", "project-schedule", "projects", "project",
     "procore", "endpoints", "field", "estimating-tools", "constants", "equipment", 
-    "certifications", "kpi-cards-management", "holidays", "handbook", "diagnostics", "admin"
+    "certifications", "kpi-cards-management", "holidays", "handbook", "diagnostics", "admin", "reporting"
   ],
   "ADMIN": [
     "home", "dashboard", "kpi", "scheduling", "wip", "productivity", "short-term-schedule", "crew-dispatch", "crew-management",
     "long-term-schedule", "concrete-orders-schedule", "project-schedule", "projects", "project",
      "estimating-tools", "constants", "equipment", 
-    "certifications", "kpi-cards-management", "holidays", "handbook"
+    "certifications", "kpi-cards-management", "holidays", "handbook", "reporting"
   ],
   "HR": [
     "home", "certifications", "crew-dispatch", "holidays", "handbook"
@@ -113,6 +113,7 @@ const PATH_PERMISSION_RULES: Array<{ prefix: string; permission: string }> = [
   { prefix: '/concrete-orders-schedule', permission: 'concrete-orders-schedule' },
   { prefix: '/project-schedule', permission: 'project-schedule' },
   { prefix: '/kpi-cards-management', permission: 'kpi-cards-management' },
+    { prefix: '/reporting', permission: 'reporting' },
   { prefix: '/estimating-tools', permission: 'estimating-tools' },
   { prefix: '/crew-management', permission: 'crew-management' },
   { prefix: '/dashboard', permission: 'dashboard' },

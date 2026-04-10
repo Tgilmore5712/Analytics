@@ -205,6 +205,152 @@ function getScopeContiguousDayHours(
   return totalHours / workingDates.length;
 }
 
+function isWeekdayDateKey(dateKey: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (isNaN(date.getTime())) return false;
+  const dayOfWeek = date.getDay();
+  return dayOfWeek >= 1 && dayOfWeek <= 5;
+}
+
+function getScopeDisplayDateKeys(
+  scope: Scope | null | undefined,
+  rangeStartKey: string | null | undefined,
+  rangeEndKey: string | null | undefined,
+  paidHolidayByDate: Record<string, Holiday>
+): string[] {
+  if (!scope) return [];
+
+  const dateKeys = new Set<string>();
+
+  const pushDate = (dateKey: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+    if (rangeStartKey && dateKey < rangeStartKey) return;
+    if (rangeEndKey && dateKey > rangeEndKey) return;
+    if (!isWeekdayDateKey(dateKey)) return;
+    if (paidHolidayByDate[dateKey]) return;
+    dateKeys.add(dateKey);
+  };
+
+  if (scope.schedulingMode === "specific-days" && Array.isArray(scope.selectedDays)) {
+    scope.selectedDays.forEach((entry) => {
+      const hours = Number(entry?.hours || 0);
+      if (!Number.isFinite(hours) || hours <= 0) return;
+      pushDate(String(entry?.date || "").trim());
+    });
+    return Array.from(dateKeys).sort();
+  }
+
+  let hasTaskDates = false;
+  if (Array.isArray(scope.tasks)) {
+    scope.tasks.forEach((rawTask) => {
+      const task = normalizeTaskForLongTerm(rawTask);
+      if (!task) return;
+
+      const startDate = String(task.startDate || "").trim();
+      const days = Number(task.days || 0);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return;
+      if (!Number.isFinite(days) || days <= 0) return;
+
+      hasTaskDates = true;
+      const start = new Date(`${startDate}T00:00:00`);
+      if (isNaN(start.getTime())) return;
+
+      for (let offset = 0; offset < days; offset += 1) {
+        const current = new Date(start);
+        current.setDate(current.getDate() + offset);
+        pushDate(formatDateKey(current));
+      }
+    });
+  }
+
+  if (hasTaskDates) {
+    return Array.from(dateKeys).sort();
+  }
+
+  const startDate = String(scope.startDate || "").trim();
+  const endDate = String(scope.endDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return [];
+  }
+
+  const current = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (isNaN(current.getTime()) || isNaN(end.getTime())) return [];
+
+  while (current <= end) {
+    pushDate(formatDateKey(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  return Array.from(dateKeys).sort();
+}
+
+function normalizeScopeTitle(value?: string | null): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findMatchingScopeForScheduleEntry(
+  scopesByJobKey: Record<string, Scope[]>,
+  entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">
+): Scope | null {
+  const assignmentScopes = scopesByJobKey[entry.jobKey] || [];
+  const matchingScopeByTitleAndDate = assignmentScopes.find((scope) => {
+    const sameTitle = normalizeScopeTitle(scope.title) === normalizeScopeTitle(entry.scopeOfWork || "Unnamed Scope");
+    if (!sameTitle) return false;
+    const start = String(scope.startDate || "").trim();
+    const end = String(scope.endDate || "").trim();
+    if (!start && !end) return true;
+    const rangeStart = start || entry.date;
+    const rangeEnd = end || entry.date;
+    return entry.date >= rangeStart && entry.date <= rangeEnd;
+  });
+  const matchingScopeByTitleOnly = assignmentScopes.find(
+    (scope) => normalizeScopeTitle(scope.title) === normalizeScopeTitle(entry.scopeOfWork || "Unnamed Scope")
+  );
+  const dateScopedMatches = assignmentScopes.filter((scope) => {
+    const start = String(scope.startDate || "").trim();
+    const end = String(scope.endDate || "").trim();
+    if (!start && !end) return false;
+    const rangeStart = start || entry.date;
+    const rangeEnd = end || entry.date;
+    return entry.date >= rangeStart && entry.date <= rangeEnd;
+  });
+  const matchingScopeByDateOnly = dateScopedMatches.length === 1 ? dateScopedMatches[0] : null;
+
+  return matchingScopeByTitleAndDate || matchingScopeByTitleOnly || matchingScopeByDateOnly || (assignmentScopes.length === 1 ? assignmentScopes[0] : null);
+}
+
+function getScopeDisplayHoursForDate(
+  scope: Scope | null | undefined,
+  dateKey: string,
+  paidHolidayByDate: Record<string, Holiday>
+): number | null {
+  if (!scope || !dateKey) return null;
+
+  const taskDayHours = getScopeTaskDayHours(scope, dateKey);
+  if (Number.isFinite(taskDayHours || 0) && (taskDayHours || 0) > 0) {
+    return Number(taskDayHours);
+  }
+
+  const specificDayHours = getScopeSpecificDayHours(scope, dateKey);
+  if (Number.isFinite(specificDayHours || 0) && (specificDayHours || 0) > 0) {
+    return Number(specificDayHours);
+  }
+
+  const contiguousDayHours = getScopeContiguousDayHours(scope, dateKey, paidHolidayByDate);
+  if (Number.isFinite(contiguousDayHours || 0) && (contiguousDayHours || 0) > 0) {
+    return Number(contiguousDayHours);
+  }
+
+  const manpower = Number(scope.manpower || 0);
+  if (Number.isFinite(manpower) && manpower > 0) {
+    return manpower * HOURS_PER_FTE_DAY;
+  }
+
+  return null;
+}
+
 function getBestSpecificDayHours(
   scopes: Scope[],
   dateKey: string,
@@ -401,10 +547,9 @@ export default function LongTermSchedulePage() {
         projectsJson?.data || [];
       const pmAssignments: PMAssignment[] = pmAssignmentsJson?.data || [];
       const allScopes: Scope[] = Array.isArray(scopesJson?.data) ? scopesJson.data : [];
-      const normalizedScopeTitle = (value?: string | null) =>
-        String(value || "")
-          .trim()
-          .toLowerCase();
+      const getMatchingScopeForEntry = (entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">): Scope | null => {
+        return findMatchingScopeForScheduleEntry(scopesByJobKeyLocal, entry);
+      };
 
       const scopesByJobKeyLocal = allScopes.reduce<Record<string, Scope[]>>((acc, scope) => {
         const key = String(scope.jobKey || "").trim();
@@ -492,7 +637,67 @@ export default function LongTermSchedulePage() {
         return source === "gantt" || source === "wip-page";
       });
 
-      const hasUnassignedEntries = ganttInitiatedSchedules.some((entry) => !entry.foreman);
+      const coveredAssignmentDates = new Set(
+        ganttInitiatedSchedules.map((entry) => `${getAssignmentKey(entry.jobKey, entry.scopeOfWork || "Unnamed Scope")}|${entry.date}`)
+      );
+      const scopeSeedMap = new Map<string, {
+        scope: Scope;
+        foremanByDate: Map<string, string>;
+        defaultForeman: string | null;
+      }>();
+
+      ganttInitiatedSchedules.forEach((entry) => {
+        const matchingScope = getMatchingScopeForEntry(entry);
+        if (!matchingScope) return;
+
+        const scopeSeedKey = matchingScope.id || `${entry.jobKey}|${matchingScope.title}|${matchingScope.startDate || ""}|${matchingScope.endDate || ""}`;
+        if (!scopeSeedMap.has(scopeSeedKey)) {
+          scopeSeedMap.set(scopeSeedKey, {
+            scope: matchingScope,
+            foremanByDate: new Map<string, string>(),
+            defaultForeman: null,
+          });
+        }
+
+        const scopeSeed = scopeSeedMap.get(scopeSeedKey)!;
+        if (entry.foreman) {
+          scopeSeed.foremanByDate.set(entry.date, entry.foreman);
+          if (!scopeSeed.defaultForeman) {
+            scopeSeed.defaultForeman = entry.foreman;
+          }
+        }
+      });
+
+      const derivedScopeSchedules: ActiveScheduleEntry[] = [];
+      scopeSeedMap.forEach(({ scope, foremanByDate, defaultForeman }) => {
+        const dateKeys = getScopeDisplayDateKeys(scope, startDate, endDate, paidHolidayMap);
+
+        dateKeys.forEach((dateKey) => {
+          const assignmentDateKey = `${getAssignmentKey(scope.jobKey || "", scope.title || "Unnamed Scope")}|${dateKey}`;
+          if (coveredAssignmentDates.has(assignmentDateKey)) return;
+
+          const derivedHours = getScopeDisplayHoursForDate(scope, dateKey, paidHolidayMap);
+          if (!Number.isFinite(derivedHours || 0) || (derivedHours || 0) <= 0) return;
+
+          const selectedDayForeman = Array.isArray(scope.selectedDays)
+            ? scope.selectedDays.find((entry) => String(entry?.date || "").trim() === dateKey)?.foreman || null
+            : null;
+
+          derivedScopeSchedules.push({
+            jobKey: String(scope.jobKey || "").trim(),
+            scopeOfWork: scope.title || "Unnamed Scope",
+            date: dateKey,
+            hours: Number(derivedHours),
+            manpower: Number(scope.manpower || 0) || null,
+            foreman: selectedDayForeman || foremanByDate.get(dateKey) || defaultForeman || null,
+            source: "gantt",
+          });
+        });
+      });
+
+      const displaySchedules = [...ganttInitiatedSchedules, ...derivedScopeSchedules];
+
+      const hasUnassignedEntries = displaySchedules.some((entry) => !entry.foreman);
 
       const rowEmployees = hasUnassignedEntries
         ? [
@@ -515,7 +720,7 @@ export default function LongTermSchedulePage() {
           weekAllocations[week.weekStartDate.toISOString()] = { hours: 0, projects: [] };
         });
 
-        ganttInitiatedSchedules.forEach((entry) => {
+        displaySchedules.forEach((entry) => {
           if (foreman.id === "__unassigned__") {
             if (entry.foreman) return;
           } else {
@@ -540,33 +745,7 @@ export default function LongTermSchedulePage() {
 
           const scopeOfWork = entry.scopeOfWork || "Unnamed Scope";
           const assignmentScopes = scopesByJobKeyLocal[entry.jobKey] || [];
-          const matchingScopeByTitleAndDate = assignmentScopes.find((scope) => {
-            const sameTitle = normalizedScopeTitle(scope.title) === normalizedScopeTitle(entry.scopeOfWork || "Unnamed Scope");
-            if (!sameTitle) return false;
-            const start = String(scope.startDate || "").trim();
-            const end = String(scope.endDate || "").trim();
-            if (!start && !end) return true;
-            const rangeStart = start || entry.date;
-            const rangeEnd = end || entry.date;
-            return entry.date >= rangeStart && entry.date <= rangeEnd;
-          });
-          const matchingScopeByTitleOnly = assignmentScopes.find(
-            (scope) => normalizedScopeTitle(scope.title) === normalizedScopeTitle(entry.scopeOfWork || "Unnamed Scope")
-          );
-          const dateScopedMatches = assignmentScopes.filter((scope) => {
-            const start = String(scope.startDate || "").trim();
-            const end = String(scope.endDate || "").trim();
-            if (!start && !end) return false;
-            const rangeStart = start || entry.date;
-            const rangeEnd = end || entry.date;
-            return entry.date >= rangeStart && entry.date <= rangeEnd;
-          });
-          const matchingScopeByDateOnly = dateScopedMatches.length === 1 ? dateScopedMatches[0] : null;
-          const matchingScope =
-            matchingScopeByTitleAndDate ||
-            matchingScopeByTitleOnly ||
-            matchingScopeByDateOnly ||
-            (assignmentScopes.length === 1 ? assignmentScopes[0] : null);
+          const matchingScope = getMatchingScopeForEntry(entry);
 
           const fallbackManpower = Number(matchingScope?.manpower || 0);
           const taskDayHours =
@@ -784,6 +963,63 @@ export default function LongTermSchedulePage() {
   async function removeProjectFromDay(jobKey: string, scopeOfWork: string, dateKey: string) {
     const normalizedScopeOfWork = (scopeOfWork || '').trim();
     if (!jobKey || !normalizedScopeOfWork || !dateKey) return;
+
+    const matchingScope = findMatchingScopeForScheduleEntry(scopesByJobKey, {
+      jobKey,
+      scopeOfWork: normalizedScopeOfWork,
+      date: dateKey,
+    });
+
+    if (matchingScope?.id) {
+      const currentDateKeys = getScopeDisplayDateKeys(matchingScope, null, null, paidHolidayByDate);
+      const nextSelectedDays = currentDateKeys
+        .filter((currentDateKey) => currentDateKey !== dateKey)
+        .map((currentDateKey) => {
+          const hours = getScopeDisplayHoursForDate(matchingScope, currentDateKey, paidHolidayByDate);
+          if (!Number.isFinite(hours || 0) || (hours || 0) <= 0) return null;
+
+          const existingSelectedDay = Array.isArray(matchingScope.selectedDays)
+            ? matchingScope.selectedDays.find((entry) => String(entry?.date || '').trim() === currentDateKey)
+            : null;
+
+          const foremanRow = foremanRows.find((row) => {
+            const allocation = row.dayAllocations[currentDateKey];
+            return allocation?.projects?.some(
+              (project) => project.jobKey === jobKey && String(project.scopeOfWork || '').trim() === normalizedScopeOfWork
+            );
+          });
+
+          return {
+            date: currentDateKey,
+            hours: Number(hours),
+            foreman: existingSelectedDay?.foreman ?? (foremanRow?.id && foremanRow.id !== '__unassigned__' ? foremanRow.id : null),
+          };
+        })
+        .filter((entry): entry is { date: string; hours: number; foreman: string | null } => entry !== null);
+
+      if (nextSelectedDays.length === 0) {
+        throw new Error('Cannot remove the last scheduled day from this scope here. Open the scope editor to change the full scope schedule.');
+      }
+
+      const response = await fetch('/api/project-scopes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: matchingScope.id,
+          schedulingMode: 'specific-days',
+          selectedDays: nextSelectedDays,
+          startDate: nextSelectedDays[0].date,
+          endDate: nextSelectedDays[nextSelectedDays.length - 1].date,
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'Failed to update scope schedule');
+      }
+
+      return;
+    }
 
     const response = await fetch('/api/short-term-schedule/move', {
       method: 'DELETE',

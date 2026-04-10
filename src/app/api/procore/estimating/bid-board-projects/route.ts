@@ -36,6 +36,20 @@ function unwrapBidBoardProjects(payload: unknown): unknown[] {
   return [];
 }
 
+function normalizeStatusValue(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getProjectStatus(project: unknown): string {
+  if (!isRecord(project)) return "";
+  return String(
+    project.status ||
+      project.bid_status ||
+      (isRecord(project.bid_status) ? project.bid_status.name : "") ||
+      ""
+  ).trim();
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -47,6 +61,12 @@ export async function POST(request: Request) {
       fetchAll = true,
       baseUrl = process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL,
     } = body;
+
+    const byStatusRaw = String(
+      body["filters[by_status]"] || body.filtersByStatus || body.byStatus || body.statuses || ""
+    ).trim();
+    const byStatusNormalized = normalizeStatusValue(byStatusRaw);
+    const shouldFilterByStatus = Boolean(byStatusNormalized) && byStatusNormalized !== "all";
 
     const cookieStore = await cookies();
     const cookieToken = cookieStore.get("procore_access_token")?.value;
@@ -167,6 +187,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const filteredProjects = shouldFilterByStatus
+      ? allProjects.filter((project) => normalizeStatusValue(getProjectStatus(project)) === byStatusNormalized)
+      : allProjects;
+
     return NextResponse.json({
       success: true,
       companyId,
@@ -174,10 +198,14 @@ export async function POST(request: Request) {
       baseUrl: successfulHost,
       attemptedHosts: hostCandidates.candidates,
       fetchAll,
+      filters: {
+        byStatus: byStatusRaw || null,
+        applied: shouldFilterByStatus,
+      },
       startPage: Math.max(Number(page) || 1, 1),
       perPage: safePerPage,
-      count: allProjects.length,
-      projects: allProjects,
+      count: filteredProjects.length,
+      projects: filteredProjects,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

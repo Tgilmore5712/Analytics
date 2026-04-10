@@ -99,7 +99,9 @@ export async function POST(request: Request) {
         // Create new record
         await prisma.procoreProjectStaging.create({
           data: {
+            source: 'procore_v1_project_show',
             companyId,
+            externalId: projectId,
             projectId,
             name: payload?.name ?? null,
             displayName: payload?.display_name ?? null,
