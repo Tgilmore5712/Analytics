@@ -341,6 +341,28 @@ type ChangeOrderPackagesResponse = {
   data?: unknown[];
 };
 
+type ChangeOrderSyncResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  companyId?: string;
+  projectsScanned?: number;
+  projectsWithPackages?: number;
+  projectsSkippedNoPrimeContract?: number;
+  projectsSkippedAccess?: number;
+  totalPackagesFetched?: number;
+  totalPackagesUpserted?: number;
+  errors?: string[];
+  warnings?: string[];
+  activeProjects?: Array<{
+    projectId: string;
+    contractId: string;
+    packageCount: number;
+    upsertedCount: number;
+    status: string;
+  }>;
+};
+
 export default function ProcoreProductivityFeedPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [procoreConnected, setProcoreConnected] = useState(false);
@@ -431,6 +453,9 @@ export default function ProcoreProductivityFeedPage() {
   const [changeOrderLoading, setChangeOrderLoading] = useState(false);
   const [changeOrderError, setChangeOrderError] = useState<string | null>(null);
   const [changeOrderResponse, setChangeOrderResponse] = useState<ChangeOrderPackagesResponse | null>(null);
+  const [changeOrderSyncLoading, setChangeOrderSyncLoading] = useState(false);
+  const [changeOrderSyncError, setChangeOrderSyncError] = useState<string | null>(null);
+  const [changeOrderSyncResponse, setChangeOrderSyncResponse] = useState<ChangeOrderSyncResponse | null>(null);
   const [budgetLineItemId, setBudgetLineItemId] = useState("");
   const [budgetLineItemProjectId, setBudgetLineItemProjectId] = useState("");
   const [budgetLineItemLoading, setBudgetLineItemLoading] = useState(false);
@@ -795,6 +820,36 @@ export default function ProcoreProductivityFeedPage() {
       setChangeOrderResponse(null);
     } finally {
       setChangeOrderLoading(false);
+    }
+  }
+
+  async function syncAllChangeOrderPackages() {
+    setChangeOrderSyncLoading(true);
+    setChangeOrderSyncError(null);
+    try {
+      const res = await fetch("/api/procore/sync/change-order-packages", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: companyId.trim() || undefined,
+          limitProjects: 1000,
+          perPage: 100,
+        }),
+      });
+      const json = (await res.json()) as ChangeOrderSyncResponse;
+      if (!res.ok || !json.success) {
+        setChangeOrderSyncError(json.error || "Failed to sync change order packages");
+        if (res.status === 401) setProcoreConnected(false);
+        setChangeOrderSyncResponse(null);
+        return;
+      }
+      setChangeOrderSyncResponse(json);
+    } catch (err) {
+      setChangeOrderSyncError(err instanceof Error ? err.message : "Unknown error");
+      setChangeOrderSyncResponse(null);
+    } finally {
+      setChangeOrderSyncLoading(false);
     }
   }
 
@@ -1743,6 +1798,74 @@ export default function ProcoreProductivityFeedPage() {
               <pre className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[11px] leading-relaxed text-gray-800">
                 {JSON.stringify(changeOrderResponse, null, 2)}
               </pre>
+            </div>
+          )}
+        </section>
+
+        {/* ─── Company-Wide Change Order Packages Sync ─── */}
+        <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 mb-6">
+          <h2 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-4">
+            Sync All Change Order Packages
+          </h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Loops all projects in the feed, auto-resolves each prime contract, fetches all change order packages, and persists them to <span className="font-bold text-gray-700">procore_change_order_packages</span>.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <button
+              onClick={syncAllChangeOrderPackages}
+              disabled={changeOrderSyncLoading || checkingAuth || !procoreConnected}
+              className="px-4 py-2 rounded-xl bg-violet-700 text-white font-black text-xs uppercase tracking-widest hover:bg-violet-800 disabled:opacity-50"
+            >
+              {changeOrderSyncLoading ? "Syncing..." : "Sync All Change Order Packages"}
+            </button>
+          </div>
+
+          {changeOrderSyncError && (
+            <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              {changeOrderSyncError}
+            </div>
+          )}
+
+          {changeOrderSyncResponse && (
+            <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="text-sm text-gray-700 grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div>Projects Scanned: <span className="font-bold">{changeOrderSyncResponse.projectsScanned ?? 0}</span></div>
+                <div>With Packages: <span className="font-bold">{changeOrderSyncResponse.projectsWithPackages ?? 0}</span></div>
+                <div>Packages Fetched: <span className="font-bold">{changeOrderSyncResponse.totalPackagesFetched ?? 0}</span></div>
+                <div>Packages Upserted: <span className="font-bold">{changeOrderSyncResponse.totalPackagesUpserted ?? 0}</span></div>
+                <div>No Contract: <span className="font-bold">{changeOrderSyncResponse.projectsSkippedNoPrimeContract ?? 0}</span></div>
+                <div>Skipped (Access): <span className="font-bold">{changeOrderSyncResponse.projectsSkippedAccess ?? 0}</span></div>
+                <div>Errors: <span className="font-bold">{changeOrderSyncResponse.errors?.length ?? 0}</span></div>
+                <div>Warnings: <span className="font-bold">{changeOrderSyncResponse.warnings?.length ?? 0}</span></div>
+              </div>
+
+              {changeOrderSyncResponse.warnings?.length ? (
+                <div className="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 p-3 text-xs font-semibold text-yellow-900">
+                  {changeOrderSyncResponse.warnings.length} warning(s). First: {changeOrderSyncResponse.warnings[0]}
+                </div>
+              ) : null}
+
+              {changeOrderSyncResponse.errors?.length ? (
+                <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                  {changeOrderSyncResponse.errors.length} error(s). First: {changeOrderSyncResponse.errors[0]}
+                </div>
+              ) : null}
+
+              {changeOrderSyncResponse.activeProjects?.length ? (
+                <div className="mt-3">
+                  <div className="text-xs font-black uppercase tracking-widest text-gray-500 mb-2">Projects with Packages</div>
+                  <div className="max-h-60 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1">
+                    {changeOrderSyncResponse.activeProjects.map((p) => (
+                      <div key={p.projectId} className="text-xs text-gray-700 flex gap-4">
+                        <span className="font-bold">{p.projectId}</span>
+                        <span>contract: {p.contractId}</span>
+                        <span>{p.packageCount} fetched / {p.upsertedCount} upserted</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </section>
