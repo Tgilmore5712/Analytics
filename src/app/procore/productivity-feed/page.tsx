@@ -320,6 +320,27 @@ type ProjectBidsLookupResponse = {
   } | null;
 };
 
+type ChangeOrderPackagesResponse = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  source?: string;
+  companyId?: string;
+  projectId?: string;
+  contractId?: string;
+  contractResolutionSource?: string;
+  resolvedContract?: {
+    id?: number | string | null;
+    number?: string | null;
+    title?: string | null;
+    status?: string | null;
+  } | null;
+  page?: number;
+  perPage?: number;
+  count?: number;
+  data?: unknown[];
+};
+
 export default function ProcoreProductivityFeedPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [procoreConnected, setProcoreConnected] = useState(false);
@@ -404,6 +425,12 @@ export default function ProcoreProductivityFeedPage() {
   const [projectBidsLoading, setProjectBidsLoading] = useState(false);
   const [projectBidsError, setProjectBidsError] = useState<string | null>(null);
   const [projectBidsResponse, setProjectBidsResponse] = useState<ProjectBidsLookupResponse | null>(null);
+  const [changeOrderProjectId, setChangeOrderProjectId] = useState("598134326376806");
+  const [changeOrderContractId, setChangeOrderContractId] = useState("");
+  const [changeOrderStatusCsv, setChangeOrderStatusCsv] = useState("");
+  const [changeOrderLoading, setChangeOrderLoading] = useState(false);
+  const [changeOrderError, setChangeOrderError] = useState<string | null>(null);
+  const [changeOrderResponse, setChangeOrderResponse] = useState<ChangeOrderPackagesResponse | null>(null);
   const [budgetLineItemId, setBudgetLineItemId] = useState("");
   const [budgetLineItemProjectId, setBudgetLineItemProjectId] = useState("");
   const [budgetLineItemLoading, setBudgetLineItemLoading] = useState(false);
@@ -723,6 +750,51 @@ export default function ProcoreProductivityFeedPage() {
       setProjectBidsResponse(null);
     } finally {
       setProjectBidsLoading(false);
+    }
+  }
+
+  async function fetchChangeOrderPackages() {
+    const projectId = changeOrderProjectId.trim();
+    if (!projectId) {
+      setChangeOrderError("Enter a Project ID.");
+      setChangeOrderResponse(null);
+      return;
+    }
+
+    setChangeOrderLoading(true);
+    setChangeOrderError(null);
+
+    try {
+      const payload = {
+        companyId: companyId.trim() || undefined,
+        projectId,
+        contractId: changeOrderContractId.trim() || undefined,
+        status: changeOrderStatusCsv.trim() || undefined,
+        page: 1,
+        perPage: 100,
+      };
+
+      const res = await fetch("/api/procore/change-order-packages", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = (await res.json()) as ChangeOrderPackagesResponse;
+      if (!res.ok || !json.success) {
+        setChangeOrderError(json.error || "Failed to fetch change order packages");
+        if (res.status === 401) setProcoreConnected(false);
+        setChangeOrderResponse(json);
+        return;
+      }
+
+      setChangeOrderResponse(json);
+    } catch (err) {
+      setChangeOrderError(err instanceof Error ? err.message : "Unknown error");
+      setChangeOrderResponse(null);
+    } finally {
+      setChangeOrderLoading(false);
     }
   }
 
@@ -1576,6 +1648,100 @@ export default function ProcoreProductivityFeedPage() {
 
               <pre className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[11px] leading-relaxed text-gray-800">
                 {JSON.stringify(projectBidsResponse, null, 2)}
+              </pre>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5 mb-6">
+          <h2 className="text-sm font-black uppercase tracking-widest text-gray-700 mb-4">
+            Change Order Packages
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Company ID
+              <input
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Project ID
+              <input
+                value={changeOrderProjectId}
+                onChange={(e) => setChangeOrderProjectId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Contract ID (optional)
+              <input
+                value={changeOrderContractId}
+                onChange={(e) => setChangeOrderContractId(e.target.value)}
+                placeholder="Leave blank to auto-resolve from prime contracts"
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600">
+              Status Filter CSV (optional)
+              <input
+                value={changeOrderStatusCsv}
+                onChange={(e) => setChangeOrderStatusCsv(e.target.value)}
+                placeholder="open,pending,approved"
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <button
+              onClick={fetchChangeOrderPackages}
+              disabled={changeOrderLoading || checkingAuth || !procoreConnected}
+              className="px-4 py-2 rounded-xl bg-sky-700 text-white font-black text-xs uppercase tracking-widest hover:bg-sky-800 disabled:opacity-50"
+            >
+              {changeOrderLoading ? "Fetching..." : "Fetch Change Order Packages"}
+            </button>
+            <a
+              href={`/api/procore/change-order-packages?projectId=${encodeURIComponent(changeOrderProjectId)}&companyId=${encodeURIComponent(companyId)}${changeOrderContractId.trim() ? `&contractId=${encodeURIComponent(changeOrderContractId.trim())}` : ""}${changeOrderStatusCsv.trim() ? `&status=${encodeURIComponent(changeOrderStatusCsv.trim())}` : ""}&page=1&perPage=100`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-xl border border-sky-300 bg-white text-sky-800 font-black text-xs uppercase tracking-widest hover:bg-sky-50"
+            >
+              Open Raw Endpoint
+            </a>
+          </div>
+
+          {changeOrderError && (
+            <div className="mt-2 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              {changeOrderError}
+            </div>
+          )}
+
+          {changeOrderResponse && (
+            <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                <div>Company: <span className="font-bold">{companyId || "-"}</span></div>
+                <div>Project ID: <span className="font-bold">{changeOrderProjectId || "-"}</span></div>
+                <div>Contract ID: <span className="font-bold">{changeOrderResponse.contractId || "-"}</span></div>
+                <div>Fetched: <span className="font-bold">{changeOrderResponse.count ?? 0}</span></div>
+              </div>
+
+              {changeOrderResponse.contractResolutionSource ? (
+                <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">
+                  Contract source: {changeOrderResponse.contractResolutionSource}
+                  {changeOrderResponse.resolvedContract?.title
+                    ? ` (${changeOrderResponse.resolvedContract.title})`
+                    : ""}
+                </div>
+              ) : null}
+
+              <pre className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[11px] leading-relaxed text-gray-800">
+                {JSON.stringify(changeOrderResponse, null, 2)}
               </pre>
             </div>
           )}
