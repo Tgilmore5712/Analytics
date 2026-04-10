@@ -127,6 +127,8 @@ export async function POST(request: Request) {
 
     const fetchAll = body.fetchAll !== false;
     const persist = body.persist === true;
+    const includeProjectSummaries = body.includeProjectSummaries !== false;
+    const includeLineItems = body.includeLineItems !== false;
     const perPage = Math.min(200, Math.max(1, Number.parseInt(String(body.perPage || "100"), 10) || 100));
     const bidBoardStatusFilter = String(body["filters[by_status]"] || body.bidBoardStatusFilter || "All").trim() || "All";
 
@@ -367,8 +369,8 @@ export async function POST(request: Request) {
             lineItems: lineItems.length,
           },
           persistence,
-          projectSummaries,
-          lineItems,
+          projectSummaries: includeProjectSummaries ? projectSummaries : [],
+          lineItems: includeLineItems ? lineItems : [],
         });
       } catch (error) {
         if (persist && isMissingTableError(error)) {

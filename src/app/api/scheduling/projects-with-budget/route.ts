@@ -8,16 +8,19 @@ type ProjectBudgetRow = {
   projectname: string | null;
   customer: string | null;
   bidboardstatus: string | null;
-  totalquantity: number | null;
   totalamount: number | null;
   lineitemcount: number;
+  uoms: string | null;
   syncedat: string;
 };
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const bidBoardStatus = String(searchParams.get('bidBoardStatus') || 'IN_PROGRESS').trim();
+    const rawBidBoardStatus = searchParams.get('bidBoardStatus');
+    const bidBoardStatus = String(rawBidBoardStatus ?? 'IN_PROGRESS').trim();
+    const bidBoardStatusFilter =
+      !bidBoardStatus || bidBoardStatus.toLowerCase() === 'all' ? null : bidBoardStatus;
     const companyId = String(searchParams.get('companyId') || '598134325658789').trim();
 
     const rows = await prisma.$queryRawUnsafe<ProjectBudgetRow[]>(
@@ -27,16 +30,14 @@ export async function GET(request: NextRequest) {
           s.name AS projectName,
           s.customer AS customer,
           s.bid_board_status AS bidBoardStatus,
-          SUM(COALESCE(b.quantity, 0))::float AS totalQuantity,
           SUM(COALESCE(b.amount, 0))::float AS totalAmount,
           COUNT(DISTINCT b.id)::int AS lineItemCount,
+          STRING_AGG(DISTINCT NULLIF(LOWER(TRIM(COALESCE(b.uom, ''))), ''), ', ' ORDER BY NULLIF(LOWER(TRIM(COALESCE(b.uom, ''))), '')) AS uoms,
           MAX(s.synced_at)::text AS syncedAt
         FROM procore_project_staging s
         LEFT JOIN budgetlineitems b
           ON b.company_id = s.company_id
           AND b.project_id = s.procore_project_id
-          AND LOWER(b.uom) IN ('hours', 'hr', 'hrs')
-          AND LOWER(COALESCE(b.cost_code, '')) NOT IN ('project management.other', '01-300-10-20.o')
         WHERE s.source = 'procore_v1_projects'
           AND s.company_id = $1
           AND s.external_id IS NOT NULL
@@ -46,23 +47,23 @@ export async function GET(request: NextRequest) {
         ORDER BY s.name ASC NULLS LAST
       `,
       companyId,
-      bidBoardStatus || null
+      bidBoardStatusFilter
     );
 
 
     return NextResponse.json({
       success: true,
       count: rows.length,
-      bidBoardStatus: bidBoardStatus || null,
+      bidBoardStatus: bidBoardStatusFilter,
       companyId,
       data: rows.map((row) => ({
         projectId: row.projectid,
         projectName: row.projectname,
         customer: row.customer || '',
         bidBoardStatus: row.bidboardstatus,
-        totalQuantity: row.totalquantity || 0,
         totalAmount: row.totalamount || 0,
         lineItemCount: row.lineitemcount,
+        uoms: row.uoms || '',
         syncedAt: row.syncedat,
       })),
     });

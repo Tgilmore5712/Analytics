@@ -53,6 +53,8 @@ export default function ProcoreProjectsFeedToolsPage() {
       syncCompareIds: "/api/procore/sync/all-projects (POST body: { fetchAll:true, includeInactiveV1:true, includeTestProjects:true, maxPages:1000, debugProjectIds:[...] })",
       primeContracts: "/api/procore/prime-contracts?projectId=YOUR_PROJECT_ID&page=1&perPage=100&persist=true",
       bidBoardProjects: "/api/procore/estimating/bid-board-projects (POST body: { companyId, fetchAll, filters[by_status] })",
+      proposals: "/api/procore/estimating/proposals (POST body: { companyId, bidBoardProjectId, page, perPage })",
+      proposalsBulk: "/api/procore/estimating/proposals-bulk (POST body: { companyId, fetchAll, filters[by_status] })",
       lineItemGroups: "/api/procore/estimating/proposal-line-item-groups (POST body: { companyId, bidBoardProjectId, proposalId, page, perPage })",
       lineItems: "/api/procore/estimating/proposal-line-items (POST body: { companyId, bidBoardProjectId, proposalId, page, perPage })",
       lineItemsBulk: "/api/procore/estimating/proposal-line-items-bulk (POST body: { companyId, fetchAll, filters[by_status] })",
@@ -362,6 +364,32 @@ export default function ProcoreProjectsFeedToolsPage() {
       maxBidBoardProjects: 1000,
       maxProposalsPerProject: 200,
       maxLineItemsPages: 50,
+    });
+  }
+
+  async function runProposalsBulkFetch() {
+    const companyId = bidBoardCompanyId.trim();
+    const byStatus = bidBoardStatusFilter.trim() || "All";
+
+    if (!companyId) {
+      setOutput(
+        toPrettyJson({
+          action: "Fetch Proposals Bulk",
+          ok: false,
+          error: "Company ID is required.",
+        })
+      );
+      setLastStatus("error");
+      return;
+    }
+
+    await runPost("/api/procore/estimating/proposals-bulk", "Fetch Proposals Bulk", {
+      companyId,
+      fetchAll: true,
+      perPage: 100,
+      "filters[by_status]": byStatus,
+      maxBidBoardProjects: 1000,
+      maxProposalsPerProject: 200,
     });
   }
 
@@ -894,10 +922,18 @@ export default function ProcoreProjectsFeedToolsPage() {
 
               <button
                 disabled={isBusy}
+                onClick={runProposalsBulkFetch}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-violet-950 text-white font-black text-xs uppercase tracking-widest hover:bg-black disabled:opacity-50"
+              >
+                {busyAction === "Fetch Proposals Bulk" ? "Running..." : "19) Fetch Proposals Bulk"}
+              </button>
+
+              <button
+                disabled={isBusy}
                 onClick={runProposalLineItemsBulkFetch}
                 className="sm:col-span-2 px-4 py-3 rounded-xl bg-indigo-950 text-white font-black text-xs uppercase tracking-widest hover:bg-black disabled:opacity-50"
               >
-                {busyAction === "Fetch Proposal Line Items Bulk" ? "Running..." : "19) Fetch Proposal Line Items Bulk"}
+                {busyAction === "Fetch Proposal Line Items Bulk" ? "Running..." : "20) Fetch Proposal Line Items Bulk"}
               </button>
             </div>
 
@@ -975,6 +1011,21 @@ export default function ProcoreProjectsFeedToolsPage() {
               </button>
               <button
                 onClick={() => setOutput(toPrettyJson({
+                  action: "Fetch Proposals",
+                  usePost: "/api/procore/estimating/proposals",
+                  payload: {
+                    companyId: "598134325658789",
+                    bidBoardProjectId: "562949955352714",
+                    page: 1,
+                    perPage: 100,
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.proposals}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
                   action: "Fetch Proposal Line Item Groups",
                   usePost: "/api/procore/estimating/proposal-line-item-groups",
                   payload: {
@@ -988,6 +1039,23 @@ export default function ProcoreProjectsFeedToolsPage() {
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
                 {endpointExamples.lineItemGroups}
+              </button>
+              <button
+                onClick={() => setOutput(toPrettyJson({
+                  action: "Fetch Proposals Bulk",
+                  usePost: "/api/procore/estimating/proposals-bulk",
+                  payload: {
+                    companyId: "598134325658789",
+                    fetchAll: true,
+                    perPage: 100,
+                    "filters[by_status]": "All",
+                    maxBidBoardProjects: 1000,
+                    maxProposalsPerProject: 200,
+                  },
+                }))}
+                className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
+              >
+                {endpointExamples.proposalsBulk}
               </button>
               <button
                 onClick={() => setOutput(toPrettyJson({

@@ -1,0 +1,223 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export const dynamic = 'force-dynamic';
+
+type RelationRow = {
+  bidsrelation: string | null;
+  bidformsrelation: string | null;
+  proposalrelation: string | null;
+  bidboardrelation: string | null;
+};
+
+type ProjectRow = {
+  projectid: string;
+  procoreprojectid: string | null;
+  projectname: string | null;
+  customer: string | null;
+  bidboardstatus: string | null;
+  bidboardid: string | null;
+};
+
+type BidAggRow = {
+  projectid: string;
+  bidcount: number;
+  bidstatuses: string | null;
+  latestbidat: string | null;
+};
+
+type BidFormAggRow = {
+  projectid: string;
+  bidformcount: number;
+  bidpackagecount: number;
+  bidformstatuses: string | null;
+  latestbidformat: string | null;
+};
+
+type EstimateAggRow = {
+  projectid: string;
+  estimateproposalcount: number;
+  estimatelineitemcount: number;
+  estimateproposalnames: string | null;
+  latestestimateat: string | null;
+};
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const rawBidBoardStatus = searchParams.get('bidBoardStatus');
+    const bidBoardStatus = String(rawBidBoardStatus ?? 'IN_PROGRESS').trim();
+    const bidBoardStatusFilter =
+      !bidBoardStatus || bidBoardStatus.toLowerCase() === 'all' ? null : bidBoardStatus;
+    const companyId = String(searchParams.get('companyId') || '598134325658789').trim();
+
+    const relationRows = await prisma.$queryRawUnsafe<RelationRow[]>(`
+      SELECT
+        to_regclass('public.bids')::text AS bidsRelation,
+        to_regclass('public.bidforms')::text AS bidformsRelation,
+        to_regclass('public.procore_proposal_line_items_live')::text AS proposalRelation,
+        to_regclass('public.procore_bid_board_live')::text AS bidBoardRelation
+    `);
+
+    const relations = relationRows[0];
+    const hasBids = Boolean(relations?.bidsrelation);
+    const hasBidForms = Boolean(relations?.bidformsrelation);
+    const hasProposalLineItems = Boolean(relations?.proposalrelation);
+    const hasBidBoardLive = Boolean(relations?.bidboardrelation);
+
+    const projectRows = await prisma.$queryRawUnsafe<ProjectRow[]>(
+      `
+        SELECT
+          s.external_id AS projectId,
+          s.procore_project_id AS procoreProjectId,
+          s.name AS projectName,
+          s.customer AS customer,
+          s.bid_board_status AS bidBoardStatus,
+          bb.bid_board_id AS bidBoardId
+        FROM procore_project_staging s
+        LEFT JOIN LATERAL (
+          SELECT b.bid_board_id
+          FROM procore_bid_board_live b
+          WHERE b.company_id = s.company_id
+            AND (b.procore_project_id = s.procore_project_id OR b.procore_project_id = s.external_id)
+          ORDER BY b.synced_at DESC
+          LIMIT 1
+        ) bb ON TRUE
+        WHERE s.source = 'procore_v1_projects'
+          AND s.company_id = $1
+          AND s.external_id IS NOT NULL
+          AND s.name IS NOT NULL
+          AND ($2::text IS NULL OR s.bid_board_status = $2::text)
+        ORDER BY s.name ASC NULLS LAST
+      `,
+      companyId,
+      bidBoardStatusFilter
+    );
+
+    const bidAggMap = new Map<string, BidAggRow>();
+    if (hasBids) {
+      const bidRows = await prisma.$queryRawUnsafe<BidAggRow[]>(
+        `
+          SELECT
+            project_id AS projectId,
+            COUNT(DISTINCT bid_id)::int AS bidCount,
+            STRING_AGG(
+              DISTINCT NULLIF(TRIM(COALESCE(status, '')), ''),
+              ', '
+              ORDER BY NULLIF(TRIM(COALESCE(status, '')), '')
+            ) AS bidStatuses,
+            MAX(synced_at)::text AS latestBidAt
+          FROM bids
+          WHERE company_id = $1
+          GROUP BY project_id
+        `,
+        companyId
+      );
+
+      for (const row of bidRows) {
+        bidAggMap.set(row.projectid, row);
+      }
+    }
+
+    const bidFormAggMap = new Map<string, BidFormAggRow>();
+    if (hasBidForms) {
+      const bidFormRows = await prisma.$queryRawUnsafe<BidFormAggRow[]>(
+        `
+          SELECT
+            project_id AS projectId,
+            COUNT(DISTINCT bid_form_id)::int AS bidFormCount,
+            COUNT(DISTINCT bid_package_id)::int AS bidPackageCount,
+            STRING_AGG(
+              DISTINCT NULLIF(TRIM(COALESCE(status, '')), ''),
+              ', '
+              ORDER BY NULLIF(TRIM(COALESCE(status, '')), '')
+            ) AS bidFormStatuses,
+            MAX(synced_at)::text AS latestBidFormAt
+          FROM bidforms
+          WHERE company_id = $1
+          GROUP BY project_id
+        `,
+        companyId
+      );
+
+      for (const row of bidFormRows) {
+        bidFormAggMap.set(row.projectid, row);
+      }
+    }
+
+    const estimateAggMap = new Map<string, EstimateAggRow>();
+    if (hasProposalLineItems && hasBidBoardLive) {
+      const estimateRows = await prisma.$queryRawUnsafe<EstimateAggRow[]>(
+        `
+          SELECT
+            b.procore_project_id AS projectId,
+            COUNT(DISTINCT p.proposal_id)::int AS estimateProposalCount,
+            COUNT(*)::int AS estimateLineItemCount,
+            STRING_AGG(
+              DISTINCT NULLIF(TRIM(COALESCE(p.proposal_name, '')), ''),
+              ', '
+              ORDER BY NULLIF(TRIM(COALESCE(p.proposal_name, '')), '')
+            ) AS estimateProposalNames,
+            MAX(p.synced_at)::text AS latestEstimateAt
+          FROM procore_proposal_line_items_live p
+          JOIN procore_bid_board_live b
+            ON b.company_id = p.company_id
+            AND b.bid_board_id = p.bid_board_project_id
+          WHERE p.company_id = $1
+            AND b.procore_project_id IS NOT NULL
+          GROUP BY b.procore_project_id
+        `,
+        companyId
+      );
+
+      for (const row of estimateRows) {
+        estimateAggMap.set(row.projectid, row);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      count: projectRows.length,
+      bidBoardStatus: bidBoardStatusFilter,
+      companyId,
+      sources: {
+        bids: hasBids,
+        bidforms: hasBidForms,
+        proposalLineItems: hasProposalLineItems,
+        bidBoardLive: hasBidBoardLive,
+      },
+      data: projectRows.map((row) => {
+        const projectKey = row.procoreprojectid || row.projectid;
+        const bidAgg = bidAggMap.get(projectKey) || bidAggMap.get(row.projectid);
+        const bidFormAgg = bidFormAggMap.get(projectKey) || bidFormAggMap.get(row.projectid);
+        const estimateAgg = estimateAggMap.get(projectKey) || estimateAggMap.get(row.projectid);
+
+        return {
+          projectId: row.projectid,
+          procoreProjectId: row.procoreprojectid,
+          bidBoardId: row.bidboardid,
+          projectName: row.projectname,
+          customer: row.customer || '',
+          bidBoardStatus: row.bidboardstatus,
+          bidCount: bidAgg?.bidcount || 0,
+          bidStatuses: bidAgg?.bidstatuses || '',
+          latestBidAt: bidAgg?.latestbidat || null,
+          bidFormCount: bidFormAgg?.bidformcount || 0,
+          bidPackageCount: bidFormAgg?.bidpackagecount || 0,
+          bidFormStatuses: bidFormAgg?.bidformstatuses || '',
+          latestBidFormAt: bidFormAgg?.latestbidformat || null,
+          estimateProposalCount: estimateAgg?.estimateproposalcount || 0,
+          estimateLineItemCount: estimateAgg?.estimatelineitemcount || 0,
+          estimateProposalNames: estimateAgg?.estimateproposalnames || '',
+          latestEstimateAt: estimateAgg?.latestestimateat || null,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error('Failed to fetch projects with estimates/bids:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch projects with estimates/bids' },
+      { status: 500 }
+    );
+  }
+}
