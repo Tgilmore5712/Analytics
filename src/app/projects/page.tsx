@@ -472,22 +472,67 @@ export default function ProjectsPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/procore/sync/project-commercial-data", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      async function runStep(path: string, payload: Record<string, unknown>, label: string) {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            (body as { error?: string; details?: string })?.error ||
+              (body as { details?: string })?.details ||
+              `${label} failed with ${response.status}`
+          );
+        }
+
+        return body;
+      }
+
+      await runStep(
+        "/api/procore/sync/bids",
+        {
+          companyWide: true,
           companyId: DEFAULT_PROCORE_COMPANY_ID,
+          fetchAll: true,
           limitProjects: 1000,
           perPage: 100,
-        }),
-      });
+        },
+        "Bids sync"
+      );
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok && response.status !== 207) {
-        throw new Error(payload?.error || `Commercial sync failed with ${response.status}`);
-      }
+      await runStep(
+        "/api/procore/sync/bidforms",
+        {
+          companyWide: true,
+          companyId: DEFAULT_PROCORE_COMPANY_ID,
+          fetchAll: true,
+          limitProjects: 1000,
+          perPage: 100,
+        },
+        "Bid forms sync"
+      );
+
+      await runStep(
+        "/api/procore/estimating/proposal-line-items-bulk",
+        {
+          companyId: DEFAULT_PROCORE_COMPANY_ID,
+          fetchAll: true,
+          persist: true,
+          includeProjectSummaries: false,
+          includeLineItems: false,
+          perPage: 100,
+          "filters[by_status]": "All",
+          maxBidBoardProjects: 1000,
+          maxProposalsPerProject: 200,
+          maxLineItemsPages: 50,
+        },
+        "Estimate line items sync"
+      );
 
       await loadProjects();
     } catch (err) {

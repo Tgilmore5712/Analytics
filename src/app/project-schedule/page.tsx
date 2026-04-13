@@ -768,9 +768,10 @@ export default function ProjectSchedulePage() {
               const scopes = project.scopes || [];
               const isCollapsed = collapsedProjects.has(project.id);
               const projectAllocations = project.scheduleAllocations || [];
+              const visibleScopeHours = scopes.reduce((sum, scope) => sum + Number(scope.totalHours || 0), 0);
               const projectTotalHours =
-                project.scopedHours > 0
-                  ? project.scopedHours
+                scopes.length > 0
+                  ? visibleScopeHours
                   : projectAllocations.reduce((sum, alloc) => sum + Number(alloc.hours || 0), 0);
               return (
                 <React.Fragment key={project.id}>

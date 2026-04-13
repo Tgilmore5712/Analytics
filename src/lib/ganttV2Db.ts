@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { shouldFallbackToEmptyRead } from '@/lib/dbResilience';
+import { getClientCredentialsToken, makeRequest, procoreConfig } from '@/lib/procore';
 
 export type GanttV2ProjectRow = {
   id: string;
@@ -23,7 +24,7 @@ export type GanttV2ScopeRow = {
   totalHours: number;
   crewSize: number | null;
   notes: string | null;
-  tasks?: string[];
+  tasks?: Array<string | { [key: string]: unknown }>;
   color?: string; // Hex color code for scope
   taskColors?: Record<string, string>; // Map of task names to color codes
   scheduledHours: number;
@@ -63,6 +64,63 @@ export type GanttV2ProjectWithScopes = {
     period: string; // "2026-03" for months
     hours: number;
   }>;
+};
+
+type ProjectRecord = {
+  id: string;
+  customer: string | null;
+  projectNumber: string | null;
+  projectName: string;
+};
+
+type ContractRecord = {
+  id: string;
+  title: string | null;
+  number: string | null;
+  status: string | null;
+  projectId: string | null;
+  procoreProjectId: string | null;
+};
+
+type ProcoreProjectFeedRecord = {
+  externalId: string;
+  procoreId: string | null;
+  customer: string | null;
+  projectName: string;
+  projectNumber: string | null;
+  linkedProjectId: string | null;
+};
+
+type CommercialSource = {
+  id: string;
+  title: string;
+  number: string | null;
+};
+
+type EstimateLineItemRecord = {
+  bid_board_project_id: string;
+  proposal_id: string;
+  project_name: string | null;
+  customer_name: string | null;
+  proposal_name: string | null;
+  payload: Record<string, unknown> | null;
+  synced_at: Date | string | null;
+};
+
+type EstimateGroupRecord = {
+  id: string;
+  title: string;
+};
+
+type EstimateGroupHours = {
+  groupId: string;
+  title: string;
+  hours: number;
+};
+
+type GanttProjectsOptions = {
+  procoreAccessToken?: string | null;
+  procoreCompanyId?: string | null;
 };
 
 const formatMonthKey = (date: Date) =>
@@ -200,12 +258,268 @@ export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
   }
 }
 
-export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWithScopes[]> {
+export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions = {}): Promise<GanttV2ProjectWithScopes[]> {
   const normalizeIdentity = (value: string | null | undefined) =>
     (value || '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
+
+  const makeIdentity = (customer: string | null | undefined, projectName: string | null | undefined) =>
+    `${normalizeIdentity(customer)}||${normalizeIdentity(projectName)}`;
+
+  const alphaCore = (value: unknown) =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/\b\d+(?:[.,]\d+)?\b/g, ' ')
+      .replace(/\b(?:sq|sf|lf|ln|ft|inch|in|x|co|no|billing|file|budgeted|non|help|and|with)\b/g, ' ')
+      .replace(/[^a-z]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const normalizeToken = (value: string) => {
+    let token = value.trim().toLowerCase();
+    if (!token) return '';
+
+    if (token === 'sog') {
+      return 'slab';
+    }
+
+    if (token.endsWith('ies') && token.length > 4) {
+      token = `${token.slice(0, -3)}y`;
+    } else if (token.endsWith('ed') && token.length > 5) {
+      token = token.slice(0, -2);
+    } else if (token.endsWith('s') && token.length > 4) {
+      token = token.slice(0, -1);
+    }
+    return token;
+  };
+
+  const tokenize = (value: unknown) =>
+    new Set(
+      alphaCore(value)
+        .split(' ')
+        .map((token) => normalizeToken(token))
+        .filter((token) => token.length >= 3)
+    );
+
+  const anchorTokens = new Set([
+    'sidewalk',
+    'footer',
+    'footing',
+    'foundation',
+    'slab',
+    'paver',
+    'porch',
+    'curb',
+    'wall',
+    'pier',
+    'bollard',
+    'stair',
+    'step',
+    'deck',
+    'ramp',
+    'pit',
+    'apron',
+  ]);
+
+  const extractNumericTokens = (value: unknown) =>
+    new Set(
+      Array.from(String(value || '').matchAll(/\d+(?:[.,]\d+)?/g)).map((match) =>
+        String(match[0] || '').replace(/[.,]/g, '')
+      )
+    );
+
+  const compareTitles = (scopeTitle: string, candidateTitle: string): number => {
+    const scopeNorm = normalizeIdentity(scopeTitle);
+    const candidateNorm = normalizeIdentity(candidateTitle);
+    if (!scopeNorm || !candidateNorm) return 0;
+    if (scopeNorm === candidateNorm) return 100;
+
+    const scopeCore = alphaCore(scopeTitle);
+    const candidateCore = alphaCore(candidateTitle);
+    if (scopeCore && candidateCore && scopeCore === candidateCore) return 90;
+    if (scopeCore && candidateCore && (scopeCore.includes(candidateCore) || candidateCore.includes(scopeCore))) {
+      return 75;
+    }
+
+    const scopeTokens = tokenize(scopeTitle);
+    const candidateTokens = tokenize(candidateTitle);
+    if (scopeTokens.size === 0 || candidateTokens.size === 0) return 0;
+    const scopeNumbers = extractNumericTokens(scopeTitle);
+    const candidateNumbers = extractNumericTokens(candidateTitle);
+
+    let overlap = 0;
+    const sharedTokens: string[] = [];
+    for (const token of scopeTokens) {
+      if (candidateTokens.has(token)) {
+        overlap += 1;
+        sharedTokens.push(token);
+      }
+    }
+    if (overlap === 0) return 0;
+
+    const sharedNumberCount = Array.from(scopeNumbers).filter((token) => candidateNumbers.has(token)).length;
+    const hasSharedAnchor = sharedTokens.some((token) => anchorTokens.has(token));
+
+    if (scopeNumbers.size > 0 && candidateNumbers.size > 0 && sharedNumberCount === 0 && hasSharedAnchor && overlap <= 1) {
+      return 0;
+    }
+
+    const jaccard = overlap / new Set([...scopeTokens, ...candidateTokens]).size;
+    if (overlap >= 2 || jaccard >= 0.5) {
+      const boosted = Math.round(55 + jaccard * 20 + sharedNumberCount * 10);
+      return Math.min(boosted, 98);
+    }
+
+    if (sharedTokens.some((token) => anchorTokens.has(token))) {
+      return Math.min(50 + sharedNumberCount * 10, 70);
+    }
+
+    return 0;
+  };
+
+  const resolveContractIdentity = (
+    row: ContractRecord,
+    projectById: Map<string, ProjectRecord>,
+    feedByExternalId: Map<string, ProcoreProjectFeedRecord>,
+    feedByProcoreId: Map<string, ProcoreProjectFeedRecord>
+  ) => {
+    const directProject = row.projectId ? projectById.get(row.projectId) : null;
+    const externalFeed = row.procoreProjectId ? feedByExternalId.get(row.procoreProjectId) : null;
+    const procoreFeed = row.procoreProjectId ? feedByProcoreId.get(row.procoreProjectId) : null;
+    const feed = externalFeed || procoreFeed || null;
+    const linkedProject = feed?.linkedProjectId ? projectById.get(feed.linkedProjectId) : null;
+
+    return makeIdentity(
+      directProject?.customer || linkedProject?.customer || feed?.customer,
+      directProject?.projectName || linkedProject?.projectName || feed?.projectName
+    );
+  };
+
+  const isIgnorableCommercialTitle = (value: string) => {
+    const normalized = normalizeIdentity(value);
+    if (!normalized) return true;
+    return normalized.includes('billing file');
+  };
+
+  const normalizeLegacyTasks = (value: unknown): Array<string | { [key: string]: unknown }> => {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const trimmed = entry.trim();
+          return trimmed ? trimmed : null;
+        }
+
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          return null;
+        }
+
+        const row = entry as Record<string, unknown>;
+        const name = String(row.name || '').trim();
+        if (!name) return null;
+
+        return row;
+      })
+      .filter((entry): entry is string | { [key: string]: unknown } => Boolean(entry));
+  };
+
+  const asObject = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+  const asArray = (value: unknown): unknown[] => {
+    if (Array.isArray(value)) return value;
+    if (!value || typeof value !== 'object') return [];
+
+    const record = value as Record<string, unknown>;
+    const candidates = [record.data, record.line_item_groups, record.groups];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) return candidate;
+    }
+    return [];
+  };
+
+  const toNumber = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const getEstimateUomFromPayload = (payload: Record<string, unknown> | null | undefined) => {
+    const record = payload || {};
+    const costItem = asObject(record.cost_item);
+    return String(costItem?.unit || record.type || '')
+      .trim()
+      .toUpperCase();
+  };
+
+  const getLaborHoursFromPayload = (payload: Record<string, unknown> | null | undefined) => {
+    const record = payload || {};
+    const count = toNumber(record.count);
+    const uom = getEstimateUomFromPayload(record);
+
+    if (count <= 0) return 0;
+    if (!['HOUR', 'HOURS', 'HR', 'HRS'].includes(uom)) return 0;
+
+    return count;
+  };
+
+  const normalizeGroupRecord = (value: unknown): EstimateGroupRecord | null => {
+    const record = asObject(value);
+    if (!record) return null;
+    const id = String(record.id || record.group_id || '').trim();
+    const title = String(record.name || record.title || record.description || '').trim();
+    if (!id || !title) return null;
+    return { id, title };
+  };
+
+  const getEstimateAccessToken = async () => {
+    const directToken = String(options.procoreAccessToken || '').trim();
+    if (directToken) return directToken;
+
+    if (procoreConfig.clientId && procoreConfig.clientSecret) {
+      try {
+        return await getClientCredentialsToken();
+      } catch (error) {
+        console.warn('Unable to get client-credentials token for estimate group fetch:', error);
+      }
+    }
+
+    return '';
+  };
+
+  const fetchEstimateGroups = async (params: {
+    accessToken: string;
+    companyId: string;
+    bidBoardProjectId: string;
+    proposalId: string;
+  }): Promise<EstimateGroupRecord[]> => {
+    const { accessToken, companyId, bidBoardProjectId, proposalId } = params;
+    const groups: EstimateGroupRecord[] = [];
+    let page = 1;
+    const perPage = 200;
+
+    while (true) {
+      const payload = await makeRequest(
+        `/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/bid_board_projects/${encodeURIComponent(
+          bidBoardProjectId
+        )}/proposals/${encodeURIComponent(proposalId)}/line_item_groups?page=${page}&per_page=${perPage}`,
+        accessToken,
+        { method: 'GET' },
+        companyId,
+        [404]
+      );
+
+      const pageItems = asArray(payload).map(normalizeGroupRecord).filter((row): row is EstimateGroupRecord => Boolean(row));
+      if (pageItems.length === 0) break;
+      groups.push(...pageItems);
+      if (pageItems.length < perPage) break;
+      page += 1;
+    }
+
+    return groups;
+  };
 
   const toSqlDate = (value: unknown): string | null => {
     if (!value) return null;
@@ -225,6 +539,96 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
 
   // First get all projects with summary info
   const projects = await getGanttV2Projects();
+  const [projectRecords, purchaseOrderContracts, commitmentContracts, procoreProjectFeed] = await Promise.all([
+    prisma.project.findMany({
+      select: {
+        id: true,
+        customer: true,
+        projectNumber: true,
+        projectName: true,
+      },
+    }) as Promise<ProjectRecord[]>,
+    prisma.purchaseOrderContract.findMany({
+      select: {
+        id: true,
+        title: true,
+        number: true,
+        status: true,
+        projectId: true,
+        procoreProjectId: true,
+      },
+    }) as Promise<ContractRecord[]>,
+    prisma.commitmentContract.findMany({
+      select: {
+        id: true,
+        title: true,
+        number: true,
+        status: true,
+        projectId: true,
+        procoreProjectId: true,
+      },
+    }) as Promise<ContractRecord[]>,
+    prisma.procoreProjectFeed.findMany({
+      where: {
+        syncSource: 'procore_v1_projects',
+        softDeleted: false,
+      },
+      select: {
+        externalId: true,
+        procoreId: true,
+        customer: true,
+        projectName: true,
+        projectNumber: true,
+        linkedProjectId: true,
+      },
+    }) as Promise<ProcoreProjectFeedRecord[]>,
+  ]);
+
+  const projectById = new Map(projectRecords.map((project) => [project.id, project]));
+  const feedByExternalId = new Map(
+    procoreProjectFeed.filter((row) => row.externalId).map((row) => [row.externalId, row])
+  );
+  const feedByProcoreId = new Map(
+    procoreProjectFeed.filter((row) => row.procoreId).map((row) => [row.procoreId as string, row])
+  );
+
+  const poTitlesByIdentity = new Map<string, CommercialSource[]>();
+  for (const row of purchaseOrderContracts) {
+    const title = String(row.title || '').trim();
+    if (!title || isIgnorableCommercialTitle(title)) continue;
+    const identity = resolveContractIdentity(row, projectById, feedByExternalId, feedByProcoreId);
+    if (!identity || identity === '||') continue;
+    const bucket = poTitlesByIdentity.get(identity) || [];
+    bucket.push({
+      id: row.id,
+      title,
+      number: row.number,
+    });
+    poTitlesByIdentity.set(identity, bucket);
+  }
+  for (const [identity, rows] of poTitlesByIdentity.entries()) {
+    rows.sort((a, b) => String(a.number || '').localeCompare(String(b.number || '')) || a.title.localeCompare(b.title));
+    poTitlesByIdentity.set(identity, rows);
+  }
+
+  const commitmentTitlesByIdentity = new Map<string, CommercialSource[]>();
+  for (const row of commitmentContracts) {
+    const title = String(row.title || '').trim();
+    if (!title || isIgnorableCommercialTitle(title)) continue;
+    const identity = resolveContractIdentity(row, projectById, feedByExternalId, feedByProcoreId);
+    if (!identity || identity === '||') continue;
+    const bucket = commitmentTitlesByIdentity.get(identity) || [];
+    bucket.push({
+      id: row.id,
+      title,
+      number: row.number,
+    });
+    commitmentTitlesByIdentity.set(identity, bucket);
+  }
+  for (const [identity, rows] of commitmentTitlesByIdentity.entries()) {
+    rows.sort((a, b) => String(a.number || '').localeCompare(String(b.number || '')) || a.title.localeCompare(b.title));
+    commitmentTitlesByIdentity.set(identity, rows);
+  }
 
   // Legacy source of scopes used by short-term and prior schedule flows.
   let legacyScopes: Array<{
@@ -274,6 +678,7 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
   }
 
   const legacyScopesByIdentity = new Map<string, typeof legacyScopes>();
+  const protectedIdentityKeys = new Set<string>();
   for (const scope of legacyScopes) {
     const [customer = '', , projectName = ''] = String(scope.jobKey || '').split('~');
     const key = `${normalizeIdentity(customer)}||${normalizeIdentity(projectName)}`;
@@ -281,6 +686,123 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
     const rows = legacyScopesByIdentity.get(key) || [];
     rows.push(scope);
     legacyScopesByIdentity.set(key, rows);
+
+    if (normalizeLegacyTasks(scope.tasks).length > 0) {
+      protectedIdentityKeys.add(key);
+    }
+  }
+
+  const nonProtectedIdentityKeys = new Set(
+    projects
+      .map((project) => makeIdentity(project.customer, project.projectName))
+      .filter((identity) => identity && identity !== '||' && !protectedIdentityKeys.has(identity))
+  );
+
+  const estimateRows = await prisma.$queryRawUnsafe<EstimateLineItemRecord[]>(`
+    SELECT
+      bid_board_project_id,
+      proposal_id,
+      project_name,
+      customer_name,
+      proposal_name,
+      payload,
+      synced_at
+    FROM procore_proposal_line_items_live
+  `);
+
+  const estimateRowsByIdentity = new Map<string, EstimateLineItemRecord[]>();
+  for (const row of estimateRows) {
+    const identity = makeIdentity(row.customer_name, row.project_name);
+    if (!identity || identity === '||' || !nonProtectedIdentityKeys.has(identity)) continue;
+    const bucket = estimateRowsByIdentity.get(identity) || [];
+    bucket.push(row);
+    estimateRowsByIdentity.set(identity, bucket);
+  }
+
+  const estimateHoursByIdentity = new Map<string, EstimateGroupHours[]>();
+  const estimateAccessToken = await getEstimateAccessToken();
+  const estimateCompanyId = String(options.procoreCompanyId || procoreConfig.companyId || '').trim();
+
+  if (estimateAccessToken && estimateCompanyId) {
+    const proposalSelections = Array.from(estimateRowsByIdentity.entries())
+      .map(([identity, rows]) => {
+        const proposalGroups = new Map<
+          string,
+          {
+            bidBoardProjectId: string;
+            proposalId: string;
+            proposalName: string;
+            lineItemCount: number;
+            latestSyncedAt: number;
+            rows: EstimateLineItemRecord[];
+          }
+        >();
+
+        for (const row of rows) {
+          const key = `${row.bid_board_project_id}||${row.proposal_id}`;
+          const existing = proposalGroups.get(key) || {
+            bidBoardProjectId: row.bid_board_project_id,
+            proposalId: row.proposal_id,
+            proposalName: String(row.proposal_name || '').trim(),
+            lineItemCount: 0,
+            latestSyncedAt: 0,
+            rows: [],
+          };
+          existing.lineItemCount += 1;
+          existing.latestSyncedAt = Math.max(
+            existing.latestSyncedAt,
+            row.synced_at ? new Date(row.synced_at).getTime() : 0
+          );
+          existing.rows.push(row);
+          proposalGroups.set(key, existing);
+        }
+
+        const selected = Array.from(proposalGroups.values()).sort((a, b) => {
+          const aOriginal = normalizeIdentity(a.proposalName) === 'original estimate' ? 1 : 0;
+          const bOriginal = normalizeIdentity(b.proposalName) === 'original estimate' ? 1 : 0;
+          return bOriginal - aOriginal || b.lineItemCount - a.lineItemCount || b.latestSyncedAt - a.latestSyncedAt;
+        })[0];
+
+        if (!selected) return null;
+        return { identity, selected };
+      })
+      .filter((row): row is { identity: string; selected: { bidBoardProjectId: string; proposalId: string; proposalName: string; lineItemCount: number; latestSyncedAt: number; rows: EstimateLineItemRecord[] } } => Boolean(row));
+
+    await Promise.all(
+      proposalSelections.map(async ({ identity, selected }) => {
+        try {
+          const groups = await fetchEstimateGroups({
+            accessToken: estimateAccessToken,
+            companyId: estimateCompanyId,
+            bidBoardProjectId: selected.bidBoardProjectId,
+            proposalId: selected.proposalId,
+          });
+          const titleByGroupId = new Map(groups.map((group) => [group.id, group.title]));
+          const hoursByGroupId = new Map<string, number>();
+
+          for (const row of selected.rows) {
+            const payload = asObject(row.payload);
+            const groupId = String(payload?.group_id || '').trim();
+            if (!groupId) continue;
+            const laborHours = getLaborHoursFromPayload(payload);
+            if (laborHours <= 0) continue;
+            hoursByGroupId.set(groupId, (hoursByGroupId.get(groupId) || 0) + laborHours);
+          }
+
+          const normalized = Array.from(hoursByGroupId.entries())
+            .map(([groupId, hours]) => ({
+              groupId,
+              title: String(titleByGroupId.get(groupId) || '').trim(),
+              hours,
+            }))
+            .filter((row) => row.title && row.hours > 0);
+
+          estimateHoursByIdentity.set(identity, normalized);
+        } catch (error) {
+          console.warn('Unable to fetch estimate group titles for project identity:', identity, error);
+        }
+      })
+    );
   }
   
   // For each project, fetch its scopes and schedule allocations
@@ -290,8 +812,15 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
 
       const projectIdentityKey = `${normalizeIdentity(project.customer)}||${normalizeIdentity(project.projectName)}`;
       const legacyForProject = legacyScopesByIdentity.get(projectIdentityKey) || [];
+      const isProtectedLegacyProject = protectedIdentityKeys.has(projectIdentityKey);
+      const canonicalCommercialTitles = (() => {
+        const poTitles = poTitlesByIdentity.get(projectIdentityKey) || [];
+        if (poTitles.length > 0) return poTitles;
+        return commitmentTitlesByIdentity.get(projectIdentityKey) || [];
+      })();
+      const estimateGroupHours = estimateHoursByIdentity.get(projectIdentityKey) || [];
 
-      if (legacyForProject.length > 0) {
+      if (isProtectedLegacyProject && legacyForProject.length > 0) {
         const existingTitles = new Set(scopes.map((scope) => normalizeIdentity(scope.title)));
         let insertedLegacyScope = false;
 
@@ -455,14 +984,14 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
       const normalizeTitle = (value: string | null | undefined) =>
         normalizeIdentity(value || '');
 
-      const parseLegacyTasks = (value: unknown): string[] => {
-        if (!Array.isArray(value)) return [];
-        return value
-          .map((item) => (typeof item === 'string' ? item.trim() : ''))
-          .filter((item) => item.length > 0);
-      };
-
       const scopesWithTasks = scopes.map((scope) => {
+        if (!isProtectedLegacyProject) {
+          return {
+            ...scope,
+            tasks: [],
+          };
+        }
+
         const scopeStart = toSqlDate(scope.startDate);
         const scopeEnd = toSqlDate(scope.endDate);
 
@@ -479,19 +1008,127 @@ export async function getGanttV2ProjectsWithScopes(): Promise<GanttV2ProjectWith
           : null;
 
         const matchedLegacy = exactMatch || titleOnlyMatch;
-        const tasks = matchedLegacy ? parseLegacyTasks(matchedLegacy.tasks) : [];
+        const tasks = matchedLegacy ? normalizeLegacyTasks(matchedLegacy.tasks) : [];
 
         return {
           ...scope,
           tasks,
         };
       });
+
+      const canonicalScopes =
+        !isProtectedLegacyProject && canonicalCommercialTitles.length > 0
+          ? (() => {
+              const groups = new Map<
+                string,
+                {
+                  source: CommercialSource;
+                  members: typeof scopesWithTasks;
+                }
+              >();
+              const unmatchedScopes: typeof scopesWithTasks = [];
+
+              for (const scope of scopesWithTasks) {
+                let bestSource: CommercialSource | null = null;
+                let bestScore = 0;
+
+                for (const source of canonicalCommercialTitles) {
+                  const score = compareTitles(scope.title, source.title);
+                  if (score > bestScore) {
+                    bestScore = score;
+                    bestSource = source;
+                  }
+                }
+
+                if (!bestSource || bestScore <= 0) {
+                  unmatchedScopes.push(scope);
+                  continue;
+                }
+
+                const bucket = groups.get(bestSource.id) || { source: bestSource, members: [] };
+                bucket.members.push(scope);
+                groups.set(bestSource.id, bucket);
+              }
+
+              const merged = canonicalCommercialTitles
+                .map((source) => {
+                  const group = groups.get(source.id);
+                  const members = group?.members || [];
+                  const datedMembers = members.filter((scope) => scope.startDate || scope.endDate);
+                  const startDates = datedMembers
+                    .map((scope) => scope.startDate)
+                    .filter((value): value is string => Boolean(value))
+                    .sort();
+                  const endDates = datedMembers
+                    .map((scope) => scope.endDate)
+                    .filter((value): value is string => Boolean(value))
+                    .sort();
+
+                  const totalHours = members.reduce((sum, scope) => sum + Number(scope.totalHours || 0), 0);
+                  const scheduledHours = members.reduce((sum, scope) => sum + Number(scope.scheduledHours || 0), 0);
+                  const remainingHours = members.reduce((sum, scope) => sum + Number(scope.remainingHours || 0), 0);
+                  const crewSizes = members
+                    .map((scope) => scope.crewSize)
+                    .filter((value): value is number => value !== null && value !== undefined);
+                  const sourceNotes = members
+                    .map((scope) => String(scope.title || '').trim())
+                    .filter(Boolean);
+
+                  return {
+                    id: source.id,
+                    projectId: project.id,
+                    predecessorScopeId: null,
+                    title: source.title,
+                    startDate: startDates[0] || null,
+                    endDate: endDates[endDates.length - 1] || null,
+                    totalHours,
+                    crewSize: crewSizes.length > 0 ? Math.max(...crewSizes) : null,
+                    notes:
+                      sourceNotes.length > 0
+                        ? sourceNotes.some((title) => normalizeIdentity(title) !== normalizeIdentity(source.title))
+                          ? `Mapped from: ${sourceNotes.join(' | ')}`
+                          : null
+                        : 'No matched scope hours yet',
+                    scheduledHours,
+                    remainingHours,
+                    tasks: [],
+                  } satisfies GanttV2ScopeRow;
+                })
+                .filter((scope): scope is GanttV2ScopeRow => Boolean(scope));
+
+              return merged.length > 0 ? merged : unmatchedScopes;
+            })()
+          : scopesWithTasks;
+
+      const displayScopes = isProtectedLegacyProject
+        ? canonicalScopes
+        : canonicalScopes.map((scope) => {
+            const bestEstimate = estimateGroupHours
+              .map((group) => ({
+                ...group,
+                score: compareTitles(scope.title, group.title),
+              }))
+              .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))[0];
+
+            const estimateHours = bestEstimate && bestEstimate.score > 0 ? Number(bestEstimate.hours || 0) : 0;
+
+            return {
+              ...scope,
+              totalHours: estimateHours,
+              scheduledHours: 0,
+              remainingHours: estimateHours,
+              notes:
+                estimateHours > 0
+                  ? `Estimate hours from: ${bestEstimate.title}`
+                  : scope.notes,
+            };
+          });
       
       return {
         ...project,
-        scopeCount: scopesWithTasks.length,
-        scopedHours: effectiveScopedHours,
-        scopes: scopesWithTasks,
+        scopeCount: displayScopes.length,
+        scopedHours: isProtectedLegacyProject ? effectiveScopedHours : displayScopes.reduce((sum, scope) => sum + Number(scope.totalHours || 0), 0),
+        scopes: displayScopes,
         scheduleAllocations,
       };
     })

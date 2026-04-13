@@ -146,26 +146,62 @@ export async function GET(request: NextRequest) {
     }
 
     const estimateAggMap = new Map<string, EstimateAggRow>();
-    if (hasProposalLineItems && hasBidBoardLive) {
+    if (hasProposalLineItems) {
       const estimateRows = await prisma.$queryRawUnsafe<EstimateAggRow[]>(
         `
+          WITH bid_board_match AS (
+            SELECT
+              b.procore_project_id AS project_id,
+              p.proposal_id,
+              p.proposal_name,
+              p.synced_at
+            FROM procore_proposal_line_items_live p
+            JOIN procore_bid_board_live b
+              ON b.company_id = p.company_id
+              AND b.bid_board_id = p.bid_board_project_id
+            WHERE p.company_id = $1
+              AND b.procore_project_id IS NOT NULL
+          ),
+          name_customer_match AS (
+            SELECT
+              s.external_id AS project_id,
+              p.proposal_id,
+              p.proposal_name,
+              p.synced_at
+            FROM procore_project_staging s
+            JOIN procore_proposal_line_items_live p
+              ON p.company_id = s.company_id
+              AND LOWER(TRIM(COALESCE(p.project_name, ''))) = LOWER(TRIM(COALESCE(s.name, '')))
+              AND LOWER(TRIM(COALESCE(p.customer_name, ''))) = LOWER(TRIM(COALESCE(s.customer, '')))
+            WHERE s.company_id = $1
+              AND s.source = 'procore_v1_projects'
+              AND s.external_id IS NOT NULL
+              AND s.name IS NOT NULL
+          ),
+          combined AS (
+            SELECT * FROM bid_board_match
+            UNION ALL
+            SELECT *
+            FROM name_customer_match n
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM bid_board_match b
+              WHERE b.project_id = n.project_id
+                AND b.proposal_id = n.proposal_id
+            )
+          )
           SELECT
-            b.procore_project_id AS projectId,
-            COUNT(DISTINCT p.proposal_id)::int AS estimateProposalCount,
+            project_id AS projectId,
+            COUNT(DISTINCT proposal_id)::int AS estimateProposalCount,
             COUNT(*)::int AS estimateLineItemCount,
             STRING_AGG(
-              DISTINCT NULLIF(TRIM(COALESCE(p.proposal_name, '')), ''),
+              DISTINCT NULLIF(TRIM(COALESCE(proposal_name, '')), ''),
               ', '
-              ORDER BY NULLIF(TRIM(COALESCE(p.proposal_name, '')), '')
+              ORDER BY NULLIF(TRIM(COALESCE(proposal_name, '')), '')
             ) AS estimateProposalNames,
-            MAX(p.synced_at)::text AS latestEstimateAt
-          FROM procore_proposal_line_items_live p
-          JOIN procore_bid_board_live b
-            ON b.company_id = p.company_id
-            AND b.bid_board_id = p.bid_board_project_id
-          WHERE p.company_id = $1
-            AND b.procore_project_id IS NOT NULL
-          GROUP BY b.procore_project_id
+            MAX(synced_at)::text AS latestEstimateAt
+          FROM combined
+          GROUP BY project_id
         `,
         companyId
       );

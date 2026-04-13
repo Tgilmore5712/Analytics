@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { ensureGanttV2Schema, getGanttV2ProjectsWithScopes } from '@/lib/ganttV2Db';
 import { getErrorMessage, shouldFallbackToEmptyRead, withDatabaseRetry } from '@/lib/dbResilience';
@@ -7,9 +8,16 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    const procoreAccessToken = String(cookieStore.get('procore_access_token')?.value || '').trim() || null;
+    const procoreCompanyId = String(cookieStore.get('procore_company_id')?.value || '').trim() || null;
+
     const projects = await withDatabaseRetry(async () => {
       await ensureGanttV2Schema();
-      return getGanttV2ProjectsWithScopes();
+      return getGanttV2ProjectsWithScopes({
+        procoreAccessToken,
+        procoreCompanyId,
+      });
     });
     return NextResponse.json({ success: true, data: projects });
   } catch (error) {
