@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getErrorMessage, shouldFallbackToEmptyRead, withDatabaseRetry } from "@/lib/dbResilience";
 
 export const dynamic = "force-dynamic";
 
@@ -216,56 +217,61 @@ export async function GET(request: NextRequest) {
       )
     `;
 
-    const rows = await prisma.$queryRawUnsafe<ProposalLineItemLiveRow[]>(
-      `
-        ${baseQuery}
-        SELECT
-          base.id,
-          base.company_id,
-          base.bid_board_project_id,
-          base.procore_project_id,
-          base.proposal_id,
-          base.line_item_id,
-          base.project_name,
-          base.customer_name,
-          base.project_status,
-          base.bid_board_status,
-          base.proposal_name,
-          base.name,
-          base.status,
-          base.cost_code,
-          base.uom,
-          base.line_item_type,
-          base.total_cost,
-          base.total_sales,
-          base.payload,
-          base.synced_at
-        FROM base
-        ${whereClause}
-        ORDER BY
-          COALESCE(base.project_status, '') ASC,
-          COALESCE(base.project_name, '') ASC,
-          COALESCE(base.proposal_name, '') ASC,
-          COALESCE(base.uom, '') ASC,
-          COALESCE(base.name, '') ASC,
-          base.id DESC
-        LIMIT $${values.length + 1}
-        OFFSET $${values.length + 2}
-      `,
-      ...values,
-      pageSize,
-      skip
-    );
-
-    const countRows = await prisma.$queryRawUnsafe<Array<{ total: number | bigint | string }>>(
-      `
-        ${baseQuery}
-        SELECT COUNT(*)::int AS total
-        FROM base
-        ${whereClause}
-      `,
-      ...values
-    );
+    const [rows, countRows] = await Promise.all([
+      withDatabaseRetry(() =>
+        prisma.$queryRawUnsafe<ProposalLineItemLiveRow[]>(
+          `
+            ${baseQuery}
+            SELECT
+              base.id,
+              base.company_id,
+              base.bid_board_project_id,
+              base.procore_project_id,
+              base.proposal_id,
+              base.line_item_id,
+              base.project_name,
+              base.customer_name,
+              base.project_status,
+              base.bid_board_status,
+              base.proposal_name,
+              base.name,
+              base.status,
+              base.cost_code,
+              base.uom,
+              base.line_item_type,
+              base.total_cost,
+              base.total_sales,
+              base.payload,
+              base.synced_at
+            FROM base
+            ${whereClause}
+            ORDER BY
+              COALESCE(base.project_status, '') ASC,
+              COALESCE(base.project_name, '') ASC,
+              COALESCE(base.proposal_name, '') ASC,
+              COALESCE(base.uom, '') ASC,
+              COALESCE(base.name, '') ASC,
+              base.id DESC
+            LIMIT $${values.length + 1}
+            OFFSET $${values.length + 2}
+          `,
+          ...values,
+          pageSize,
+          skip
+        )
+      ),
+      withDatabaseRetry(() =>
+        prisma.$queryRawUnsafe<Array<{ total: number | bigint | string }>>(
+          `
+            ${baseQuery}
+            SELECT COUNT(*)::int AS total
+            FROM base
+            ${whereClause}
+          `,
+          ...values
+        )
+      ),
+    ]);
 
     const total = normalizeCount(countRows[0]?.total ?? 0);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -303,23 +309,26 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error) {
-    if (isMissingTableError(error)) {
+    if (isMissingTableError(error) || shouldFallbackToEmptyRead(error)) {
+      const fallbackPage = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") || "1", 10) || 1);
+      const requestedPageSize = Number.parseInt(request.nextUrl.searchParams.get("pageSize") || "200", 10) || 200;
+      const fallbackPageSize = Math.min(10000, Math.max(1, requestedPageSize));
       return NextResponse.json({
         success: true,
         count: 0,
         total: 0,
-        page: 1,
-        pageSize: 200,
+        page: fallbackPage,
+        pageSize: fallbackPageSize,
         totalPages: 1,
         hasNextPage: false,
-        hasPreviousPage: false,
+        hasPreviousPage: fallbackPage > 1,
         data: [],
         note:
-          "procore_proposal_line_items_live is not available yet. Apply the migration, then run the bulk sync with persist enabled.",
+          "Persisted proposal line items are currently unavailable in this environment (missing schema objects or restricted read permissions).",
       });
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch persisted proposal line items", details: message },
       { status: 500 }

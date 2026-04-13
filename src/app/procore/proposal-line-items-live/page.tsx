@@ -181,7 +181,8 @@ export default function ProposalLineItemsLivePage() {
   const [proposalName, setProposalName] = useState<string>("");
   const [uom, setUom] = useState<string>("");
   const [search, setSearch] = useState<string>("");
-  const pageSize = 10000;
+  const pageSize = 500;
+  const maxPagesToFetch = 100;
   const [total, setTotal] = useState<number>(0);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("");
 
@@ -191,30 +192,46 @@ export default function ProposalLineItemsLivePage() {
     setNote("");
 
     try {
-      const url = new URL("/api/procore/estimating/proposal-line-items-live", window.location.origin);
-      url.searchParams.set("page", "1");
-      url.searchParams.set("pageSize", String(pageSize));
-      if (companyId.trim()) url.searchParams.set("companyId", companyId.trim());
-      if (bidBoardProjectId.trim()) url.searchParams.set("bidBoardProjectId", bidBoardProjectId.trim());
-      if (proposalId.trim()) url.searchParams.set("proposalId", proposalId.trim());
-      if (projectStatus.trim()) url.searchParams.set("projectStatus", projectStatus.trim());
-      if (bidBoardStatus.trim()) url.searchParams.set("bidBoardStatus", bidBoardStatus.trim());
-      if (proposalName.trim()) url.searchParams.set("proposalName", proposalName.trim());
-      if (uom.trim()) url.searchParams.set("uom", uom.trim());
-      if (search.trim()) url.searchParams.set("search", search.trim());
-      url.searchParams.set("_ts", String(Date.now()));
+      const combinedRows: PersistedLineItem[] = [];
+      let currentPage = 1;
+      let totalFromApi = 0;
+      let latestNote = "";
 
-      const res = await fetch(url.toString(), { cache: "no-store" });
-      const payload = (await res.json().catch(() => ({}))) as ApiResponse;
+      while (currentPage <= maxPagesToFetch) {
+        const url = new URL("/api/procore/estimating/proposal-line-items-live", window.location.origin);
+        url.searchParams.set("page", String(currentPage));
+        url.searchParams.set("pageSize", String(pageSize));
+        if (companyId.trim()) url.searchParams.set("companyId", companyId.trim());
+        if (bidBoardProjectId.trim()) url.searchParams.set("bidBoardProjectId", bidBoardProjectId.trim());
+        if (proposalId.trim()) url.searchParams.set("proposalId", proposalId.trim());
+        if (projectStatus.trim()) url.searchParams.set("projectStatus", projectStatus.trim());
+        if (bidBoardStatus.trim()) url.searchParams.set("bidBoardStatus", bidBoardStatus.trim());
+        if (proposalName.trim()) url.searchParams.set("proposalName", proposalName.trim());
+        if (uom.trim()) url.searchParams.set("uom", uom.trim());
+        if (search.trim()) url.searchParams.set("search", search.trim());
+        url.searchParams.set("_ts", String(Date.now()));
 
-      if (!res.ok || payload.success === false) {
-        throw new Error(payload.error || `Request failed with ${res.status}`);
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        const payload = (await res.json().catch(() => ({}))) as ApiResponse;
+
+        if (!res.ok || payload.success === false) {
+          throw new Error(payload.error || `Request failed with ${res.status}`);
+        }
+
+        const pageRows = Array.isArray(payload.data) ? payload.data : [];
+        combinedRows.push(...pageRows);
+        totalFromApi = Number(payload.total || 0);
+        latestNote = payload.note || latestNote;
+
+        if (!payload.hasNextPage || pageRows.length === 0) break;
+        if (totalFromApi > 0 && combinedRows.length >= totalFromApi) break;
+        currentPage += 1;
       }
 
-      setRows(Array.isArray(payload.data) ? payload.data : []);
+      setRows(combinedRows);
       setProjectRows([]);
-      setTotal(Number(payload.total || 0));
-      setNote(payload.note || "");
+      setTotal(totalFromApi || combinedRows.length);
+      setNote(latestNote);
       setLastRefreshedAt(new Date().toLocaleString());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -340,21 +357,33 @@ export default function ProposalLineItemsLivePage() {
             return [] as PersistedLineItem[];
           }
 
-          const url = new URL("/api/procore/estimating/proposal-line-items-live", window.location.origin);
-          url.searchParams.set("page", "1");
-          url.searchParams.set("pageSize", String(pageSize));
-          url.searchParams.set("companyId", companyId.trim());
-          url.searchParams.set("bidBoardProjectId", project.bidBoardProjectId);
-          url.searchParams.set("_ts", String(Date.now()));
+          const combinedRows: PersistedLineItem[] = [];
+          let currentPage = 1;
 
-          const res = await fetch(url.toString(), { cache: "no-store" });
-          const payload = (await res.json().catch(() => ({}))) as ApiResponse;
+          while (currentPage <= maxPagesToFetch) {
+            const url = new URL("/api/procore/estimating/proposal-line-items-live", window.location.origin);
+            url.searchParams.set("page", String(currentPage));
+            url.searchParams.set("pageSize", String(pageSize));
+            url.searchParams.set("companyId", companyId.trim());
+            url.searchParams.set("bidBoardProjectId", project.bidBoardProjectId);
+            url.searchParams.set("_ts", String(Date.now()));
 
-          if (!res.ok || payload.success === false) {
-            throw new Error(payload.error || `Request failed with ${res.status}`);
+            const res = await fetch(url.toString(), { cache: "no-store" });
+            const payload = (await res.json().catch(() => ({}))) as ApiResponse;
+
+            if (!res.ok || payload.success === false) {
+              throw new Error(payload.error || `Request failed with ${res.status}`);
+            }
+
+            const pageRows = Array.isArray(payload.data) ? payload.data : [];
+            combinedRows.push(...pageRows);
+
+            if (!payload.hasNextPage || pageRows.length === 0) break;
+            if (payload.total && combinedRows.length >= payload.total) break;
+            currentPage += 1;
           }
 
-          return Array.isArray(payload.data) ? payload.data : [];
+          return combinedRows;
         })(),
         (async () => {
           if (!project.procoreProjectId) {

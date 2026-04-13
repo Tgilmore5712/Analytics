@@ -1094,7 +1094,7 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
                     tasks: [],
                   } satisfies GanttV2ScopeRow;
                 })
-                .filter((scope): scope is GanttV2ScopeRow => Boolean(scope));
+                .filter(Boolean) as GanttV2ScopeRow[];
 
               return merged.length > 0 ? merged : unmatchedScopes;
             })()
