@@ -1,6 +1,5 @@
 ﻿"use client";
 import React, { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { ProjectScopesModal } from "../project-schedule/components/ProjectScopesModal";
 import { ProjectInfo, Scope, Project } from "@/types";
 import { getEnrichedScopes } from "@/utils/projectUtils";
@@ -66,6 +65,19 @@ type Schedule = {
   status?: string;
 };
 
+type ActiveScheduleEntry = {
+  id: string;
+  jobKey: string;
+  customer?: string;
+  projectNumber?: string;
+  projectName?: string;
+  scopeOfWork?: string;
+  date: string;
+  hours: number;
+  manpower?: number | null;
+  source?: string;
+};
+
 type MonthlyWIP = {
   month: string;
   hours: number;
@@ -122,6 +134,10 @@ function parseJobKeyParts(jobKey: string): { customer: string; projectNumber: st
   return { customer, projectNumber, projectName };
 }
 
+function buildProjectNumNameKey(projectNumber: unknown, projectName: unknown): string {
+  return `${String(projectNumber || "").trim()}~${String(projectName || "").trim()}`;
+}
+
 function normalizeCustomerValue(value: unknown): string {
   const normalized = (value ?? "").toString().trim();
   if (!normalized) return "";
@@ -149,6 +165,28 @@ function resolveScheduleCustomer(schedule: Pick<Schedule, "customer" | "jobKey">
   return normalizeCustomerValue(parsed.customer);
 }
 
+function normalizeStatusValue(value: unknown): string {
+  return String(value || "").trim().toLowerCase().replace(/[_\s]+/g, " ");
+}
+
+function isInProgressStatus(value: unknown): boolean {
+  return normalizeStatusValue(value) === "in progress";
+}
+
+function isLiveScheduleSource(value: unknown): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "gantt" || normalized === "wip-page";
+}
+
+function sumScopeHours(scopes: Scope[] | undefined): number {
+  if (!Array.isArray(scopes)) return 0;
+
+  return scopes.reduce((sum, scope) => {
+    const nextHours = Number(scope.hours || 0);
+    return sum + (Number.isFinite(nextHours) && nextHours > 0 ? nextHours : 0);
+  }, 0);
+}
+
 function parseDateFromUnknown(value: unknown): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -170,7 +208,7 @@ export default function WIPReportPage() {
 function WIPReportContent() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
-  const [projectsForHours, setProjectsForHours] = useState<any[]>([]);
+  const [activeScheduleEntries, setActiveScheduleEntries] = useState<ActiveScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table');
 
@@ -259,17 +297,17 @@ function WIPReportContent() {
         const start = Date.now();
 
         // Parallelize all primary data fetches
-        const [projectsScopesRes, schedulesData, budgetProjectsRes] = await Promise.all([
+        const [projectsScopesRes, schedulesData, activeScheduleRes] = await Promise.all([
           fetch("/api/project-scopes"),
           fetchAllPages<any>("/api/scheduling"),
-          fetch("/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS"),
+          fetch("/api/short-term-schedule?action=active-schedule"),
         ]);
 
         let projectsData: any[] = [];
         let projectsSnapshot: any[] = [];
         let scopesSnapshot: any[] = [];
         let schedulesDataLocal: any[] = [];
-        let projectsForHoursData: any[] = [];
+        let activeScheduleDataLocal: ActiveScheduleEntry[] = [];
 
         // Handle projects-scopes response
         if (projectsScopesRes.ok) {
@@ -296,23 +334,12 @@ function WIPReportContent() {
           console.warn("[WIP] Scheduling API endpoint not available");
         }
 
-        // Handle scheduling budget response (source of truth for WIP project-hours pool)
-        if (budgetProjectsRes.ok) {
-          const budgetJson = await budgetProjectsRes.json();
-          const budgetRows = Array.isArray(budgetJson?.data) ? budgetJson.data : [];
-          projectsForHoursData = budgetRows.map((p: any) => ({
-            id: String(p.projectId || ""),
-            projectName: String(p.projectName || ""),
-            projectNumber: String(p.projectId || ""),
-            customer: String(p.customer || ""),
-            status: "In Progress",
-            hours: Number(p.totalQuantity) || 0,
-            pmcgroup: false,
-            projectArchived: false,
-          }));
-          console.log("[WIP] Budget projects for hours:", projectsForHoursData.length, "records");
+        if (activeScheduleRes.ok) {
+          const activeScheduleJson = await activeScheduleRes.json();
+          activeScheduleDataLocal = Array.isArray(activeScheduleJson?.data) ? activeScheduleJson.data : [];
+          console.log("[WIP] Live active schedule rows:", activeScheduleDataLocal.length, "records");
         } else {
-          console.warn("[WIP] projects-with-budget endpoint not available");
+          console.warn("[WIP] active-schedule endpoint not available");
         }
 
         console.log(`[WIP] Fetched all primary data in ${Date.now() - start}ms`);
@@ -328,8 +355,8 @@ function WIPReportContent() {
         console.log("[WIP] Schedules after mapping:", schedulesWithStatus.length, "records");
 
         setProjects(projectsData);
-        setProjectsForHours(projectsForHoursData);
         setSchedules(schedulesWithStatus);
+        setActiveScheduleEntries(activeScheduleDataLocal);
         console.log("[WIP] Called setSchedules with:", schedulesWithStatus.length, "records");
         
         // Fetch scopes for Gantt feed
@@ -348,8 +375,8 @@ function WIPReportContent() {
       } catch (error) {
         console.warn("[WIP] Error loading data (using empty defaults):", error);
         setProjects([]);
-        setProjectsForHours([]);
         setSchedules([]);
+        setActiveScheduleEntries([]);
         setScopesByJobKey({});
       } finally {
         setLoading(false);
@@ -359,10 +386,7 @@ function WIPReportContent() {
   }, []);
 
   const schedulePageJobs = React.useMemo(() => {
-    const qualifyingStatuses = ["In Progress", "IN_PROGRESS"];
-    const priorityStatuses = ["In Progress", "IN_PROGRESS"];
-
-    const activeProjects = projectsForHours.filter((p) => {
+    const activeProjects = projects.filter((p) => {
       if (p.projectArchived) return false;
       const customer = (p.customer ?? "").toString().toLowerCase();
       if (customer.includes("sop inc")) return false;
@@ -409,7 +433,7 @@ function WIPReportContent() {
         });
 
         customerEntries.forEach(([, projs]) => {
-          const hasPriorityStatus = projs.some((p) => priorityStatuses.includes(p.status || ""));
+          const hasPriorityStatus = projs.some((p) => isInProgressStatus(p.status));
           if (hasPriorityStatus && !foundPriorityCustomer) {
             selectedProjects = projs;
             foundPriorityCustomer = true;
@@ -458,7 +482,7 @@ function WIPReportContent() {
     });
 
     const filteredByStatus = dedupedByCustomer.filter((p) => {
-      if (!qualifyingStatuses.includes(p.status || "")) return false;
+      if (!isInProgressStatus(p.status)) return false;
       if (p.pmcgroup) return false;
       return true;
     });
@@ -476,11 +500,15 @@ function WIPReportContent() {
     const schedulesByExactKey = new Map<string, Schedule>();
     const schedulesByProjectNumName = new Map<string, Schedule>();
     const schedulesByProjectNumber = new Map<string, Schedule[]>();
+    const liveHoursByExactKey = new Map<string, number>();
+    const liveHoursByProjectNumName = new Map<string, number>();
+    const scheduledHoursByExactKey = new Map<string, number>();
+    const scheduledHoursByProjectNumName = new Map<string, number>();
 
     schedules.forEach((s) => {
       schedulesByExactKey.set(s.jobKey, s);
       const parts = parseJobKeyParts(s.jobKey);
-      const numNameKey = `${parts.projectNumber}~${parts.projectName}`;
+      const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
       if (parts.projectNumber || parts.projectName) {
         schedulesByProjectNumName.set(numNameKey, s);
       }
@@ -491,15 +519,35 @@ function WIPReportContent() {
       }
     });
 
+    Object.entries(scopesByJobKey).forEach(([jobKey, scopedRows]) => {
+      const liveHours = sumScopeHours(scopedRows);
+      if (liveHours <= 0) return;
+
+      liveHoursByExactKey.set(jobKey, liveHours);
+      const parts = parseJobKeyParts(jobKey);
+      const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
+      liveHoursByProjectNumName.set(numNameKey, (liveHoursByProjectNumName.get(numNameKey) || 0) + liveHours);
+    });
+
+    activeScheduleEntries
+      .filter((entry) => isLiveScheduleSource(entry.source))
+      .forEach((entry) => {
+        const nextHours = Number(entry.hours || 0);
+        if (!Number.isFinite(nextHours) || nextHours <= 0) return;
+
+        scheduledHoursByExactKey.set(entry.jobKey, (scheduledHoursByExactKey.get(entry.jobKey) || 0) + nextHours);
+        const parts = parseJobKeyParts(entry.jobKey);
+        const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
+        scheduledHoursByProjectNumName.set(numNameKey, (scheduledHoursByProjectNumName.get(numNameKey) || 0) + nextHours);
+      });
+
     const results: Schedule[] = [];
     keyMap.forEach((projectGroup, key) => {
       const representative = projectGroup[0];
-      const totalHours = projectGroup.reduce((sum, p) => sum + (p.hours ?? 0), 0);
-
       const keyParts = parseJobKeyParts(key);
       let matchedSchedule = schedulesByExactKey.get(key);
       if (!matchedSchedule) {
-        matchedSchedule = schedulesByProjectNumName.get(`${keyParts.projectNumber}~${keyParts.projectName}`);
+        matchedSchedule = schedulesByProjectNumName.get(buildProjectNumNameKey(keyParts.projectNumber, keyParts.projectName));
       }
       if (!matchedSchedule && keyParts.projectNumber) {
         const byNumber = schedulesByProjectNumber.get(keyParts.projectNumber) || [];
@@ -507,6 +555,12 @@ function WIPReportContent() {
           matchedSchedule = byNumber[0];
         }
       }
+
+      const numNameKey = buildProjectNumNameKey(keyParts.projectNumber, keyParts.projectName);
+      const liveTotalHours = liveHoursByExactKey.get(key) ?? liveHoursByProjectNumName.get(numNameKey) ?? 0;
+      const fallbackScheduledHours = scheduledHoursByExactKey.get(key) ?? scheduledHoursByProjectNumName.get(numNameKey) ?? 0;
+      const totalHours = liveTotalHours > 0 ? liveTotalHours : fallbackScheduledHours;
+      if (totalHours <= 0) return;
 
       const mergedCustomer =
         resolveProjectCustomer(representative) ||
@@ -525,8 +579,12 @@ function WIPReportContent() {
       });
     });
 
-    return results;
-  }, [projectsForHours, schedules]);
+    return results.sort((a, b) => {
+      const customerCompare = (a.customer || "").localeCompare(b.customer || "");
+      if (customerCompare !== 0) return customerCompare;
+      return (a.projectName || "").localeCompare(b.projectName || "");
+    });
+  }, [activeScheduleEntries, projects, schedules, scopesByJobKey]);
 
   // Save filters to localStorage whenever they change
   useEffect(() => {
@@ -551,10 +609,18 @@ function WIPReportContent() {
       return;
     }
 
-    // Find existing schedule
-    const existingSchedule = schedules.find((s) => s.jobKey === jobKey);
+    const existingSchedule =
+      schedules.find((s) => s.jobKey === jobKey) ||
+      schedules.find((s) => {
+        const parts = parseJobKeyParts(s.jobKey);
+        return parts.projectNumber === projectNumber && parts.projectName === projectName;
+      });
+
+    const liveJob =
+      schedulePageJobs.find((s) => s.jobKey === jobKey) ||
+      schedulePageJobs.find((s) => s.projectNumber === projectNumber && s.projectName === projectName);
     
-    // Get all months from schedules
+    // Get all months from legacy schedules plus live active schedule rows
     const allMonths = new Set<string>();
     schedules.forEach((s) => {
       normalizeAllocations(s.allocations).forEach((a) => {
@@ -563,6 +629,13 @@ function WIPReportContent() {
         }
       });
     });
+    activeScheduleEntries.forEach((entry) => {
+      if (!isLiveScheduleSource(entry.source)) return;
+      const monthKey = String(entry.date || "").slice(0, 7);
+      if (isValidMonthKey(monthKey)) {
+        allMonths.add(monthKey);
+      }
+    });
     const sortedMonths = Array.from(allMonths).sort();
 
     const allocations: Record<string, number> = {};
@@ -570,8 +643,7 @@ function WIPReportContent() {
       normalizeAllocations(existingSchedule.allocations).forEach((a) => {
         allocations[a.month] = a.percent;
       });
-      // Use the schedule's totalHours if available, otherwise use project hours
-      const totalHours = existingSchedule.totalHours || project.projectedPreconstHours || 0;
+      const totalHours = liveJob?.totalHours || existingSchedule.totalHours || project.projectedPreconstHours || 0;
       
       setSelectedJob({
         jobKey,
@@ -594,7 +666,7 @@ function WIPReportContent() {
         projectNumber,
         projectName,
         status: project.status || "In Progress",
-        totalHours: project.projectedPreconstHours || 0,
+        totalHours: liveJob?.totalHours || project.projectedPreconstHours || 0,
         allocations,
         months: sortedMonths,
       });
@@ -774,72 +846,82 @@ function WIPReportContent() {
     monthlyData, 
     scheduledSalesByMonth, 
     bidSubmittedSalesByMonth,
-    inProgressScheduledHoursForGantt, 
-    filteredInProgressHoursFromGantt, 
-    projectsWithGanttData, 
-    qualifyingKeyMap, 
     totalPoolHours,
-    allInProgressScheduledHours,
-    filteredInProgressHours,
-    poolBreakdown
+    poolBreakdown,
+    scheduledHoursByJob
   } = React.useMemo(() => {
-    console.log("[WIP] useMemo - Starting calculation with schedules:", schedules?.length || 0, "scopesByJobKey:", Object.keys(scopesByJobKey || {}).length);
+    console.log("[WIP] useMemo - Starting calculation with live entries:", activeScheduleEntries?.length || 0, "scopesByJobKey:", Object.keys(scopesByJobKey || {}).length);
     
     const monthlyData: Record<string, MonthlyWIP> = {};
     const scheduledSalesByMonth: Record<string, number> = {};
     const bidSubmittedSalesByMonth: Record<string, number> = {};
-    let inProgressScheduledHoursForGantt = 0;
-    let filteredInProgressHoursFromGantt = 0;
-
-    const projectsWithGanttData = new Set<string>();
-    const qualifyingKeyMap = new Map<string, any[]>();
+    const scheduledHoursByJob = new Map<string, number>();
+    const scheduledHoursByJobMonth = new Map<string, Map<string, number>>();
     
-    // Filter schedules by status first
     const inProgressSchedules = schedulePageJobs;
+    const inProgressJobsByExactKey = new Map<string, Schedule>();
+    const inProgressJobsByProjectNumName = new Map<string, Schedule>();
     
-    console.log("[WIP] In Progress schedules:", inProgressSchedules.length, "out of", schedules.length);
-    
-    // Build monthly data DIRECTLY from schedules allocations
-    // This is the primary data source since we have normalized allocations
-    inProgressSchedules.forEach(schedule => {
-      const scheduleCustomer = resolveScheduleCustomer(schedule) || "Unknown";
-      const allocations = normalizeAllocations(schedule.allocations);
-      allocations.forEach(alloc => {
-        if (!isValidMonthKey(alloc.month)) return;
-        
-        // Calculate hours for this allocation
-        const allocatedHours = (typeof alloc.hours === "number")
-          ? alloc.hours
-          : (schedule.totalHours * (alloc.percent / 100));
-        
-        if (!monthlyData[alloc.month]) {
-          monthlyData[alloc.month] = { month: alloc.month, hours: 0, jobs: [] };
+    console.log("[WIP] In Progress schedules:", inProgressSchedules.length);
+
+    inProgressSchedules.forEach((schedule) => {
+      inProgressJobsByExactKey.set(schedule.jobKey, schedule);
+      inProgressJobsByProjectNumName.set(
+        buildProjectNumNameKey(schedule.projectNumber, schedule.projectName),
+        schedule
+      );
+    });
+
+    activeScheduleEntries
+      .filter((entry) => isLiveScheduleSource(entry.source))
+      .forEach((entry) => {
+        const monthKey = String(entry.date || "").slice(0, 7);
+        if (!isValidMonthKey(monthKey)) return;
+
+        const entryHours = Number(entry.hours || 0);
+        if (!Number.isFinite(entryHours) || entryHours <= 0) return;
+
+        const parts = parseJobKeyParts(entry.jobKey);
+        const matchedSchedule =
+          inProgressJobsByExactKey.get(entry.jobKey) ||
+          inProgressJobsByProjectNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName));
+
+        if (!matchedSchedule) return;
+
+        const canonicalJobKey = matchedSchedule.jobKey;
+        const scheduleCustomer = resolveScheduleCustomer(matchedSchedule) || "Unknown";
+
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { month: monthKey, hours: 0, jobs: [] };
         }
-        
-        monthlyData[alloc.month].hours += allocatedHours;
-        
-        // Add job entry
-        const jobEntry = monthlyData[alloc.month].jobs.find(j => j.customer === scheduleCustomer && j.projectName === schedule.projectName);
-        
+
+        monthlyData[monthKey].hours += entryHours;
+
+        const jobEntry = monthlyData[monthKey].jobs.find(
+          (job) => job.customer === scheduleCustomer && job.projectName === matchedSchedule.projectName
+        );
+
         if (jobEntry) {
-          jobEntry.hours += allocatedHours;
+          jobEntry.hours += entryHours;
         } else {
-          monthlyData[alloc.month].jobs.push({
+          monthlyData[monthKey].jobs.push({
             customer: scheduleCustomer,
-            projectNumber: schedule.projectNumber || "N/A",
-            projectName: schedule.projectName || "Unnamed",
-            hours: allocatedHours,
+            projectNumber: matchedSchedule.projectNumber || "N/A",
+            projectName: matchedSchedule.projectName || "Unnamed",
+            hours: entryHours,
           });
         }
-        
-        inProgressScheduledHoursForGantt += allocatedHours;
-        if (!yearFilter || alloc.month.startsWith(yearFilter)) {
-          filteredInProgressHoursFromGantt += allocatedHours;
+
+        scheduledHoursByJob.set(canonicalJobKey, (scheduledHoursByJob.get(canonicalJobKey) || 0) + entryHours);
+        if (!scheduledHoursByJobMonth.has(canonicalJobKey)) {
+          scheduledHoursByJobMonth.set(canonicalJobKey, new Map<string, number>());
         }
+        const jobMonthMap = scheduledHoursByJobMonth.get(canonicalJobKey)!;
+        jobMonthMap.set(monthKey, (jobMonthMap.get(monthKey) || 0) + entryHours);
+
       });
-    });
     
-    console.log("[WIP] Monthly data from schedules:", Object.keys(monthlyData).length, "months");
+    console.log("[WIP] Monthly data from active schedule:", Object.keys(monthlyData).length, "months");
     
     // Calculate sales data
     projects.forEach((project) => {
@@ -856,72 +938,50 @@ function WIPReportContent() {
       }
     });
     
-    // Calculate scheduled sales from schedules allocations
+    // Calculate scheduled sales from live monthly scheduled hours
     inProgressSchedules.forEach((schedule) => {
       const key = schedule.jobKey || `${schedule.customer || ""}~${schedule.projectNumber || ""}~${schedule.projectName || ""}`;
       const project = projects.find(p => (p.jobKey || `${p.customer || ""}~${p.projectNumber || ""}~${p.projectName || ""}`) === key);
       const projectSales = Number(project?.sales ?? 0);
       
       if (!Number.isFinite(projectSales) || projectSales <= 0) return;
-      
-      normalizeAllocations(schedule.allocations).forEach((alloc) => {
-        const percent = Number(alloc.percent ?? 0);
-        if (percent <= 0) return;
-        scheduledSalesByMonth[alloc.month] = (scheduledSalesByMonth[alloc.month] || 0) + (projectSales * (percent / 100));
+
+      const monthlyHours = scheduledHoursByJobMonth.get(schedule.jobKey);
+      if (!monthlyHours || schedule.totalHours <= 0) return;
+
+      monthlyHours.forEach((hours, monthKey) => {
+        const share = Math.min(hours / schedule.totalHours, 1);
+        if (share <= 0) return;
+        scheduledSalesByMonth[monthKey] = (scheduledSalesByMonth[monthKey] || 0) + (projectSales * share);
       });
     });
     
-    // Total pool should be based on the same deduped/filtered in-progress dataset
+    // Total pool is now based on live scope hours from the Gantt/modal flow.
     const totalPoolHours = inProgressSchedules.reduce((sum, s) => sum + (s.totalHours || 0), 0);
-    const poolBreakdown = inProgressSchedules.map(s => ({
-      jobKey: s.jobKey || "",
-      budget: s.totalHours || 0,
-      projectName: s.projectName || "Unnamed",
-      customer: resolveScheduleCustomer(s) || "Unknown",
-      hasSchedule: true,
-      hasGantt: false,
-      p_hours: 0,
-      p_proj: 0
-    }));
+    const poolBreakdown = inProgressSchedules.map((schedule) => {
+      const scopeHours = sumScopeHours(scopesByJobKey[schedule.jobKey]);
+      const scheduledHours = scheduledHoursByJob.get(schedule.jobKey) || 0;
+      return {
+        jobKey: schedule.jobKey || "",
+        budget: schedule.totalHours || 0,
+        projectName: schedule.projectName || "Unnamed",
+        customer: resolveScheduleCustomer(schedule) || "Unknown",
+        hasSchedule: scheduledHours > 0,
+        hasGantt: scopeHours > 0,
+        p_hours: scheduledHours,
+        p_proj: scopeHours,
+      };
+    });
     
-    // Calculate qualifying schedules and all in-progress hours
-    const allInProgressScheduledHours = inProgressSchedules.reduce((sum, s) => {
-      const allocHours = normalizeAllocations(s.allocations).reduce((allocSum, alloc) => {
-        const h = (typeof alloc.hours === "number")
-          ? alloc.hours
-          : (s.totalHours * (alloc.percent / 100));
-        return allocSum + h;
-      }, 0);
-      return sum + allocHours;
-    }, 0);
-    
-    const filteredInProgressHours = yearFilter ? 
-      inProgressSchedules.reduce((sum, s) => {
-        const allocHours = normalizeAllocations(s.allocations)
-          .filter(a => a.month.startsWith(yearFilter))
-          .reduce((allocSum, alloc) => {
-            const h = (typeof alloc.hours === "number")
-              ? alloc.hours
-              : (s.totalHours * (alloc.percent / 100));
-            return allocSum + h;
-          }, 0);
-        return sum + allocHours;
-      }, 0) : allInProgressScheduledHours;
-
     return { 
       monthlyData, 
       scheduledSalesByMonth, 
       bidSubmittedSalesByMonth,
-      inProgressScheduledHoursForGantt, 
-      filteredInProgressHoursFromGantt, 
-      projectsWithGanttData, 
-      qualifyingKeyMap, 
       totalPoolHours,
-      allInProgressScheduledHours,
-      filteredInProgressHours,
-      poolBreakdown
+      poolBreakdown,
+      scheduledHoursByJob
     };
-  }, [scopesByJobKey, projects, schedulePageJobs, yearFilter, qualifyingStatus]);
+  }, [activeScheduleEntries, projects, schedulePageJobs, scopesByJobKey]);
 
   const months = Object.keys(monthlyData).sort();
   
@@ -932,7 +992,6 @@ function WIPReportContent() {
   }
   
   const totalHours = Object.values(monthlyData).reduce((sum, m) => sum + m.hours, 0);
-  const avgHours = months.length > 0 ? totalHours / months.length : 0;
 
   // Build year/month matrix for table view
   const yearMonthMap: Record<string, Record<number, number>> = {};
@@ -968,12 +1027,8 @@ function WIPReportContent() {
   // Calculate total scheduled hours per project (across ALL years, ignoring filters)
   const projectTotalScheduledHours = new Map<string, number>();
   schedulePageJobs.forEach((schedule) => {
-    
     const projectKey = `${schedule.customer}~${schedule.projectName}`;
-    const totalScheduled = normalizeAllocations(schedule.allocations).reduce((sum, alloc) => {
-      return sum + (schedule.totalHours * (alloc.percent / 100));
-    }, 0);
-    
+    const totalScheduled = scheduledHoursByJob.get(schedule.jobKey) || 0;
     projectTotalScheduledHours.set(projectKey, (projectTotalScheduledHours.get(projectKey) || 0) + totalScheduled);
   });
 
@@ -1039,31 +1094,13 @@ function WIPReportContent() {
     return null;
   }
   
-  // Unscheduled calculation - truly unscheduled hours (constant regardless of year filter)
-  // Unscheduled = jobs with zero allocation across ALL years
+  // Unscheduled is now driven by live scope totals minus live scheduled hours.
   const inProgressProjects = schedulePageJobs;
 
-  // Total pool = all qualifying In Progress jobs from the same filtered dataset
-  const totalPoolHoursForUnscheduled = inProgressProjects.reduce((sum, s) => sum + (s.totalHours || 0), 0);
-
-  // Calculate scheduled hours - respects year filter
-  let scheduledHoursForQualifying = inProgressProjects.reduce((sum, schedule) => {
-    const scheduledHours = normalizeAllocations(schedule.allocations).reduce((scheduleSum, alloc) => {
-      if (!isValidMonthKey(alloc.month)) return scheduleSum;
-      // When year filter is active, only count allocations in that year
-      if (yearFilter && !alloc.month.startsWith(yearFilter)) return scheduleSum;
-      return scheduleSum + (schedule.totalHours * (alloc.percent / 100));
-    }, 0);
-    return sum + scheduledHours;
+  const unscheduledHours = inProgressProjects.reduce((sum, schedule) => {
+    const scheduledHours = scheduledHoursByJob.get(schedule.jobKey) || 0;
+    return sum + Math.max((schedule.totalHours || 0) - scheduledHours, 0);
   }, 0);
-
-  // Unscheduled = truly unscheduled (no allocation in ANY year)
-  const trulyUnscheduledPool = inProgressProjects.filter(schedule => {
-    const totalAllocation = normalizeAllocations(schedule.allocations).reduce((sum, alloc) => sum + (alloc.percent || 0), 0);
-    return totalAllocation === 0;
-  }).reduce((sum, s) => sum + (s.totalHours || 0), 0);
-
-  const unscheduledHours = trulyUnscheduledPool;
 
   const bidSubmittedSalesMonths = Object.keys(bidSubmittedSalesByMonth).sort();
   const bidSubmittedSalesYearMonthMap: Record<string, Record<number, number>> = {};
@@ -1487,11 +1524,12 @@ function WIPReportContent() {
         </div>
       ) : (
         <div style={{ background: "#ffffff", borderRadius: 12, padding: 24, border: "1px solid #ddd", textAlign: "center", color: "#666" }}>
-          No schedules created yet. Go to{" "}
+          No live scheduled hours yet. Open a project in the Gantt and schedule its scopes to populate this view.
+          {" "}The legacy{" "}
           <a href="/scheduling" style={{ color: "#E06C00", textDecoration: "underline" }}>
             Scheduling
           </a>{" "}
-          to create a schedule.
+          page can still be used for reference.
         </div>
       )}
 
@@ -1501,9 +1539,17 @@ function WIPReportContent() {
           scopes={scopesByJobKey[selectedGanttProject.jobKey] || []}
           selectedScopeId={null}
           onClose={() => setSelectedGanttProject(null)}
-          onScopesUpdated={(jobKey, updatedScopes) => {
+          onScopesUpdated={async (jobKey, updatedScopes) => {
             const enriched = getEnrichedScopes(updatedScopes, projects);
             setScopesByJobKey(prev => ({ ...prev, [jobKey]: enriched }));
+            try {
+              const response = await fetch("/api/short-term-schedule?action=active-schedule");
+              if (!response.ok) return;
+              const json = await response.json();
+              setActiveScheduleEntries(Array.isArray(json?.data) ? json.data : []);
+            } catch (error) {
+              console.warn("[WIP] Failed to refresh live active schedule after scope update:", error);
+            }
           }}
         />
       )}
