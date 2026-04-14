@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 
 import { ConcreteOrderModal, type ConcreteOrderProjectRef } from "@/components/ConcreteOrderModal";
 import { ProjectInfo, Scope, ScheduleTask } from "@/types";
@@ -96,10 +96,6 @@ const calculateWorkDays = (startValue?: unknown, endValue?: unknown) => {
 };
 
 const computeScopeHours = (scope: Partial<Scope>) => {
-  const hoursRaw = scope.hours;
-  const hoursValue = typeof hoursRaw === "number" ? hoursRaw : parseFloat(String(hoursRaw));
-  if (Number.isFinite(hoursValue) && hoursValue > 0) return hoursValue;
-
   const manpowerRaw = scope.manpower;
   const manpowerValue = typeof manpowerRaw === "number" ? manpowerRaw : parseFloat(String(manpowerRaw));
   const days = calculateWorkDays(scope.startDate, scope.endDate);
@@ -107,6 +103,10 @@ const computeScopeHours = (scope: Partial<Scope>) => {
   if (Number.isFinite(manpowerValue) && manpowerValue > 0 && days > 0) {
     return manpowerValue * 10 * days;
   }
+
+  const hoursRaw = scope.hours;
+  const hoursValue = typeof hoursRaw === "number" ? hoursRaw : parseFloat(String(hoursRaw));
+  if (Number.isFinite(hoursValue) && hoursValue > 0) return hoursValue;
 
   return 0;
 };
@@ -117,6 +117,14 @@ const formatDateKey = (date: Date) => {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+const normalizeText = (value: string | null | undefined) =>
+  (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const dateKey = (value: unknown) => String(value || "").trim();
 
 type ParsedTaskEntry = {
   name: string;
@@ -130,6 +138,27 @@ type ConcreteOrderSummary = {
   jobKey: string;
   date: string;
   totalYards: number;
+};
+
+type SelectedDayEntry = NonNullable<Scope["selectedDays"]>[number];
+
+type HolidayApiRow = {
+  isPaid?: boolean;
+  date?: string;
+};
+
+type ScopeMetadataPayload = {
+  jobKey: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  description: string;
+  tasks: ScheduleTask[];
+  schedulingMode: "contiguous" | "specific-days";
+  selectedDays: SelectedDayEntry[];
+  predecessorScopeId?: string | null;
+  manpower?: number;
+  hours?: number;
 };
 
 const LEGACY_TASK_REGEX = /^\[(.*?)\]\s*(.+)$/;
@@ -322,7 +351,7 @@ export function ProjectScopesModal({
     selectedDays: [],
   });
   const [isSaving, setIsSaving] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
+  const isResetting = false;
   const [newTask, setNewTask] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskDays, setNewTaskDays] = useState("");
@@ -345,7 +374,7 @@ export function ProjectScopesModal({
   const previousActiveScopeIdRef = useRef<string | null>(selectedScopeId);
   const [highlightedTaskIndex, setHighlightedTaskIndex] = useState<number | null>(null);
 
-  const emptyScopeDetail: Partial<Scope> = {
+  const emptyScopeDetail = useMemo<Partial<Scope>>(() => ({
     title: "",
     predecessorScopeId: null,
     startDate: "",
@@ -356,20 +385,15 @@ export function ProjectScopesModal({
     tasks: [],
     schedulingMode: "contiguous",
     selectedDays: [],
-  };
+  }), []);
 
-  const normalize = (value: string | null | undefined) =>
-    (value || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-  const matchesProjectIdentity = (
+  const matchesProjectIdentity = useCallback((
     item: { customer?: string | null; projectName?: string | null }
   ) => {
-    const normalizedItemCustomer = normalize(item.customer);
-    const normalizedProjectCustomer = normalize(project.customer);
-    const normalizedItemName = normalize(item.projectName);
-    const normalizedProjectName = normalize(project.projectName);
+    const normalizedItemCustomer = normalizeText(item.customer);
+    const normalizedProjectCustomer = normalizeText(project.customer);
+    const normalizedItemName = normalizeText(item.projectName);
+    const normalizedProjectName = normalizeText(project.projectName);
 
     const customerMatch =
       normalizedItemCustomer === normalizedProjectCustomer ||
@@ -382,7 +406,7 @@ export function ProjectScopesModal({
       normalizedProjectName.includes(normalizedItemName);
 
     return customerMatch && nameMatch;
-  };
+  }, [project.customer, project.projectName]);
 
   const identityFallbackScopes = useMemo(() => {
     if (scopes.length > 0) return scopes;
@@ -394,7 +418,7 @@ export function ProjectScopesModal({
     });
 
     return matched ? matched[1] : scopes;
-  }, [allScopes, scopes, project.customer, project.projectName]);
+  }, [allScopes, scopes, matchesProjectIdentity]);
 
   const resolvedJobKey = useMemo(() => {
     const explicit = (project.jobKey || '').trim();
@@ -456,10 +480,10 @@ export function ProjectScopesModal({
     };
   }, [project.jobKey, resolvedJobKey]);
 
-  const dateKey = (value: unknown) => String(value || "").trim();
-  const scopeMatchKey = (title: unknown, startDate: unknown, endDate: unknown) =>
-    `${normalize(String(title || ""))}|${dateKey(startDate)}|${dateKey(endDate)}`;
-  const scopeMatchesSelectedDate = (scope: Partial<Scope>, targetDate: string | null | undefined) => {
+  const scopeMatchKey = useCallback((title: unknown, startDate: unknown, endDate: unknown) =>
+    `${normalizeText(String(title || ""))}|${dateKey(startDate)}|${dateKey(endDate)}`,
+  []);
+  const scopeMatchesSelectedDate = useCallback((scope: Partial<Scope>, targetDate: string | null | undefined) => {
     const date = dateKey(targetDate);
     if (!date) return false;
 
@@ -473,7 +497,7 @@ export function ProjectScopesModal({
     const rangeStart = start || date;
     const rangeEnd = end || date;
     return date >= rangeStart && date <= rangeEnd;
-  };
+  }, []);
 
   // Never let a failed canonical lookup hide already-known scopes from the grid.
   const effectiveScopes =
@@ -507,7 +531,7 @@ export function ProjectScopesModal({
     ];
   }, [effectiveScopes, isCreatingNewScope, project.jobKey, resolvedJobKey, scopeDetail]);
 
-  const getEffectiveScopeHours = (scope: Partial<Scope>) => {
+  const getEffectiveScopeHours = useCallback((scope: Partial<Scope>) => {
     const scopeHours = computeScopeHours(scope);
     if (scopeHours > 0) return scopeHours;
 
@@ -518,14 +542,14 @@ export function ProjectScopesModal({
     }
 
     return 0;
-  };
+  }, [effectiveScopes?.length, projectBudgetHours]);
 
   const displayedTotalBudgetedHours =
     projectBudgetHours && projectBudgetHours > 0
       ? projectBudgetHours
       : effectiveScopes.reduce((sum, s) => sum + getEffectiveScopeHours(s), 0);
 
-  const mapGanttScopes = (rows: NonNullable<GanttProjectResponse["scopes"]>): Scope[] =>
+  const mapGanttScopes = useCallback((rows: NonNullable<GanttProjectResponse["scopes"]>): Scope[] =>
     rows.map((scope) => ({
       id: scope.id,
       predecessorScopeId: scope.predecessorScopeId || null,
@@ -539,9 +563,9 @@ export function ProjectScopesModal({
       tasks: [],
       schedulingMode: "contiguous",
       selectedDays: [],
-    }));
+    })), [project.jobKey, resolvedJobKey]);
 
-  const loadPersistedProjectScopes = async (): Promise<Scope[]> => {
+  const loadPersistedProjectScopes = useCallback(async (): Promise<Scope[]> => {
     if (!resolvedJobKey) return [];
 
     const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey)}`);
@@ -552,7 +576,7 @@ export function ProjectScopesModal({
       fallback: { data: [], scopes: [] },
     });
 
-    let persistedScopes: Scope[] = Array.isArray(projectScopesJson?.data)
+    const persistedScopes: Scope[] = Array.isArray(projectScopesJson?.data)
       ? projectScopesJson.data
       : (Array.isArray(projectScopesJson?.scopes) ? projectScopesJson.scopes : []);
 
@@ -571,20 +595,20 @@ export function ProjectScopesModal({
       ? allScopesJson.data
       : (Array.isArray(allScopesJson?.scopes) ? allScopesJson.scopes : []);
 
-    const normalizedCustomer = normalize(project.customer);
-    const normalizedProjectNumber = normalize(project.projectNumber);
-    const normalizedProjectName = normalize(project.projectName);
+    const normalizedCustomer = normalizeText(project.customer);
+    const normalizedProjectNumber = normalizeText(project.projectNumber);
+    const normalizedProjectName = normalizeText(project.projectName);
 
     return allScopes.filter((scope) => {
       const [scopeCustomer = '', scopeProjectNumber = '', scopeProjectName = ''] = String(scope.jobKey || '').split('~');
-      const customerMatch = normalize(scopeCustomer) === normalizedCustomer;
-      const projectNumberMatch = normalize(scopeProjectNumber) === normalizedProjectNumber;
-      const projectNameMatch = normalize(scopeProjectName) === normalizedProjectName;
+      const customerMatch = normalizeText(scopeCustomer) === normalizedCustomer;
+      const projectNumberMatch = normalizeText(scopeProjectNumber) === normalizedProjectNumber;
+      const projectNameMatch = normalizeText(scopeProjectName) === normalizedProjectName;
       return customerMatch && projectNumberMatch && projectNameMatch;
     });
-  };
+  }, [project.customer, project.projectName, project.projectNumber, resolvedJobKey]);
 
-  const mergePersistedScopeMetadata = async (scopes: Scope[]): Promise<Scope[]> => {
+  const mergePersistedScopeMetadata = useCallback(async (scopes: Scope[]): Promise<Scope[]> => {
     try {
       const persistedScopes = await loadPersistedProjectScopes();
       if (persistedScopes.length === 0) {
@@ -594,7 +618,7 @@ export function ProjectScopesModal({
       const persistedByComposite = new Map<string, Scope[]>();
       const persistedByTitle = new Map<string, Scope[]>();
       persistedScopes.forEach((scope) => {
-        const titleKey = normalize(scope?.title || '');
+        const titleKey = normalizeText(scope?.title || '');
         if (!titleKey) return;
 
         const compositeKey = scopeMatchKey(scope.title, scope.startDate, scope.endDate);
@@ -609,7 +633,7 @@ export function ProjectScopesModal({
 
       return scopes.map((scope) => {
         const compositeMatches = persistedByComposite.get(scopeMatchKey(scope.title, scope.startDate, scope.endDate)) || [];
-        const titleMatches = persistedByTitle.get(normalize(scope.title || '')) || [];
+        const titleMatches = persistedByTitle.get(normalizeText(scope.title || '')) || [];
         const persisted =
           compositeMatches[0] ||
           (titleMatches.length === 1 ? titleMatches[0] : undefined);
@@ -630,9 +654,9 @@ export function ProjectScopesModal({
       console.warn('Failed to merge project-scope metadata into canonical scopes:', error);
       return scopes;
     }
-  };
+  }, [loadPersistedProjectScopes, scopeMatchKey]);
 
-  const loadScopesForGanttProject = async (projectId: string): Promise<Scope[] | null> => {
+  const loadScopesForGanttProject = useCallback(async (projectId: string): Promise<Scope[] | null> => {
     const response = await fetch(`/api/gantt-v2/projects/${projectId}/scopes`);
     const result = await readJsonResponse<{ success?: boolean; data?: NonNullable<GanttProjectResponse["scopes"]> }>(response, {
       label: "Gantt V2 project scopes",
@@ -647,9 +671,9 @@ export function ProjectScopesModal({
     setGanttProjectId(projectId);
     setCanonicalScopes(mergedScopes);
     return mergedScopes;
-  };
+  }, [mapGanttScopes, mergePersistedScopeMetadata]);
 
-  const loadCanonicalScopes = async (): Promise<Scope[] | null> => {
+  const loadCanonicalScopes = useCallback(async (): Promise<Scope[] | null> => {
     if (ganttProjectId) {
       const projectScopes = await loadScopesForGanttProject(ganttProjectId);
       if (projectScopes) {
@@ -682,13 +706,13 @@ export function ProjectScopesModal({
     setGanttProjectId(match.id);
     setCanonicalScopes(mergedScopes);
     return mergedScopes;
-  };
+  }, [ganttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
 
   const upsertProjectScopeMetadata = async (
-    payload: Record<string, any>,
+    payload: ScopeMetadataPayload,
     options?: { activeScope?: Scope | null }
   ) => {
-    const titleKey = normalize(payload?.title || '');
+    const titleKey = normalizeText(payload?.title || '');
     if (!titleKey) return;
 
     if (!resolvedJobKey) return;
@@ -705,7 +729,7 @@ export function ProjectScopesModal({
     const activeStartDate = dateKey(activeScope?.startDate);
     const activeEndDate = dateKey(activeScope?.endDate);
 
-    const titleMatches = projectScopes.filter((scope) => normalize(scope?.title || '') === titleKey);
+    const titleMatches = projectScopes.filter((scope) => normalizeText(scope?.title || '') === titleKey);
 
     let existing: Scope | undefined;
 
@@ -766,7 +790,7 @@ export function ProjectScopesModal({
     }
   };
 
-  const loadProjectBudgetHours = async () => {
+  const loadProjectBudgetHours = useCallback(async () => {
     const params = new URLSearchParams({ jobKey: project.jobKey || '' });
 
     const response = await fetch(`/api/scheduling/diagnostics?${params.toString()}`);
@@ -813,7 +837,7 @@ export function ProjectScopesModal({
     }
 
     setProjectBudgetHours(foundHours);
-  };
+  }, [matchesProjectIdentity, project.jobKey]);
 
   const getScheduledHoursForScope = (scope: Scope) => {
     if (!scheduledHoursByJobKeyDate || !project.jobKey) return 0;
@@ -858,7 +882,7 @@ export function ProjectScopesModal({
           if (exactComposite) return exactComposite.id;
 
           const matchingTitles = effectiveScopes.filter(
-            (scope) => normalize(scope.title) === normalize(sourceScope.title)
+            (scope) => normalizeText(scope.title) === normalizeText(sourceScope.title)
           );
 
           const datedTitleMatch = selectedScheduleDate
@@ -872,7 +896,7 @@ export function ProjectScopesModal({
 
       if (selectedScopeTitle) {
         const matchingTitles = effectiveScopes.filter(
-          (scope) => normalize(scope.title) === normalize(selectedScopeTitle)
+          (scope) => normalizeText(scope.title) === normalizeText(selectedScopeTitle)
         );
 
         const datedTitleMatch = selectedScheduleDate
@@ -901,6 +925,8 @@ export function ProjectScopesModal({
     effectiveScopes,
     identityFallbackScopes,
     isCreatingNewScope,
+    scopeMatchKey,
+    scopeMatchesSelectedDate,
   ]);
 
   useEffect(() => {
@@ -914,7 +940,7 @@ export function ProjectScopesModal({
       console.error('Failed to load project budget hours:', error);
       setProjectBudgetHours(null);
     });
-  }, [project.customer, project.projectName, project.jobKey]);
+  }, [loadCanonicalScopes, loadProjectBudgetHours]);
 
   useEffect(() => {
     const loadPaidHolidays = async () => {
@@ -922,10 +948,10 @@ export function ProjectScopesModal({
         const response = await fetch('/api/holidays?page=1&pageSize=500');
         if (!response.ok) return;
         const json = await response.json().catch(() => ({}));
-        const holidays = Array.isArray(json?.data) ? json.data : [];
+        const holidays: HolidayApiRow[] = Array.isArray(json?.data) ? json.data : [];
         const paid = holidays
-          .filter((h: any) => Boolean(h?.isPaid) && typeof h?.date === 'string')
-          .map((h: any) => String(h.date));
+          .filter((h) => Boolean(h?.isPaid) && typeof h?.date === 'string')
+          .map((h) => String(h.date));
         setPaidHolidaySet(new Set(paid));
       } catch (error) {
         console.warn('Failed to load paid holidays for scope validation:', error);
@@ -947,14 +973,14 @@ export function ProjectScopesModal({
       formSectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
       titleInputRef.current?.focus();
     });
-  }, [isCreatingNewScope, selectedScheduleDate]);
+  }, [emptyScopeDetail, isCreatingNewScope, selectedScheduleDate]);
 
   // Keep form blank when nothing is selected and not in create mode.
   useEffect(() => {
     if (isCreatingNewScope) return;
     if (activeScopeId) return;
     setScopeDetail(emptyScopeDetail);
-  }, [activeScopeId, isCreatingNewScope]);
+  }, [activeScopeId, emptyScopeDetail, isCreatingNewScope]);
 
   // Populate from selected scope only when editing an existing scope.
   useEffect(() => {
@@ -979,11 +1005,10 @@ export function ProjectScopesModal({
         yards: mappedYards,
       };
     });
-    const taskRollups = calculateTaskRollups(hydratedTasks);
     const selectedDayEntry =
       normalizedSchedulingMode === 'specific-days' && selectedScheduleDate
         ? (Array.isArray(scope.selectedDays)
-            ? scope.selectedDays.find((entry: any) => String(entry?.date || '').trim() === selectedScheduleDate)
+            ? scope.selectedDays.find((entry: SelectedDayEntry) => String(entry?.date || '').trim() === selectedScheduleDate)
             : null)
         : null;
     const canUseTaskRollups = hasCompleteTaskInputs(normalizedTasks);
@@ -1037,7 +1062,7 @@ export function ProjectScopesModal({
         selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
       };
     });
-  }, [activeScopeId, concreteYardsByDate, isCreatingNewScope, effectiveScopes, selectedScheduleDate, selectedScheduledHours, projectBudgetHours]);
+  }, [activeScopeId, concreteYardsByDate, dayEditMode, effectiveScopes, getEffectiveScopeHours, isCreatingNewScope, projectBudgetHours, selectedScheduleDate, selectedScheduledHours]);
 
   useEffect(() => {
     if (isCreatingNewScope || !activeScopeId) return;
@@ -1192,18 +1217,18 @@ export function ProjectScopesModal({
       };
     });
   };
-
-
-  const selectedDays = Array.isArray(scopeDetail.selectedDays)
-    ? scopeDetail.selectedDays
-        .map((entry: any) => ({
-          date: String(entry?.date || '').trim(),
-          hours: Number(entry?.hours || 0),
-          foreman: entry?.foreman ? String(entry.foreman) : null,
-        }))
-        .filter((entry: any) => /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && Number.isFinite(entry.hours) && entry.hours > 0)
-        .sort((a: any, b: any) => a.date.localeCompare(b.date))
-    : [];
+  const selectedDays = useMemo<SelectedDayEntry[]>(() => (
+    Array.isArray(scopeDetail.selectedDays)
+      ? scopeDetail.selectedDays
+          .map((entry) => ({
+            date: String(entry?.date || '').trim(),
+            hours: Number(entry?.hours || 0),
+            foreman: entry?.foreman ? String(entry.foreman) : null,
+          }))
+          .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && Number.isFinite(entry.hours) && entry.hours > 0)
+          .sort((a, b) => a.date.localeCompare(b.date))
+      : []
+  ), [scopeDetail.selectedDays]);
 
   const derivedTaskRange = useMemo(() => {
     const tasks = normalizeTaskEntries(scopeDetail.tasks);
@@ -1245,6 +1270,13 @@ export function ProjectScopesModal({
     if (canUseDerivedTaskRollups && derivedTaskRollups.manpower > 0) return derivedTaskRollups.manpower;
     return toOptionalPositiveNumber(scopeDetail.manpower) || 0;
   }, [selectedDayHoursForDisplay, canUseDerivedTaskRollups, derivedTaskRollups.manpower, scopeDetail.manpower]);
+
+  const normalizedScopeTasks = useMemo(() => normalizeTaskEntries(scopeDetail.tasks), [scopeDetail.tasks]);
+  const hasScopeTasks = normalizedScopeTasks.length > 0;
+  const manualWorkDays = useMemo(
+    () => calculateWorkDays(scopeDetail.startDate, scopeDetail.endDate),
+    [scopeDetail.startDate, scopeDetail.endDate]
+  );
 
   const getDayOfWeek = (dateKey: string) => {
     const [year, month, day] = dateKey.split('-').map(Number);
@@ -1288,7 +1320,7 @@ export function ProjectScopesModal({
       return;
     }
 
-    const existingWithoutDate = selectedDays.filter((entry: any) => entry.date !== date);
+    const existingWithoutDate = selectedDays.filter((entry) => entry.date !== date);
     const next = [...existingWithoutDate, { date, hours, foreman: null }].sort((a, b) => a.date.localeCompare(b.date));
 
     setScopeDetail((prev) => ({
@@ -1402,7 +1434,7 @@ export function ProjectScopesModal({
 
         const canUseRollupsForMetadata = hasCompleteTaskInputs(normalizedTasks);
 
-        const metadataPayload: Record<string, any> = {
+        const metadataPayload: ScopeMetadataPayload = {
           jobKey: resolvedJobKey,
           title: scopeName || 'Scope',
           startDate: resolvedStartDate,
@@ -1423,7 +1455,7 @@ export function ProjectScopesModal({
 
         const updatedScopes = effectiveScopes.map((scope) => {
           if (activeScopeId && scope.id !== activeScopeId) return scope;
-          if (!activeScopeId && normalize(scope.title) !== normalize(scopeName)) return scope;
+          if (!activeScopeId && normalizeText(scope.title) !== normalizeText(scopeName)) return scope;
           return {
             ...scope,
             startDate: metadataPayload.startDate,
@@ -1443,7 +1475,7 @@ export function ProjectScopesModal({
       const normalizedTasks = normalizeTaskEntries(scopeDetail.tasks);
       const rollups = calculateTaskRollups(normalizedTasks);
 
-      const payload: Record<string, any> = {
+      const payload: ScopeMetadataPayload = {
         jobKey: resolvedJobKey,
         title: (scopeDetail.title || "Scope").trim() || "Scope",
         startDate: effectiveSchedulingMode === 'specific-days'
@@ -2047,11 +2079,23 @@ export function ProjectScopesModal({
                     min="0" 
                     step="0.5" 
                     value={displayedSummaryManpower > 0 ? displayedSummaryManpower : ""} 
-                    readOnly
-                    className="w-full px-3 py-2 border rounded-md text-sm bg-gray-100 font-bold" 
+                    readOnly={hasScopeTasks}
+                    onChange={(e) => {
+                      if (hasScopeTasks) return;
+                      const nextValue = Number(e.target.value || 0);
+                      setScopeDetail((prev) => ({
+                        ...prev,
+                        manpower: Number.isFinite(nextValue) && nextValue >= 0 ? nextValue : undefined,
+                      }));
+                    }}
+                    className={`w-full px-3 py-2 border rounded-md text-sm font-bold ${hasScopeTasks ? "bg-gray-100" : "bg-white"}`} 
                     placeholder="e.g. 2.0" 
                   />
-                  <p className="mt-1 text-[10px] text-gray-400">Auto-derived from task manpower</p>
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    {hasScopeTasks
+                      ? "Auto-derived from task manpower"
+                      : "Manual manpower. Scope hours = manpower x 10 x workdays."}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Budgeted Hours</label>
@@ -2064,7 +2108,11 @@ export function ProjectScopesModal({
                     className="w-full px-3 py-2 border rounded-md text-sm bg-gray-100 font-bold text-orange-900" 
                     placeholder="Total hours" 
                   />
-                  <p className="mt-1 text-[10px] text-gray-400">Total (sum of task manpower x 10 x days)</p>
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    {hasScopeTasks
+                      ? "Total (sum of task manpower x 10 x days)"
+                      : `Total (${manualWorkDays} workday${manualWorkDays === 1 ? '' : 's'} x manpower x 10)`}
+                  </p>
                 </div>
               </div>
               
