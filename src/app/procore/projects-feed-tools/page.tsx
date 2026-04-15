@@ -42,6 +42,8 @@ export default function ProcoreProjectsFeedToolsPage() {
 
   const endpointExamples = useMemo(
     () => ({
+      statusRefreshQuick: "/api/scheduling/refresh-status",
+      statusRefreshFull: "/api/scheduling/refresh-status",
       syncQuick: "/api/procore/sync/projects-feed?fetchAll=false",
       syncFull: "/api/procore/sync/projects-feed?fetchAll=true",
       verify: "/api/procore/projects-feed/verify-matches",
@@ -630,6 +632,26 @@ export default function ProcoreProjectsFeedToolsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 disabled={disableSyncActions}
+                onClick={() => runPost(endpointExamples.statusRefreshQuick, "Status Refresh Quick", {
+                  fetchAll: false,
+                })}
+                className="px-4 py-3 rounded-xl bg-emerald-700 text-white font-black text-xs uppercase tracking-widest hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {busyAction === "Status Refresh Quick" ? "Running..." : "0) Status Refresh Quick"}
+              </button>
+
+              <button
+                disabled={disableSyncActions}
+                onClick={() => runPost(endpointExamples.statusRefreshFull, "Status Refresh Full", {
+                  fetchAll: true,
+                })}
+                className="px-4 py-3 rounded-xl bg-emerald-900 text-white font-black text-xs uppercase tracking-widest hover:bg-black disabled:opacity-50"
+              >
+                {busyAction === "Status Refresh Full" ? "Running..." : "0b) Status Refresh Full"}
+              </button>
+
+              <button
+                disabled={disableSyncActions}
                 onClick={() => runGet(endpointExamples.syncQuick, "Sync Quick")}
                 className="px-4 py-3 rounded-xl bg-stone-800 text-white font-black text-xs uppercase tracking-widest hover:bg-stone-900 disabled:opacity-50"
               >
@@ -662,6 +684,14 @@ export default function ProcoreProjectsFeedToolsPage() {
               >
                 {busyAction === "Fetch Feed" ? "Running..." : "4) Fetch Feed"}
               </button>
+
+              <div className="sm:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-relaxed text-emerald-900">
+                <span className="font-black uppercase tracking-[0.14em] text-[10px]">Status Note</span>
+                <div className="mt-1">
+                  `Status Refresh` updates the canonical `Project.status` rows used by WIP and scheduling.
+                  `Sync Quick` and `Sync Full` refresh the feed tables, but do not directly update WIP status by themselves.
+                </div>
+              </div>
 
               <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
                 <label className="block text-[10px] font-black uppercase tracking-[0.14em] text-gray-600 mb-2">

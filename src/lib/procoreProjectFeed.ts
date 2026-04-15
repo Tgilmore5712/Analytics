@@ -1,6 +1,12 @@
 import { prisma } from '@/lib/prisma';
 
 export const CUSTOMER_CUSTOM_FIELD_ID = '598134325737314';
+export const DEFAULT_INTERNAL_VENDOR_NAMES = [
+  'paradise masonry, llc',
+  'paradise concrete solutions',
+  'mcdonnel consulting',
+  'pmc procore direct costs',
+];
 
 type JsonObject = Record<string, unknown>;
 
@@ -26,6 +32,21 @@ export function isMeaningfulCustomer(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
   return trimmed.length > 0 && !['unknown', 'n/a', 'na', 'none'].includes(trimmed.toLowerCase());
+}
+
+export function getInternalVendorSet(): Set<string> {
+  const configured = (process.env.PROCORE_INTERNAL_VENDOR_NAMES || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0);
+
+  return new Set([...DEFAULT_INTERNAL_VENDOR_NAMES, ...configured]);
+}
+
+export function isInternalCustomerName(value: unknown, internalVendorSet = getInternalVendorSet()): boolean {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && internalVendorSet.has(normalized);
 }
 
 export function extractCustomerFromCustomFields(customFields: unknown): string | null {

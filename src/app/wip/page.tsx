@@ -138,6 +138,10 @@ function buildProjectNumNameKey(projectNumber: unknown, projectName: unknown): s
   return `${String(projectNumber || "").trim()}~${String(projectName || "").trim()}`;
 }
 
+function buildCustomerProjectKey(customer: unknown, projectName: unknown): string {
+  return `${String(customer || "").trim()}~${String(projectName || "").trim()}`;
+}
+
 function normalizeCustomerValue(value: unknown): string {
   const normalized = (value ?? "").toString().trim();
   if (!normalized) return "";
@@ -170,7 +174,8 @@ function normalizeStatusValue(value: unknown): string {
 }
 
 function isInProgressStatus(value: unknown): boolean {
-  return normalizeStatusValue(value) === "in progress";
+  const normalized = normalizeStatusValue(value);
+  return normalized === "in progress" || normalized === "course of construction";
 }
 
 function isLiveScheduleSource(value: unknown): boolean {
@@ -502,15 +507,22 @@ function WIPReportContent() {
     const schedulesByProjectNumber = new Map<string, Schedule[]>();
     const liveHoursByExactKey = new Map<string, number>();
     const liveHoursByProjectNumName = new Map<string, number>();
+    const liveHoursByCustomerProject = new Map<string, number>();
+    const liveScopePartsByCustomerProject = new Map<string, { customer: string; projectNumber: string; projectName: string }>();
     const scheduledHoursByExactKey = new Map<string, number>();
     const scheduledHoursByProjectNumName = new Map<string, number>();
+    const scheduledHoursByCustomerProject = new Map<string, number>();
 
     schedules.forEach((s) => {
       schedulesByExactKey.set(s.jobKey, s);
       const parts = parseJobKeyParts(s.jobKey);
       const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
+      const customerProjectKey = buildCustomerProjectKey(parts.customer, parts.projectName);
       if (parts.projectNumber || parts.projectName) {
         schedulesByProjectNumName.set(numNameKey, s);
+      }
+      if (parts.projectName) {
+        scheduledHoursByCustomerProject.set(customerProjectKey, scheduledHoursByCustomerProject.get(customerProjectKey) || 0);
       }
       if (parts.projectNumber) {
         const arr = schedulesByProjectNumber.get(parts.projectNumber) || [];
@@ -526,7 +538,12 @@ function WIPReportContent() {
       liveHoursByExactKey.set(jobKey, liveHours);
       const parts = parseJobKeyParts(jobKey);
       const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
+      const customerProjectKey = buildCustomerProjectKey(parts.customer, parts.projectName);
       liveHoursByProjectNumName.set(numNameKey, (liveHoursByProjectNumName.get(numNameKey) || 0) + liveHours);
+      liveHoursByCustomerProject.set(customerProjectKey, (liveHoursByCustomerProject.get(customerProjectKey) || 0) + liveHours);
+      if (!liveScopePartsByCustomerProject.has(customerProjectKey)) {
+        liveScopePartsByCustomerProject.set(customerProjectKey, parts);
+      }
     });
 
     activeScheduleEntries
@@ -538,7 +555,9 @@ function WIPReportContent() {
         scheduledHoursByExactKey.set(entry.jobKey, (scheduledHoursByExactKey.get(entry.jobKey) || 0) + nextHours);
         const parts = parseJobKeyParts(entry.jobKey);
         const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
+        const customerProjectKey = buildCustomerProjectKey(parts.customer, parts.projectName);
         scheduledHoursByProjectNumName.set(numNameKey, (scheduledHoursByProjectNumName.get(numNameKey) || 0) + nextHours);
+        scheduledHoursByCustomerProject.set(customerProjectKey, (scheduledHoursByCustomerProject.get(customerProjectKey) || 0) + nextHours);
       });
 
     const results: Schedule[] = [];
@@ -557,8 +576,18 @@ function WIPReportContent() {
       }
 
       const numNameKey = buildProjectNumNameKey(keyParts.projectNumber, keyParts.projectName);
-      const liveTotalHours = liveHoursByExactKey.get(key) ?? liveHoursByProjectNumName.get(numNameKey) ?? 0;
-      const fallbackScheduledHours = scheduledHoursByExactKey.get(key) ?? scheduledHoursByProjectNumName.get(numNameKey) ?? 0;
+      const customerProjectKey = buildCustomerProjectKey(keyParts.customer, keyParts.projectName);
+      const liveFallbackParts = liveScopePartsByCustomerProject.get(customerProjectKey);
+      const liveTotalHours =
+        liveHoursByExactKey.get(key) ??
+        liveHoursByProjectNumName.get(numNameKey) ??
+        liveHoursByCustomerProject.get(customerProjectKey) ??
+        0;
+      const fallbackScheduledHours =
+        scheduledHoursByExactKey.get(key) ??
+        scheduledHoursByProjectNumName.get(numNameKey) ??
+        scheduledHoursByCustomerProject.get(customerProjectKey) ??
+        0;
       const totalHours = liveTotalHours > 0 ? liveTotalHours : fallbackScheduledHours;
       if (totalHours <= 0) return;
 
@@ -566,13 +595,19 @@ function WIPReportContent() {
         resolveProjectCustomer(representative) ||
         (matchedSchedule ? resolveScheduleCustomer(matchedSchedule) : "") ||
         normalizeCustomerValue(keyParts.customer);
+      const resolvedProjectNumber = representative.projectNumber ?? liveFallbackParts?.projectNumber ?? "";
+      const resolvedProjectName = representative.projectName ?? liveFallbackParts?.projectName ?? "Unnamed";
+      const canonicalJobKey =
+        liveFallbackParts && liveFallbackParts.projectName
+          ? `${mergedCustomer || normalizeCustomerValue(liveFallbackParts.customer)}~${liveFallbackParts.projectNumber ?? ""}~${liveFallbackParts.projectName}`
+          : matchedSchedule?.jobKey || key;
 
       results.push({
         id: matchedSchedule?.id || key,
-        jobKey: key,
+        jobKey: canonicalJobKey,
         customer: mergedCustomer || "Unknown",
-        projectNumber: representative.projectNumber ?? "",
-        projectName: representative.projectName ?? "Unnamed",
+        projectNumber: resolvedProjectNumber,
+        projectName: resolvedProjectName,
         totalHours,
         status: "In Progress",
         allocations: normalizeAllocations(matchedSchedule?.allocations || []),

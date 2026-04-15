@@ -32,6 +32,7 @@ const STATUS_NORMALIZATION: Record<string, string> = {
   'ACCEPTED':         'Accepted',
   'Bidding':          'Bid Submitted',
   'Pre-Construction': 'Estimating',
+  'Course of Construction': 'In Progress',
 };
 
 export const normalizeStatus = (status: string | null | undefined): string => {

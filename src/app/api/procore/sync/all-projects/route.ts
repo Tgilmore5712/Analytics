@@ -5,6 +5,34 @@ import { prisma } from "@/lib/prisma";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { extractCustomerFromCustomFields, isMeaningfulCustomer } from "@/lib/procoreProjectFeed";
+import { buildAllowedProcoreHostCandidates } from "@/lib/procoreHosts";
+
+const DEFAULT_ESTIMATING_BASE_URL = "https://api.procore.com";
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function unwrapBidBoardProjects(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!isRecord(payload)) {
+    return [];
+  }
+
+  const candidates = [payload.data, payload.projects, payload.bid_board_projects];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  return [];
+}
 
 function mapV1StatusToBidBoardStatus(status: string | null | undefined): string | null {
   const normalized = String(status || "")
@@ -936,38 +964,116 @@ export async function POST(request: Request) {
     }
 
     // 2. Fetch all V2 Bid Board Projects.
-    // Include filters[by_status]=All so missing projects are included in the DB feed.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allBidBoardProjects: any[] = [];
+    // Use the estimating host candidate flow here too, since bid-board coverage can differ by host/token.
     const bidBoardStatusFilter = String(body?.['filters[by_status]'] || body?.bidBoardStatusFilter || 'All').trim() || 'All';
-    let page = 1;
-    while (true) {
-      const params = new URLSearchParams({
-        page: String(page),
-        per_page: '100',
-      });
-      if (bidBoardStatusFilter) {
-        params.set('filters[by_status]', bidBoardStatusFilter);
+    const requestedEstimatingBaseUrl = String(
+      body?.baseUrl || process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL
+    ).trim();
+    const hostCandidates = buildAllowedProcoreHostCandidates({
+      requestedOrigin: requestedEstimatingBaseUrl,
+      extraOrigins: [process.env.PROCORE_ESTIMATING_API_URL, DEFAULT_ESTIMATING_BASE_URL, 'https://api.procore.com'],
+    });
+
+    if (hostCandidates.error) {
+      return NextResponse.json({ error: hostCandidates.error }, { status: 400 });
+    }
+
+    const fetchBidBoardProjectsForToken = async (token: string) => {
+      const merged = new Map<string, Record<string, unknown>>();
+
+      for (const host of hostCandidates.candidates) {
+        let page = 1;
+        let hostWorked = false;
+
+        while (true) {
+          const params = new URLSearchParams({
+            page: String(page),
+            per_page: '100',
+          });
+          if (bidBoardStatusFilter) {
+            params.set('filters[by_status]', bidBoardStatusFilter);
+          }
+
+          const url = `${host.replace(/\/$/, '')}/rest/v2.0/companies/${encodeURIComponent(companyId)}/estimating/bid_board_projects?${params.toString()}`;
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${String(token).trim()}`,
+              Accept: 'application/json',
+              'Procore-Company-Id': companyId,
+            },
+          });
+
+          if (!response.ok) {
+            const errorBody = await response.text();
+            if (response.status === 404) {
+              break;
+            }
+            throw new Error(`Estimating API error ${response.status} from ${host}: ${errorBody}`);
+          }
+
+          hostWorked = true;
+          const payload = await response.json();
+          const items = unwrapBidBoardProjects(payload);
+          if (items.length === 0) {
+            break;
+          }
+
+          for (const item of items) {
+            const record = isRecord(item) ? item : {};
+            const key = String(
+              record.id || `${String(record.project_id || '').trim()}~${String(record.name || '').trim()}~${String(record.status || '').trim()}`
+            ).trim();
+            if (!key) continue;
+            if (!merged.has(key)) {
+              merged.set(key, record);
+            }
+          }
+
+          if (!fetchAll) break;
+          page += 1;
+          if (page > maxPages) break;
+        }
+
+        if (hostWorked && merged.size > 0) {
+          break;
+        }
       }
 
-      const endpoint = `/rest/v2.0/companies/${companyId}/estimating/bid_board_projects?${params.toString()}`;
-      const json = await makeProcoreRequestWithFallback(endpoint);
-      const items = Array.isArray(json)
-        ? json
-        : (json && typeof json === 'object' && Array.isArray((json as { data?: unknown[] }).data)
-          ? (json as { data: unknown[] }).data
-          : []);
-      if (items.length === 0) break;
-      allBidBoardProjects.push(...items);
-      if (items.length < 100 || !fetchAll) break;
-      page++;
-      if (page > maxPages) break;
+      return Array.from(merged.values());
+    };
+
+    const bidBoardByKey = new Map<string, Record<string, unknown>>();
+    for (const item of await fetchBidBoardProjectsForToken(accessToken)) {
+      const record = isRecord(item) ? item : {};
+      const key = String(
+        record.id || `${String(record.project_id || '').trim()}~${String(record.name || '').trim()}~${String(record.status || '').trim()}`
+      ).trim();
+      if (!key) continue;
+      bidBoardByKey.set(key, item);
     }
+
+    if (userAccessToken && String(userAccessToken).trim() && String(userAccessToken).trim() !== String(accessToken).trim()) {
+      for (const item of await fetchBidBoardProjectsForToken(String(userAccessToken).trim())) {
+        const record = isRecord(item) ? item : {};
+        const key = String(
+          record.id || `${String(record.project_id || '').trim()}~${String(record.name || '').trim()}~${String(record.status || '').trim()}`
+        ).trim();
+        if (!key) continue;
+        if (!bidBoardByKey.has(key)) {
+          bidBoardByKey.set(key, item);
+        }
+      }
+    }
+
+    // Keep downstream processing permissive because bid-board payloads vary by host/version.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allBidBoardProjects: any[] = Array.from(bidBoardByKey.values());
 
     // 2.25 Fetch Project Stages (company stage definitions)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allProjectStages: any[] = [];
-    page = 1;
+    let page = 1;
     while (true) {
       const endpoint = `/rest/v1.0/companies/${companyId}/project_stages?page=${page}&per_page=100`;
       const stageData = await makeProcoreRequestWithFallback(endpoint);
