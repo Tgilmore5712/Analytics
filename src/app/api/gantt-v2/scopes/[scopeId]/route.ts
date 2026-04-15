@@ -72,6 +72,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const projectId = existingScope[0].project_id;
+    const previousTitle = String(existingScope[0].title || "").trim();
     const title = (body?.title ?? existingScope[0].title ?? '').toString().trim();
     const startDate = body?.startDate === undefined
       ? (existingScope[0].start_date ? existingScope[0].start_date.toISOString().slice(0, 10) : null)
@@ -148,6 +149,30 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ? existingScope[0].end_date.toISOString().slice(0, 10)
       : null;
     const didDatesChange = previousStartDate !== startDate || previousEndDate !== endDate;
+
+    if (previousTitle && previousTitle !== title) {
+      const project = await prisma.$queryRawUnsafe<Array<{
+        customer: string | null;
+        project_number: string | null;
+        project_name: string;
+      }>>(
+        `SELECT customer, project_number, project_name FROM gantt_v2_projects WHERE id = $1 LIMIT 1`,
+        projectId
+      );
+
+      if (project && project.length > 0) {
+        const { customer, project_number, project_name } = project[0];
+        const jobKey = `${customer || ''}~${project_number || ''}~${project_name || ''}`;
+
+        await prisma.activeSchedule.deleteMany({
+          where: {
+            jobKey,
+            scopeOfWork: previousTitle,
+            source: 'gantt',
+          },
+        });
+      }
+    }
 
     // Sync to ActiveSchedule
     await syncScopeToActiveSchedule(

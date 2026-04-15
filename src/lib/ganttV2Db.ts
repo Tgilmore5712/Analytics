@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { shouldFallbackToEmptyRead } from '@/lib/dbResilience';
 import { getClientCredentialsToken, makeRequest, procoreConfig } from '@/lib/procore';
+import { getInternalVendorSet, isInternalCustomerName, isMeaningfulCustomer } from '@/lib/procoreProjectFeed';
 
 export type GanttV2ProjectRow = {
   id: string;
@@ -8,6 +9,16 @@ export type GanttV2ProjectRow = {
   customer: string | null;
   projectNumber: string | null;
   status: string | null;
+  source: string | null;
+  sourceCompanyId?: string | null;
+  sourceExternalId?: string | null;
+  sourceProjectId?: string | null;
+  sourceStagingProjectId?: string | null;
+  sourceDisplayName?: string | null;
+  sourceProjectOwnerType?: string | null;
+  sourceProjectOwnerTypeId?: string | null;
+  sourceProcoreCreatedAt?: string | null;
+  sourceProcoreUpdatedAt?: string | null;
   scopeCount: number;
   scopedHours: number;
   startDate: string | null;
@@ -55,6 +66,16 @@ export type GanttV2ProjectWithScopes = {
   customer: string | null;
   projectNumber: string | null;
   status: string | null;
+  source: string | null;
+  sourceCompanyId?: string | null;
+  sourceExternalId?: string | null;
+  sourceProjectId?: string | null;
+  sourceStagingProjectId?: string | null;
+  sourceDisplayName?: string | null;
+  sourceProjectOwnerType?: string | null;
+  sourceProjectOwnerTypeId?: string | null;
+  sourceProcoreCreatedAt?: string | null;
+  sourceProcoreUpdatedAt?: string | null;
   scopeCount: number;
   scopedHours: number;
   startDate: string | null;
@@ -91,6 +112,22 @@ type ProcoreProjectFeedRecord = {
   linkedProjectId: string | null;
 };
 
+type StagedProcoreProjectShell = {
+  companyId: string;
+  externalId: string;
+  procoreProjectId: string | null;
+  stagingProjectId: string | null;
+  displayName: string | null;
+  projectOwnerType: string | null;
+  projectOwnerTypeId: string | null;
+  procoreCreatedAt: Date | null;
+  procoreUpdatedAt: Date | null;
+  customer: string | null;
+  projectNumber: string | null;
+  projectName: string;
+  status: string | null;
+};
+
 type CommercialSource = {
   id: string;
   title: string;
@@ -121,6 +158,8 @@ type EstimateGroupHours = {
 type GanttProjectsOptions = {
   procoreAccessToken?: string | null;
   procoreCompanyId?: string | null;
+  includeEstimateHours?: boolean;
+  projectId?: string | null;
 };
 
 const formatMonthKey = (date: Date) =>
@@ -132,6 +171,18 @@ const parseDate = (value: Date | string | null): Date | null => {
   if (Number.isNaN(date.getTime())) return null;
   date.setHours(0, 0, 0, 0);
   return date;
+};
+
+const normalizeProjectIdentity = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const hasMeaningfulProjectNumber = (projectNumber: unknown, projectName: unknown) => {
+  const normalizedNumber = normalizeProjectIdentity(projectNumber);
+  const normalizedName = normalizeProjectIdentity(projectName);
+  return Boolean(normalizedNumber) && normalizedNumber !== normalizedName;
 };
 
 const isWeekday = (date: Date) => {
@@ -158,6 +209,16 @@ export async function ensureGanttV2Schema(): Promise<void> {
         customer TEXT,
         project_number TEXT,
         status TEXT,
+        source TEXT,
+        source_company_id TEXT,
+        source_external_id TEXT,
+        source_project_id TEXT,
+        source_staging_project_id TEXT,
+        source_display_name TEXT,
+        source_project_owner_type TEXT,
+        source_project_owner_type_id TEXT,
+        source_procore_created_at TIMESTAMPTZ,
+        source_procore_updated_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -189,8 +250,36 @@ export async function ensureGanttV2Schema(): Promise<void> {
       );
     `,
     `ALTER TABLE gantt_v2_scopes ADD COLUMN IF NOT EXISTS predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_company_id TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_external_id TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_id TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_staging_project_id TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_display_name TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_owner_type TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_owner_type_id TEXT;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_procore_created_at TIMESTAMPTZ;`,
+    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_procore_updated_at TIMESTAMPTZ;`,
+    `UPDATE gantt_v2_projects SET source = CASE WHEN COALESCE(NULLIF(TRIM(source_company_id), ''), NULL) IS NOT NULL AND COALESCE(NULLIF(TRIM(source_external_id), ''), NULL) IS NOT NULL THEN 'procore' ELSE 'app' END WHERE COALESCE(NULLIF(TRIM(source), ''), NULL) IS NULL;`,
+    `
+      UPDATE gantt_v2_projects p
+      SET source_staging_project_id = s.project_id,
+          source_display_name = COALESCE(NULLIF(TRIM(s.display_name), ''), p.source_display_name),
+          source_project_owner_type = COALESCE(NULLIF(TRIM(s.project_owner_type), ''), p.source_project_owner_type),
+          source_project_owner_type_id = COALESCE(NULLIF(TRIM(s.project_owner_type_id), ''), p.source_project_owner_type_id),
+          source_procore_created_at = COALESCE(s.procore_created_at, p.source_procore_created_at),
+          source_procore_updated_at = COALESCE(s.procore_updated_at, p.source_procore_updated_at),
+          source_project_id = COALESCE(NULLIF(TRIM(s.procore_project_id), ''), p.source_project_id)
+      FROM procore_project_staging s
+      WHERE COALESCE(NULLIF(TRIM(p.source), ''), 'app') = 'procore'
+        AND s.source = 'procore_v1_projects'
+        AND s.company_id = p.source_company_id
+        AND s.external_id = p.source_external_id;
+    `,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_source ON gantt_v2_projects(source);`,
+    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_source_identity ON gantt_v2_projects(source_company_id, source_external_id);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_predecessor_scope_id ON gantt_v2_scopes(predecessor_scope_id);`,
     `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`,
@@ -209,18 +298,354 @@ export async function ensureGanttV2Schema(): Promise<void> {
   }
 }
 
-export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
+export async function syncGanttV2ProjectsFromCanonicalProjects(): Promise<void> {
   try {
+    const internalVendorSet = getInternalVendorSet();
+    const [stagedProjects, feedProjects, canonicalProjectRows] = await Promise.all([
+      prisma.procoreProjectStaging.findMany({
+        where: {
+          source: 'procore_v1_projects',
+          name: { not: null },
+        },
+        select: {
+          companyId: true,
+          externalId: true,
+          procoreProjectId: true,
+          projectId: true,
+          displayName: true,
+          projectOwnerType: true,
+          projectOwnerTypeId: true,
+          createdAt: true,
+          updatedAt: true,
+          name: true,
+          customer: true,
+          projectNumber: true,
+          bidBoardStatus: true,
+          status: true,
+        },
+        orderBy: [{ name: "asc" }],
+      }),
+      prisma.procoreProjectFeed.findMany({
+        where: {
+          syncSource: 'procore_v1_projects',
+          softDeleted: false,
+        },
+        select: {
+          externalId: true,
+          procoreId: true,
+          customer: true,
+          projectName: true,
+          projectNumber: true,
+          linkedProjectId: true,
+        },
+      }),
+      prisma.project.findMany({
+        where: {
+          projectArchived: false,
+        },
+        select: {
+          id: true,
+          customer: true,
+          projectNumber: true,
+          projectName: true,
+          procoreId: true,
+        },
+      }),
+    ]);
+
+    const canonicalProjectById = new Map(canonicalProjectRows.map((project) => [project.id, project]));
+    const canonicalProjectByProcoreId = new Map(
+      canonicalProjectRows
+        .filter((project) => String(project.procoreId || '').trim())
+        .map((project) => [String(project.procoreId || '').trim(), project])
+    );
+    const feedByExternalId = new Map(
+      feedProjects
+        .filter((project) => String(project.externalId || '').trim())
+        .map((project) => [String(project.externalId || '').trim(), project])
+    );
+    const feedByProcoreId = new Map(
+      feedProjects
+        .filter((project) => String(project.procoreId || '').trim())
+        .map((project) => [String(project.procoreId || '').trim(), project])
+    );
+
+    const canonicalProjectEntries = stagedProjects
+      .map((project) => {
+        const companyId = String(project.companyId || '').trim();
+        const externalId = String(project.externalId || '').trim();
+        const projectName = String(project.name || '').trim();
+        if (!companyId || !externalId || !projectName) return null;
+
+        const procoreProjectId = String(project.procoreProjectId || '').trim() || null;
+        const stagingProjectId = String(project.projectId || '').trim() || null;
+        const displayName = String(project.displayName || '').trim() || null;
+        const projectOwnerType = String(project.projectOwnerType || '').trim() || null;
+        const projectOwnerTypeId = String(project.projectOwnerTypeId || '').trim() || null;
+        const matchedFeed =
+          feedByExternalId.get(externalId) ||
+          (procoreProjectId ? feedByProcoreId.get(procoreProjectId) : null) ||
+          null;
+        const linkedProject =
+          (matchedFeed?.linkedProjectId ? canonicalProjectById.get(String(matchedFeed.linkedProjectId || '').trim()) : null) ||
+          (procoreProjectId ? canonicalProjectByProcoreId.get(procoreProjectId) : null) ||
+          null;
+        const bidBoardStatus = String(project.bidBoardStatus || '').trim();
+        const fallbackStatus = String(project.status || '').trim();
+        const customerCandidates = [
+          String(project.customer || '').trim(),
+          String(matchedFeed?.customer || '').trim(),
+          String(linkedProject?.customer || '').trim(),
+        ];
+        const customer =
+          customerCandidates.find(
+            (candidate) =>
+              isMeaningfulCustomer(candidate) && !isInternalCustomerName(candidate, internalVendorSet)
+          ) || null;
+        const resolvedProjectNumber =
+          String(project.projectNumber || '').trim() ||
+          String(matchedFeed?.projectNumber || '').trim() ||
+          String(linkedProject?.projectNumber || '').trim() ||
+          null;
+        const resolvedProjectName =
+          projectName ||
+          String(matchedFeed?.projectName || '').trim() ||
+          String(linkedProject?.projectName || '').trim();
+
+        return [
+          `${companyId}~${externalId}`,
+          {
+            companyId,
+            externalId,
+            procoreProjectId,
+            stagingProjectId,
+            displayName,
+            projectOwnerType,
+            projectOwnerTypeId,
+            procoreCreatedAt: project.createdAt || null,
+            procoreUpdatedAt: project.updatedAt || null,
+            customer,
+            projectNumber: resolvedProjectNumber,
+            projectName: resolvedProjectName,
+            status: bidBoardStatus || fallbackStatus || null,
+          },
+        ] as const;
+      })
+      .filter((entry) => Boolean(entry)) as Array<readonly [string, StagedProcoreProjectShell]>;
+
+    const canonicalProjectsBySource = Array.from(new Map(canonicalProjectEntries).values());
+    const canonicalProjectsByName = new Map<string, StagedProcoreProjectShell[]>();
+
+    for (const project of canonicalProjectsBySource) {
+      const key = normalizeProjectIdentity(project.projectName);
+      const bucket = canonicalProjectsByName.get(key) || [];
+      bucket.push(project);
+      canonicalProjectsByName.set(key, bucket);
+    }
+
+    const canonicalProjects: StagedProcoreProjectShell[] = [];
+    for (const group of canonicalProjectsByName.values()) {
+      if (group.length <= 1) {
+        canonicalProjects.push(...group);
+        continue;
+      }
+
+      const externalCustomers = new Set(
+        group
+          .map((project) => String(project.customer || '').trim())
+          .filter(
+            (customer) =>
+              isMeaningfulCustomer(customer) && !isInternalCustomerName(customer, internalVendorSet)
+          )
+          .map((customer) => normalizeProjectIdentity(customer))
+      );
+
+      if (externalCustomers.size > 1) {
+        canonicalProjects.push(...group);
+        continue;
+      }
+
+      const preferredProject = [...group].sort((a, b) => {
+        const aHasPreferredCustomer =
+          isMeaningfulCustomer(a.customer) && !isInternalCustomerName(a.customer, internalVendorSet) ? 1 : 0;
+        const bHasPreferredCustomer =
+          isMeaningfulCustomer(b.customer) && !isInternalCustomerName(b.customer, internalVendorSet) ? 1 : 0;
+        const aHasMeaningfulNumber = hasMeaningfulProjectNumber(a.projectNumber, a.projectName) ? 1 : 0;
+        const bHasMeaningfulNumber = hasMeaningfulProjectNumber(b.projectNumber, b.projectName) ? 1 : 0;
+
+        return (
+          bHasPreferredCustomer - aHasPreferredCustomer ||
+          bHasMeaningfulNumber - aHasMeaningfulNumber ||
+          (b.procoreUpdatedAt?.getTime() || 0) - (a.procoreUpdatedAt?.getTime() || 0) ||
+          (b.procoreCreatedAt?.getTime() || 0) - (a.procoreCreatedAt?.getTime() || 0)
+        );
+      })[0];
+
+      canonicalProjects.push(preferredProject);
+    }
+
+    const existingProjects = await prisma.$queryRawUnsafe<Array<{
+      id: string;
+      customer: string | null;
+      project_number: string | null;
+      project_name: string;
+      status: string | null;
+      source: string | null;
+      source_company_id: string | null;
+      source_external_id: string | null;
+      source_project_id: string | null;
+      source_staging_project_id: string | null;
+      source_display_name: string | null;
+      source_project_owner_type: string | null;
+      source_project_owner_type_id: string | null;
+      source_procore_created_at: Date | null;
+      source_procore_updated_at: Date | null;
+    }>>(
+      `
+        SELECT id, customer, project_number, project_name, status, source, source_company_id, source_external_id, source_project_id,
+               source_staging_project_id, source_display_name, source_project_owner_type, source_project_owner_type_id,
+               source_procore_created_at, source_procore_updated_at
+        FROM gantt_v2_projects
+      `
+    );
+
+    const buildKey = (customer: string | null | undefined, projectNumber: string | null | undefined, projectName: string | null | undefined) =>
+      `${String(customer || "").trim()}~${String(projectNumber || "").trim()}~${String(projectName || "").trim()}`;
+    const buildSourceKey = (companyId: string | null | undefined, externalId: string | null | undefined) =>
+      `${String(companyId || "").trim()}~${String(externalId || "").trim()}`;
+
+    const existingBySourceKey = new Map(
+      existingProjects
+        .filter((project) => String(project.source_company_id || '').trim() && String(project.source_external_id || '').trim())
+        .map((project) => [
+          buildSourceKey(project.source_company_id, project.source_external_id),
+          project,
+        ])
+    );
+    const existingByKey = new Map(existingProjects.map((project) => [
+      buildKey(project.customer, project.project_number, project.project_name),
+      project,
+    ]));
+
+    for (const project of canonicalProjects) {
+      const projectName = String(project.projectName || "").trim();
+      if (!projectName) continue;
+
+      const customer = String(project.customer || "").trim() || null;
+      const projectNumber = String(project.projectNumber || "").trim() || null;
+      const status = String(project.status || "").trim() || null;
+      const key = buildKey(customer, projectNumber, projectName);
+      const sourceKey = buildSourceKey(project.companyId, project.externalId);
+      const existing = existingBySourceKey.get(sourceKey) || existingByKey.get(key);
+
+      if (!existing) {
+        await prisma.$executeRawUnsafe(
+          `
+            INSERT INTO gantt_v2_projects (
+              id, project_name, customer, project_number, status, source, source_company_id, source_external_id, source_project_id,
+              source_staging_project_id, source_display_name, source_project_owner_type, source_project_owner_type_id,
+              source_procore_created_at, source_procore_updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          `,
+          crypto.randomUUID(),
+          projectName,
+          customer,
+          projectNumber,
+          status,
+          'procore',
+          project.companyId,
+          project.externalId,
+          project.procoreProjectId,
+          project.stagingProjectId,
+          project.displayName,
+          project.projectOwnerType,
+          project.projectOwnerTypeId,
+          project.procoreCreatedAt,
+          project.procoreUpdatedAt
+        );
+        continue;
+      }
+
+      const needsUpdate =
+        String(existing.customer || "").trim() !== String(customer || "").trim() ||
+        String(existing.project_number || "").trim() !== String(projectNumber || "").trim() ||
+        String(existing.project_name || "").trim() !== projectName ||
+        String(existing.status || "").trim() !== String(status || "").trim() ||
+        String(existing.source || '').trim() !== 'procore' ||
+        String(existing.source_company_id || '').trim() !== String(project.companyId || '').trim() ||
+        String(existing.source_external_id || '').trim() !== String(project.externalId || '').trim() ||
+        String(existing.source_project_id || '').trim() !== String(project.procoreProjectId || '').trim() ||
+        String(existing.source_staging_project_id || '').trim() !== String(project.stagingProjectId || '').trim() ||
+        String(existing.source_display_name || '').trim() !== String(project.displayName || '').trim() ||
+        String(existing.source_project_owner_type || '').trim() !== String(project.projectOwnerType || '').trim() ||
+        String(existing.source_project_owner_type_id || '').trim() !== String(project.projectOwnerTypeId || '').trim() ||
+        (existing.source_procore_created_at?.toISOString() || '') !== (project.procoreCreatedAt?.toISOString() || '') ||
+        (existing.source_procore_updated_at?.toISOString() || '') !== (project.procoreUpdatedAt?.toISOString() || '');
+
+      if (!needsUpdate) continue;
+
+      await prisma.$executeRawUnsafe(
+        `
+          UPDATE gantt_v2_projects
+          SET project_name = $2,
+              customer = $3,
+              project_number = $4,
+              status = $5,
+              source = $6,
+              source_company_id = $7,
+              source_external_id = $8,
+              source_project_id = $9,
+              source_staging_project_id = $10,
+              source_display_name = $11,
+              source_project_owner_type = $12,
+              source_project_owner_type_id = $13,
+              source_procore_created_at = $14,
+              source_procore_updated_at = $15,
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        existing.id,
+        projectName,
+        customer,
+        projectNumber,
+        status,
+        'procore',
+        project.companyId,
+        project.externalId,
+        project.procoreProjectId,
+        project.stagingProjectId,
+        project.displayName,
+        project.projectOwnerType,
+        project.projectOwnerTypeId,
+        project.procoreCreatedAt,
+        project.procoreUpdatedAt
+      );
+    }
+  } catch (error) {
+    if (shouldFallbackToEmptyRead(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function consolidateDuplicateGanttV2Projects(): Promise<void> {
+  try {
+    const internalVendorSet = getInternalVendorSet();
     const rows = await prisma.$queryRawUnsafe<Array<{
       id: string;
       project_name: string;
       customer: string | null;
       project_number: string | null;
       status: string | null;
+      source: string | null;
+      source_company_id: string | null;
+      source_external_id: string | null;
+      source_project_id: string | null;
+      created_at: Date;
+      updated_at: Date;
       scope_count: number;
-      scoped_hours: number;
-      start_date: Date | null;
-      end_date: Date | null;
     }>>(`
       SELECT
         p.id,
@@ -228,16 +653,596 @@ export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
         p.customer,
         p.project_number,
         p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at,
+        COUNT(s.id)::int AS scope_count
+      FROM gantt_v2_projects p
+      LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
+      GROUP BY
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at
+    `);
+
+    const normalizeIdentity = normalizeProjectIdentity;
+
+    const hasPreferredCustomer = (row: (typeof rows)[number]) =>
+      isMeaningfulCustomer(row.customer) && !isInternalCustomerName(row.customer, internalVendorSet);
+
+    const isProcoreRow = (row: (typeof rows)[number]) =>
+      String(row.source || '').trim() === 'procore';
+
+    const getSourceIdentity = (row: (typeof rows)[number]) => {
+      const companyId = normalizeIdentity(row.source_company_id);
+      const externalId = normalizeIdentity(row.source_external_id);
+      if (!companyId || !externalId) {
+        return null;
+      }
+      return `${companyId}||${externalId}`;
+    };
+
+    const getDisplayIdentity = (row: (typeof rows)[number]) =>
+      [
+        normalizeIdentity(row.customer),
+        normalizeIdentity(row.project_number),
+        normalizeIdentity(row.project_name),
+      ].join('||');
+
+    const getProjectAnchorIdentity = (row: (typeof rows)[number]) =>
+      [
+        normalizeIdentity(row.project_number),
+        normalizeIdentity(row.project_name),
+      ].join('||');
+
+    const getProjectNameIdentity = (row: (typeof rows)[number]) =>
+      normalizeIdentity(row.project_name);
+
+    const sortCandidates = (candidates: typeof rows) =>
+      [...candidates].sort((a, b) => {
+        const aSourced = isProcoreRow(a) ? 1 : 0;
+        const bSourced = isProcoreRow(b) ? 1 : 0;
+        const aHasSourceIdentity = getSourceIdentity(a) ? 1 : 0;
+        const bHasSourceIdentity = getSourceIdentity(b) ? 1 : 0;
+        const aHasPreferredCustomer = hasPreferredCustomer(a) ? 1 : 0;
+        const bHasPreferredCustomer = hasPreferredCustomer(b) ? 1 : 0;
+        const aHasMeaningfulNumber = hasMeaningfulProjectNumber(a.project_number, a.project_name) ? 1 : 0;
+        const bHasMeaningfulNumber = hasMeaningfulProjectNumber(b.project_number, b.project_name) ? 1 : 0;
+
+        return (
+          bSourced - aSourced ||
+          bHasSourceIdentity - aHasSourceIdentity ||
+          bHasPreferredCustomer - aHasPreferredCustomer ||
+          bHasMeaningfulNumber - aHasMeaningfulNumber ||
+          Number(b.scope_count || 0) - Number(a.scope_count || 0) ||
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      });
+
+    const mergeProjectGroup = async (
+      group: typeof rows,
+      options?: { allowDistinctProcoreSources?: boolean }
+    ) => {
+      if (group.length <= 1) return;
+
+      const sourcedRows = group.filter(isProcoreRow);
+      const unsourcedRows = group.filter((row) => !isProcoreRow(row));
+      const sourcedIdentities = new Set(
+        sourcedRows
+          .map((row) => getSourceIdentity(row))
+          .filter((value): value is string => Boolean(value))
+      );
+
+      if (!options?.allowDistinctProcoreSources && sourcedIdentities.size > 1) {
+        return;
+      }
+
+      const candidates = sourcedRows.length > 0 ? [...sourcedRows, ...unsourcedRows] : [...unsourcedRows];
+      if (candidates.length <= 1) return;
+
+      const keeper = sortCandidates(candidates)[0];
+      const duplicates = candidates.filter((row) => row.id !== keeper.id);
+      if (duplicates.length === 0) return;
+
+      for (const duplicate of duplicates) {
+        await prisma.$executeRawUnsafe(
+          `
+            UPDATE gantt_v2_scopes
+            SET project_id = $2,
+                updated_at = NOW()
+            WHERE project_id = $1
+          `,
+          duplicate.id,
+          keeper.id
+        );
+
+        await prisma.$executeRawUnsafe(
+          `
+            DELETE FROM gantt_v2_projects
+            WHERE id = $1
+          `,
+          duplicate.id
+        );
+      }
+
+      const keeperScopes = await prisma.$queryRawUnsafe<Array<{
+        id: string;
+        title: string;
+        notes: string | null;
+      }>>(
+        `
+          SELECT id, title, notes
+          FROM gantt_v2_scopes
+          WHERE project_id = $1
+        `,
+        keeper.id
+      );
+
+      if (keeperScopes.length > 1) {
+        const placeholderScopeIds = keeperScopes
+          .filter(
+            (scope) =>
+              String(scope.title || '').trim() === 'Primary Scope' &&
+              String(scope.notes || '').trim() === 'Auto-created from schedule allocations'
+          )
+          .map((scope) => scope.id);
+
+        for (const scopeId of placeholderScopeIds) {
+          await prisma.$executeRawUnsafe(
+            `
+              DELETE FROM gantt_v2_scopes
+              WHERE id = $1
+            `,
+            scopeId
+          );
+        }
+      }
+    };
+
+    const sourceIdentityGroups = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const sourceIdentity = getSourceIdentity(row);
+      if (!sourceIdentity) {
+        continue;
+      }
+      const bucket = sourceIdentityGroups.get(sourceIdentity) || [];
+      bucket.push(row);
+      sourceIdentityGroups.set(sourceIdentity, bucket);
+    }
+
+    for (const group of sourceIdentityGroups.values()) {
+      await mergeProjectGroup(group);
+    }
+
+    const refreshedRows = await prisma.$queryRawUnsafe<typeof rows>(`
+      SELECT
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at,
+        COUNT(s.id)::int AS scope_count
+      FROM gantt_v2_projects p
+      LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
+      GROUP BY
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at
+    `);
+
+    const sourcedRows = refreshedRows.filter(isProcoreRow);
+    const sourcedAnchorGroups = new Map<string, typeof refreshedRows>();
+    for (const row of sourcedRows) {
+      const key = getProjectAnchorIdentity(row);
+      const bucket = sourcedAnchorGroups.get(key) || [];
+      bucket.push(row);
+      sourcedAnchorGroups.set(key, bucket);
+    }
+
+    for (const row of refreshedRows.filter((candidate) => !isProcoreRow(candidate))) {
+      const anchorKey = getProjectAnchorIdentity(row);
+      const anchorMatches = sourcedAnchorGroups.get(anchorKey) || [];
+      if (anchorMatches.length === 1) {
+        await mergeProjectGroup([anchorMatches[0], row]);
+      }
+    }
+
+    const secondPassRows = await prisma.$queryRawUnsafe<typeof rows>(`
+      SELECT
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at,
+        COUNT(s.id)::int AS scope_count
+      FROM gantt_v2_projects p
+      LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
+      GROUP BY
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at
+    `);
+
+    const sourcedNameGroups = new Map<string, typeof secondPassRows>();
+    for (const row of secondPassRows.filter(isProcoreRow)) {
+      const key = getProjectNameIdentity(row);
+      const bucket = sourcedNameGroups.get(key) || [];
+      bucket.push(row);
+      sourcedNameGroups.set(key, bucket);
+    }
+
+    for (const row of secondPassRows.filter((candidate) => !isProcoreRow(candidate))) {
+      if (normalizeIdentity(row.project_number)) {
+        continue;
+      }
+      const nameKey = getProjectNameIdentity(row);
+      const nameMatches = sourcedNameGroups.get(nameKey) || [];
+      if (nameMatches.length === 1) {
+        await mergeProjectGroup([nameMatches[0], row]);
+      }
+    }
+
+    const finalRows = await prisma.$queryRawUnsafe<typeof rows>(`
+      SELECT
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at,
+        COUNT(s.id)::int AS scope_count
+      FROM gantt_v2_projects p
+      LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
+      GROUP BY
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at
+    `);
+
+    const displayIdentityGroups = new Map<string, typeof finalRows>();
+    for (const row of finalRows) {
+      const key = getDisplayIdentity(row);
+      const bucket = displayIdentityGroups.get(key) || [];
+      bucket.push(row);
+      displayIdentityGroups.set(key, bucket);
+    }
+
+    for (const group of displayIdentityGroups.values()) {
+      await mergeProjectGroup(group);
+    }
+
+    const postDisplayRows = await prisma.$queryRawUnsafe<typeof rows>(`
+      SELECT
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at,
+        COUNT(s.id)::int AS scope_count
+      FROM gantt_v2_projects p
+      LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
+      GROUP BY
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.created_at,
+        p.updated_at
+    `);
+
+    const nameGroups = new Map<string, typeof postDisplayRows>();
+    for (const row of postDisplayRows) {
+      const key = normalizeIdentity(row.project_name);
+      const bucket = nameGroups.get(key) || [];
+      bucket.push(row);
+      nameGroups.set(key, bucket);
+    }
+
+    for (const group of nameGroups.values()) {
+      if (group.length <= 1) {
+        continue;
+      }
+
+      const externalCustomers = new Set(
+        group
+          .map((row) => String(row.customer || '').trim())
+          .filter(
+            (customer) =>
+              isMeaningfulCustomer(customer) && !isInternalCustomerName(customer, internalVendorSet)
+          )
+          .map((customer) => normalizeIdentity(customer))
+      );
+
+      if (externalCustomers.size > 1) {
+        continue;
+      }
+
+      const sortedGroup = sortCandidates(group);
+      const keeper = sortedGroup[0];
+      const keeperCustomer = normalizeIdentity(keeper.customer);
+      const keeperHasMeaningfulNumber = hasMeaningfulProjectNumber(keeper.project_number, keeper.project_name);
+      const mergeableRows = group.filter((row) => {
+        if (row.id === keeper.id) {
+          return false;
+        }
+
+        const rowCustomer = normalizeIdentity(row.customer);
+        const rowIsInternalOrEmpty = !rowCustomer || isInternalCustomerName(row.customer, internalVendorSet);
+        const sameCustomer = keeperCustomer && rowCustomer === keeperCustomer;
+        const weakNumber = !hasMeaningfulProjectNumber(row.project_number, row.project_name);
+
+        return rowIsInternalOrEmpty || (sameCustomer && weakNumber) || (!rowCustomer && keeperHasMeaningfulNumber);
+      });
+
+      if (mergeableRows.length > 0) {
+        await mergeProjectGroup([keeper, ...mergeableRows], { allowDistinctProcoreSources: true });
+      }
+    }
+  } catch (error) {
+    if (shouldFallbackToEmptyRead(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function consolidateDuplicateGanttV2Scopes(): Promise<void> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      id: string;
+      project_id: string;
+      predecessor_scope_id: string | null;
+      title: string;
+      start_date: Date | null;
+      end_date: Date | null;
+      total_hours: number;
+      crew_size: number | null;
+      notes: string | null;
+      created_at: Date;
+      schedule_entry_count: number;
+    }>>(`
+      SELECT
+        s.id,
+        s.project_id,
+        s.predecessor_scope_id,
+        s.title,
+        s.start_date,
+        s.end_date,
+        s.total_hours,
+        s.crew_size,
+        s.notes,
+        s.created_at,
+        COUNT(e.id)::int AS schedule_entry_count
+      FROM gantt_v2_scopes s
+      LEFT JOIN gantt_v2_schedule_entries e ON e.scope_id = s.id
+      GROUP BY
+        s.id,
+        s.project_id,
+        s.predecessor_scope_id,
+        s.title,
+        s.start_date,
+        s.end_date,
+        s.total_hours,
+        s.crew_size,
+        s.notes,
+        s.created_at
+    `);
+
+    const normalizeText = (value: unknown) => String(value || '').trim();
+    const toDateKey = (value: Date | string | null) =>
+      value ? new Date(value).toISOString().slice(0, 10) : '';
+
+    const groups = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = [
+        row.project_id,
+        normalizeText(row.predecessor_scope_id),
+        normalizeText(row.title),
+        toDateKey(row.start_date),
+        toDateKey(row.end_date),
+        Number(row.total_hours || 0).toFixed(4),
+        row.crew_size === null || row.crew_size === undefined ? '' : Number(row.crew_size).toFixed(4),
+        normalizeText(row.notes),
+      ].join('||');
+      const bucket = groups.get(key) || [];
+      bucket.push(row);
+      groups.set(key, bucket);
+    }
+
+    for (const group of groups.values()) {
+      if (group.length <= 1) continue;
+
+      const keeper = [...group].sort((a, b) =>
+        Number(b.schedule_entry_count || 0) - Number(a.schedule_entry_count || 0) ||
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )[0];
+
+      const duplicates = group.filter((row) => row.id !== keeper.id);
+      for (const duplicate of duplicates) {
+        await prisma.$executeRawUnsafe(
+          `
+            UPDATE gantt_v2_scopes
+            SET predecessor_scope_id = $2,
+                updated_at = NOW()
+            WHERE predecessor_scope_id = $1
+          `,
+          duplicate.id,
+          keeper.id
+        );
+
+        const duplicateEntries = await prisma.$queryRawUnsafe<Array<{
+          work_date: Date;
+          scheduled_hours: number;
+        }>>(
+          `
+            SELECT work_date, scheduled_hours
+            FROM gantt_v2_schedule_entries
+            WHERE scope_id = $1
+          `,
+          duplicate.id
+        );
+
+        for (const entry of duplicateEntries) {
+          await prisma.$executeRawUnsafe(
+            `
+              INSERT INTO gantt_v2_schedule_entries (id, scope_id, work_date, scheduled_hours)
+              VALUES ($1, $2, $3, $4)
+              ON CONFLICT (scope_id, work_date)
+              DO UPDATE
+              SET scheduled_hours = EXCLUDED.scheduled_hours,
+                  updated_at = NOW()
+            `,
+            crypto.randomUUID(),
+            keeper.id,
+            toDateKey(entry.work_date),
+            Number(entry.scheduled_hours || 0)
+          );
+        }
+
+        await prisma.$executeRawUnsafe(
+          `
+            DELETE FROM gantt_v2_schedule_entries
+            WHERE scope_id = $1
+          `,
+          duplicate.id
+        );
+
+        await prisma.$executeRawUnsafe(
+          `
+            DELETE FROM gantt_v2_scopes
+            WHERE id = $1
+          `,
+          duplicate.id
+        );
+      }
+    }
+  } catch (error) {
+    if (shouldFallbackToEmptyRead(error)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function getGanttV2Projects(projectId?: string | null): Promise<GanttV2ProjectRow[]> {
+  try {
+    const normalizedProjectId = String(projectId || '').trim();
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      id: string;
+      project_name: string;
+      customer: string | null;
+      project_number: string | null;
+      status: string | null;
+      source: string | null;
+      source_company_id: string | null;
+      source_external_id: string | null;
+      source_project_id: string | null;
+      source_staging_project_id: string | null;
+      source_display_name: string | null;
+      source_project_owner_type: string | null;
+      source_project_owner_type_id: string | null;
+      source_procore_created_at: Date | null;
+      source_procore_updated_at: Date | null;
+      scope_count: number;
+      scoped_hours: number;
+      start_date: Date | null;
+      end_date: Date | null;
+    }>>(
+      `
+      SELECT
+        p.id,
+        p.project_name,
+        p.customer,
+        p.project_number,
+        p.status,
+        p.source,
+        p.source_company_id,
+        p.source_external_id,
+        p.source_project_id,
+        p.source_staging_project_id,
+        p.source_display_name,
+        p.source_project_owner_type,
+        p.source_project_owner_type_id,
+        p.source_procore_created_at,
+        p.source_procore_updated_at,
         COUNT(s.id)::int AS scope_count,
         COALESCE(SUM(s.total_hours), 0)::float8 AS scoped_hours,
         MIN(s.start_date) AS start_date,
         MAX(s.end_date) AS end_date
       FROM gantt_v2_projects p
       LEFT JOIN gantt_v2_scopes s ON s.project_id = p.id
-      WHERE p.status = 'In Progress'
-      GROUP BY p.id, p.project_name, p.customer, p.project_number, p.status
+      ${normalizedProjectId ? 'WHERE p.id = $1' : ''}
+      GROUP BY p.id, p.project_name, p.customer, p.project_number, p.status, p.source,
+               p.source_company_id, p.source_external_id, p.source_project_id, p.source_staging_project_id,
+               p.source_display_name, p.source_project_owner_type, p.source_project_owner_type_id,
+               p.source_procore_created_at, p.source_procore_updated_at
       ORDER BY p.created_at DESC;
-    `);
+    `,
+      ...(normalizedProjectId ? [normalizedProjectId] : [])
+    );
 
     return rows.map((row) => ({
       id: row.id,
@@ -245,6 +1250,16 @@ export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
       customer: row.customer,
       projectNumber: row.project_number,
       status: row.status,
+      source: row.source,
+      sourceCompanyId: row.source_company_id,
+      sourceExternalId: row.source_external_id,
+      sourceProjectId: row.source_project_id,
+      sourceStagingProjectId: row.source_staging_project_id,
+      sourceDisplayName: row.source_display_name,
+      sourceProjectOwnerType: row.source_project_owner_type,
+      sourceProjectOwnerTypeId: row.source_project_owner_type_id,
+      sourceProcoreCreatedAt: row.source_procore_created_at ? row.source_procore_created_at.toISOString() : null,
+      sourceProcoreUpdatedAt: row.source_procore_updated_at ? row.source_procore_updated_at.toISOString() : null,
       scopeCount: Number(row.scope_count || 0),
       scopedHours: Number(row.scoped_hours || 0),
       startDate: row.start_date ? row.start_date.toISOString().split('T')[0] : null,
@@ -259,6 +1274,8 @@ export async function getGanttV2Projects(): Promise<GanttV2ProjectRow[]> {
 }
 
 export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions = {}): Promise<GanttV2ProjectWithScopes[]> {
+  const includeEstimateHours = options.includeEstimateHours === true;
+  const targetProjectId = String(options.projectId || '').trim() || null;
   const normalizeIdentity = (value: string | null | undefined) =>
     (value || '')
       .toLowerCase()
@@ -267,6 +1284,9 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
 
   const makeIdentity = (customer: string | null | undefined, projectName: string | null | undefined) =>
     `${normalizeIdentity(customer)}||${normalizeIdentity(projectName)}`;
+
+  const isGiantProjectName = (projectName: string | null | undefined) =>
+    normalizeIdentity(projectName).includes('giant');
 
   const alphaCore = (value: unknown) =>
     String(value || '')
@@ -538,7 +1558,7 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
   };
 
   // First get all projects with summary info
-  const projects = await getGanttV2Projects();
+  const projects = await getGanttV2Projects(targetProjectId);
   const [projectRecords, purchaseOrderContracts, commitmentContracts, procoreProjectFeed] = await Promise.all([
     prisma.project.findMany({
       select: {
@@ -630,7 +1650,14 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
     commitmentTitlesByIdentity.set(identity, rows);
   }
 
-  // Legacy source of scopes used by short-term and prior schedule flows.
+  const giantIdentityKeys = new Set(
+    projects
+      .filter((project) => isGiantProjectName(project.projectName))
+      .map((project) => makeIdentity(project.customer, project.projectName))
+      .filter((identity) => identity && identity !== '||')
+  );
+
+  // Legacy scope/task fallback is reserved for Giant projects only.
   let legacyScopes: Array<{
     id: string;
     jobKey: string;
@@ -678,131 +1705,128 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
   }
 
   const legacyScopesByIdentity = new Map<string, typeof legacyScopes>();
-  const protectedIdentityKeys = new Set<string>();
   for (const scope of legacyScopes) {
     const [customer = '', , projectName = ''] = String(scope.jobKey || '').split('~');
     const key = `${normalizeIdentity(customer)}||${normalizeIdentity(projectName)}`;
-    if (!key || key === '||') continue;
+    if (!key || key === '||' || !giantIdentityKeys.has(key)) continue;
     const rows = legacyScopesByIdentity.get(key) || [];
     rows.push(scope);
     legacyScopesByIdentity.set(key, rows);
-
-    if (normalizeLegacyTasks(scope.tasks).length > 0) {
-      protectedIdentityKeys.add(key);
-    }
   }
 
   const nonProtectedIdentityKeys = new Set(
     projects
       .map((project) => makeIdentity(project.customer, project.projectName))
-      .filter((identity) => identity && identity !== '||' && !protectedIdentityKeys.has(identity))
+      .filter((identity) => identity && identity !== '||' && !giantIdentityKeys.has(identity))
   );
 
-  const estimateRows = await prisma.$queryRawUnsafe<EstimateLineItemRecord[]>(`
-    SELECT
-      bid_board_project_id,
-      proposal_id,
-      project_name,
-      customer_name,
-      proposal_name,
-      payload,
-      synced_at
-    FROM procore_proposal_line_items_live
-  `);
-
-  const estimateRowsByIdentity = new Map<string, EstimateLineItemRecord[]>();
-  for (const row of estimateRows) {
-    const identity = makeIdentity(row.customer_name, row.project_name);
-    if (!identity || identity === '||' || !nonProtectedIdentityKeys.has(identity)) continue;
-    const bucket = estimateRowsByIdentity.get(identity) || [];
-    bucket.push(row);
-    estimateRowsByIdentity.set(identity, bucket);
-  }
-
   const estimateHoursByIdentity = new Map<string, EstimateGroupHours[]>();
-  const estimateAccessToken = await getEstimateAccessToken();
-  const estimateCompanyId = String(options.procoreCompanyId || procoreConfig.companyId || '').trim();
+  if (includeEstimateHours) {
+    const estimateRows = await prisma.$queryRawUnsafe<EstimateLineItemRecord[]>(`
+      SELECT
+        bid_board_project_id,
+        proposal_id,
+        project_name,
+        customer_name,
+        proposal_name,
+        payload,
+        synced_at
+      FROM procore_proposal_line_items_live
+    `);
 
-  if (estimateAccessToken && estimateCompanyId) {
-    const proposalSelections = Array.from(estimateRowsByIdentity.entries())
-      .map(([identity, rows]) => {
-        const proposalGroups = new Map<
-          string,
-          {
-            bidBoardProjectId: string;
-            proposalId: string;
-            proposalName: string;
-            lineItemCount: number;
-            latestSyncedAt: number;
-            rows: EstimateLineItemRecord[];
-          }
-        >();
+    const estimateRowsByIdentity = new Map<string, EstimateLineItemRecord[]>();
+    for (const row of estimateRows) {
+      const identity = makeIdentity(row.customer_name, row.project_name);
+      if (!identity || identity === '||' || !nonProtectedIdentityKeys.has(identity)) continue;
+      const bucket = estimateRowsByIdentity.get(identity) || [];
+      bucket.push(row);
+      estimateRowsByIdentity.set(identity, bucket);
+    }
 
-        for (const row of rows) {
-          const key = `${row.bid_board_project_id}||${row.proposal_id}`;
-          const existing = proposalGroups.get(key) || {
-            bidBoardProjectId: row.bid_board_project_id,
-            proposalId: row.proposal_id,
-            proposalName: String(row.proposal_name || '').trim(),
-            lineItemCount: 0,
-            latestSyncedAt: 0,
-            rows: [],
-          };
-          existing.lineItemCount += 1;
-          existing.latestSyncedAt = Math.max(
-            existing.latestSyncedAt,
-            row.synced_at ? new Date(row.synced_at).getTime() : 0
-          );
-          existing.rows.push(row);
-          proposalGroups.set(key, existing);
-        }
+    const estimateAccessToken = await getEstimateAccessToken();
+    const estimateCompanyId = String(options.procoreCompanyId || procoreConfig.companyId || '').trim();
 
-        const selected = Array.from(proposalGroups.values()).sort((a, b) => {
-          const aOriginal = normalizeIdentity(a.proposalName) === 'original estimate' ? 1 : 0;
-          const bOriginal = normalizeIdentity(b.proposalName) === 'original estimate' ? 1 : 0;
-          return bOriginal - aOriginal || b.lineItemCount - a.lineItemCount || b.latestSyncedAt - a.latestSyncedAt;
-        })[0];
+    if (estimateAccessToken && estimateCompanyId) {
+      const proposalSelections = Array.from(estimateRowsByIdentity.entries())
+        .map(([identity, rows]) => {
+          const proposalGroups = new Map<
+            string,
+            {
+              bidBoardProjectId: string;
+              proposalId: string;
+              proposalName: string;
+              lineItemCount: number;
+              latestSyncedAt: number;
+              rows: EstimateLineItemRecord[];
+            }
+          >();
 
-        if (!selected) return null;
-        return { identity, selected };
-      })
-      .filter((row): row is { identity: string; selected: { bidBoardProjectId: string; proposalId: string; proposalName: string; lineItemCount: number; latestSyncedAt: number; rows: EstimateLineItemRecord[] } } => Boolean(row));
-
-    await Promise.all(
-      proposalSelections.map(async ({ identity, selected }) => {
-        try {
-          const groups = await fetchEstimateGroups({
-            accessToken: estimateAccessToken,
-            companyId: estimateCompanyId,
-            bidBoardProjectId: selected.bidBoardProjectId,
-            proposalId: selected.proposalId,
-          });
-          const titleByGroupId = new Map(groups.map((group) => [group.id, group.title]));
-          const hoursByGroupId = new Map<string, number>();
-
-          for (const row of selected.rows) {
-            const payload = asObject(row.payload);
-            const groupId = String(payload?.group_id || '').trim();
-            if (!groupId) continue;
-            const laborHours = getLaborHoursFromPayload(payload);
-            if (laborHours <= 0) continue;
-            hoursByGroupId.set(groupId, (hoursByGroupId.get(groupId) || 0) + laborHours);
+          for (const row of rows) {
+            const key = `${row.bid_board_project_id}||${row.proposal_id}`;
+            const existing = proposalGroups.get(key) || {
+              bidBoardProjectId: row.bid_board_project_id,
+              proposalId: row.proposal_id,
+              proposalName: String(row.proposal_name || '').trim(),
+              lineItemCount: 0,
+              latestSyncedAt: 0,
+              rows: [],
+            };
+            existing.lineItemCount += 1;
+            existing.latestSyncedAt = Math.max(
+              existing.latestSyncedAt,
+              row.synced_at ? new Date(row.synced_at).getTime() : 0
+            );
+            existing.rows.push(row);
+            proposalGroups.set(key, existing);
           }
 
-          const normalized = Array.from(hoursByGroupId.entries())
-            .map(([groupId, hours]) => ({
-              groupId,
-              title: String(titleByGroupId.get(groupId) || '').trim(),
-              hours,
-            }))
-            .filter((row) => row.title && row.hours > 0);
+          const selected = Array.from(proposalGroups.values()).sort((a, b) => {
+            const aOriginal = normalizeIdentity(a.proposalName) === 'original estimate' ? 1 : 0;
+            const bOriginal = normalizeIdentity(b.proposalName) === 'original estimate' ? 1 : 0;
+            return bOriginal - aOriginal || b.lineItemCount - a.lineItemCount || b.latestSyncedAt - a.latestSyncedAt;
+          })[0];
 
-          estimateHoursByIdentity.set(identity, normalized);
-        } catch (error) {
-          console.warn('Unable to fetch estimate group titles for project identity:', identity, error);
-        }
-      })
-    );
+          if (!selected) return null;
+          return { identity, selected };
+        })
+        .filter((row): row is { identity: string; selected: { bidBoardProjectId: string; proposalId: string; proposalName: string; lineItemCount: number; latestSyncedAt: number; rows: EstimateLineItemRecord[] } } => Boolean(row));
+
+      await Promise.all(
+        proposalSelections.map(async ({ identity, selected }) => {
+          try {
+            const groups = await fetchEstimateGroups({
+              accessToken: estimateAccessToken,
+              companyId: estimateCompanyId,
+              bidBoardProjectId: selected.bidBoardProjectId,
+              proposalId: selected.proposalId,
+            });
+            const titleByGroupId = new Map(groups.map((group) => [group.id, group.title]));
+            const hoursByGroupId = new Map<string, number>();
+
+            for (const row of selected.rows) {
+              const payload = asObject(row.payload);
+              const groupId = String(payload?.group_id || '').trim();
+              if (!groupId) continue;
+              const laborHours = getLaborHoursFromPayload(payload);
+              if (laborHours <= 0) continue;
+              hoursByGroupId.set(groupId, (hoursByGroupId.get(groupId) || 0) + laborHours);
+            }
+
+            const normalized = Array.from(hoursByGroupId.entries())
+              .map(([groupId, hours]) => ({
+                groupId,
+                title: String(titleByGroupId.get(groupId) || '').trim(),
+                hours,
+              }))
+              .filter((row) => row.title && row.hours > 0);
+
+            estimateHoursByIdentity.set(identity, normalized);
+          } catch (error) {
+            console.warn('Unable to fetch estimate group titles for project identity:', identity, error);
+          }
+        })
+      );
+    }
   }
   
   // For each project, fetch its scopes and schedule allocations
@@ -812,7 +1836,7 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
 
       const projectIdentityKey = `${normalizeIdentity(project.customer)}||${normalizeIdentity(project.projectName)}`;
       const legacyForProject = legacyScopesByIdentity.get(projectIdentityKey) || [];
-      const isProtectedLegacyProject = protectedIdentityKeys.has(projectIdentityKey);
+      const isProtectedLegacyProject = giantIdentityKeys.has(projectIdentityKey);
       const canonicalCommercialTitles = (() => {
         const poTitles = poTitlesByIdentity.get(projectIdentityKey) || [];
         if (poTitles.length > 0) return poTitles;
@@ -867,6 +1891,11 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
       }
 
       type ScheduleWithAllocations = {
+        jobKey?: string | null;
+        projectId?: string | null;
+        customer?: string | null;
+        projectNumber?: string | null;
+        projectName?: string | null;
         totalHours: number | null;
         allocationsList: Array<{ period: string; hours: number | null }>;
       };
@@ -910,6 +1939,54 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
           schedules = [];
         }
       }
+
+      const normalizeScheduleField = (value: unknown) =>
+        String(value || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim();
+
+      const normalizedProjectId = String(project.id || '').trim();
+      const normalizedProjectNumber = normalizeScheduleField(project.projectNumber);
+      const normalizedProjectCustomer = normalizeScheduleField(project.customer);
+      const normalizedProjectName = normalizeScheduleField(project.projectName);
+
+      const exactProjectIdSchedules = schedules.filter(
+        (schedule) => String(schedule.projectId || '').trim() === normalizedProjectId
+      );
+
+      const exactProjectNumberSchedules =
+        exactProjectIdSchedules.length === 0 && normalizedProjectNumber
+          ? schedules.filter((schedule) => {
+              const scheduleProjectNumber = normalizeScheduleField(schedule.projectNumber);
+              const scheduleProjectName = normalizeScheduleField(schedule.projectName);
+              return (
+                scheduleProjectNumber === normalizedProjectNumber &&
+                (!normalizedProjectName || !scheduleProjectName || scheduleProjectName === normalizedProjectName)
+              );
+            })
+          : [];
+
+      const exactCustomerNameSchedules =
+        exactProjectIdSchedules.length === 0 && exactProjectNumberSchedules.length === 0
+          ? schedules.filter((schedule) => {
+              const scheduleCustomer = normalizeScheduleField(schedule.customer);
+              const scheduleProjectName = normalizeScheduleField(schedule.projectName);
+              return (
+                scheduleCustomer === normalizedProjectCustomer &&
+                scheduleProjectName === normalizedProjectName
+              );
+            })
+          : [];
+
+      schedules =
+        exactProjectIdSchedules.length > 0
+          ? exactProjectIdSchedules
+          : exactProjectNumberSchedules.length > 0
+            ? exactProjectNumberSchedules
+            : exactCustomerNameSchedules.length > 0
+              ? exactCustomerNameSchedules
+              : schedules;
 
       const allocationsByPeriod = new Map<string, number>();
       for (const schedule of schedules) {
@@ -1096,11 +2173,17 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
                 })
                 .filter(Boolean) as GanttV2ScopeRow[];
 
-              return merged.length > 0 ? merged : unmatchedScopes;
+              if (merged.length === 0) {
+                return unmatchedScopes;
+              }
+
+              // Keep raw scopes that do not map cleanly to a canonical commercial title.
+              // Canonical scopes should clarify grouping, not hide real project scopes.
+              return [...merged, ...unmatchedScopes];
             })()
           : scopesWithTasks;
 
-      const displayScopes = isProtectedLegacyProject
+      const displayScopes = isProtectedLegacyProject || !includeEstimateHours
         ? canonicalScopes
         : canonicalScopes.map((scope) => {
             const bestEstimate = estimateGroupHours

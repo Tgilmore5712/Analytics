@@ -96,6 +96,10 @@ const calculateWorkDays = (startValue?: unknown, endValue?: unknown) => {
 };
 
 const computeScopeHours = (scope: Partial<Scope>) => {
+  const hoursRaw = scope.hours;
+  const hoursValue = typeof hoursRaw === "number" ? hoursRaw : parseFloat(String(hoursRaw));
+  if (Number.isFinite(hoursValue) && hoursValue > 0) return hoursValue;
+
   const manpowerRaw = scope.manpower;
   const manpowerValue = typeof manpowerRaw === "number" ? manpowerRaw : parseFloat(String(manpowerRaw));
   const days = calculateWorkDays(scope.startDate, scope.endDate);
@@ -103,10 +107,6 @@ const computeScopeHours = (scope: Partial<Scope>) => {
   if (Number.isFinite(manpowerValue) && manpowerValue > 0 && days > 0) {
     return manpowerValue * 10 * days;
   }
-
-  const hoursRaw = scope.hours;
-  const hoursValue = typeof hoursRaw === "number" ? hoursRaw : parseFloat(String(hoursRaw));
-  if (Number.isFinite(hoursValue) && hoursValue > 0) return hoursValue;
 
   return 0;
 };
@@ -123,6 +123,9 @@ const normalizeText = (value: string | null | undefined) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+
+const isGiantProjectName = (projectName: string | null | undefined) =>
+  normalizeText(projectName).includes("giant");
 
 const dateKey = (value: unknown) => String(value || "").trim();
 
@@ -332,9 +335,17 @@ export function ProjectScopesModal({
   onClose,
   onScopesUpdated,
 }: ProjectScopesModalProps) {
+  const usesLegacyScopeMetadata = useMemo(
+    () => isGiantProjectName(project.projectName),
+    [project.projectName]
+  );
+  const liveGanttProjectId = useMemo(
+    () => String(project.projectDocId || "").trim() || null,
+    [project.projectDocId]
+  );
   const [activeScopeId, setActiveScopeId] = useState<string | null>(selectedScopeId);
   const [isCreatingNewScope, setIsCreatingNewScope] = useState(false);
-  const [ganttProjectId, setGanttProjectId] = useState<string | null>(null);
+  const [ganttProjectId, setGanttProjectId] = useState<string | null>(liveGanttProjectId);
   const [canonicalScopes, setCanonicalScopes] = useState<Scope[] | null>(null);
   const [projectBudgetHours, setProjectBudgetHours] = useState<number | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
@@ -351,7 +362,6 @@ export function ProjectScopesModal({
     selectedDays: [],
   });
   const [isSaving, setIsSaving] = useState(false);
-  const isResetting = false;
   const [newTask, setNewTask] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskDays, setNewTaskDays] = useState("");
@@ -388,10 +398,12 @@ export function ProjectScopesModal({
   }), []);
 
   const matchesProjectIdentity = useCallback((
-    item: { customer?: string | null; projectName?: string | null }
+    item: { customer?: string | null; projectNumber?: string | null; projectName?: string | null }
   ) => {
     const normalizedItemCustomer = normalizeText(item.customer);
     const normalizedProjectCustomer = normalizeText(project.customer);
+    const normalizedItemNumber = normalizeText(item.projectNumber);
+    const normalizedProjectNumber = normalizeText(project.projectNumber);
     const normalizedItemName = normalizeText(item.projectName);
     const normalizedProjectName = normalizeText(project.projectName);
 
@@ -405,16 +417,21 @@ export function ProjectScopesModal({
       normalizedItemName.includes(normalizedProjectName) ||
       normalizedProjectName.includes(normalizedItemName);
 
-    return customerMatch && nameMatch;
-  }, [project.customer, project.projectName]);
+    const projectNumberMatch =
+      !normalizedProjectNumber ||
+      !normalizedItemNumber ||
+      normalizedItemNumber === normalizedProjectNumber;
+
+    return customerMatch && nameMatch && projectNumberMatch;
+  }, [project.customer, project.projectName, project.projectNumber]);
 
   const identityFallbackScopes = useMemo(() => {
     if (scopes.length > 0) return scopes;
     if (!allScopes) return scopes;
 
     const matched = Object.entries(allScopes).find(([jobKey]) => {
-      const [customer = "", , projectName = ""] = String(jobKey).split("~");
-      return matchesProjectIdentity({ customer, projectName });
+      const [customer = "", projectNumber = "", projectName = ""] = String(jobKey).split("~");
+      return matchesProjectIdentity({ customer, projectNumber, projectName });
     });
 
     return matched ? matched[1] : scopes;
@@ -566,6 +583,7 @@ export function ProjectScopesModal({
     })), [project.jobKey, resolvedJobKey]);
 
   const loadPersistedProjectScopes = useCallback(async (): Promise<Scope[]> => {
+    if (!usesLegacyScopeMetadata) return [];
     if (!resolvedJobKey) return [];
 
     const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey)}`);
@@ -606,9 +624,13 @@ export function ProjectScopesModal({
       const projectNameMatch = normalizeText(scopeProjectName) === normalizedProjectName;
       return customerMatch && projectNumberMatch && projectNameMatch;
     });
-  }, [project.customer, project.projectName, project.projectNumber, resolvedJobKey]);
+  }, [project.customer, project.projectName, project.projectNumber, resolvedJobKey, usesLegacyScopeMetadata]);
 
   const mergePersistedScopeMetadata = useCallback(async (scopes: Scope[]): Promise<Scope[]> => {
+    if (!usesLegacyScopeMetadata) {
+      return scopes;
+    }
+
     try {
       const persistedScopes = await loadPersistedProjectScopes();
       if (persistedScopes.length === 0) {
@@ -654,7 +676,7 @@ export function ProjectScopesModal({
       console.warn('Failed to merge project-scope metadata into canonical scopes:', error);
       return scopes;
     }
-  }, [loadPersistedProjectScopes, scopeMatchKey]);
+  }, [loadPersistedProjectScopes, scopeMatchKey, usesLegacyScopeMetadata]);
 
   const loadScopesForGanttProject = useCallback(async (projectId: string): Promise<Scope[] | null> => {
     const response = await fetch(`/api/gantt-v2/projects/${projectId}/scopes`);
@@ -674,8 +696,10 @@ export function ProjectScopesModal({
   }, [mapGanttScopes, mergePersistedScopeMetadata]);
 
   const loadCanonicalScopes = useCallback(async (): Promise<Scope[] | null> => {
-    if (ganttProjectId) {
-      const projectScopes = await loadScopesForGanttProject(ganttProjectId);
+    const preferredProjectId = ganttProjectId || liveGanttProjectId;
+
+    if (preferredProjectId) {
+      const projectScopes = await loadScopesForGanttProject(preferredProjectId);
       if (projectScopes) {
         return projectScopes;
       }
@@ -693,7 +717,11 @@ export function ProjectScopesModal({
     }
 
     const match = (result.data as GanttProjectResponse[]).find((item) =>
-      matchesProjectIdentity({ customer: item.customer, projectName: item.projectName })
+      matchesProjectIdentity({
+        customer: item.customer,
+        projectNumber: item.projectNumber,
+        projectName: item.projectName,
+      })
     );
 
     if (!match) {
@@ -706,12 +734,14 @@ export function ProjectScopesModal({
     setGanttProjectId(match.id);
     setCanonicalScopes(mergedScopes);
     return mergedScopes;
-  }, [ganttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
+  }, [ganttProjectId, liveGanttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
 
   const upsertProjectScopeMetadata = async (
     payload: ScopeMetadataPayload,
     options?: { activeScope?: Scope | null }
   ) => {
+    if (!usesLegacyScopeMetadata) return;
+
     const titleKey = normalizeText(payload?.title || '');
     if (!titleKey) return;
 
@@ -819,6 +849,7 @@ export function ProjectScopesModal({
 
       const match = (schedulesJson.data as Array<{
         customer?: string | null;
+        projectNumber?: string | null;
         projectName?: string | null;
         totalHours?: number | null;
       }>).find(matchesProjectIdentity);
@@ -1464,6 +1495,8 @@ export function ProjectScopesModal({
             tasks: metadataPayload.tasks,
             schedulingMode: metadataPayload.schedulingMode,
             selectedDays: metadataPayload.selectedDays,
+            manpower: metadataPayload.manpower,
+            hours: metadataPayload.hours,
           };
         });
 
@@ -1540,8 +1573,9 @@ export function ProjectScopesModal({
         activeScopeId.startsWith('generated-')
       );
 
+      const targetGanttProjectId = ganttProjectId || liveGanttProjectId;
       let savedScope;
-      if (ganttProjectId) {
+      if (targetGanttProjectId) {
         // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
         await upsertProjectScopeMetadata(payload, { activeScope });
 
@@ -1571,7 +1605,7 @@ export function ProjectScopesModal({
 
             if (isScopeMissing) {
               // Recover from stale/non-canonical scope ids by creating a fresh canonical scope.
-              const createResponse = await fetch(`/api/gantt-v2/projects/${ganttProjectId}/scopes`, {
+              const createResponse = await fetch(`/api/gantt-v2/projects/${targetGanttProjectId}/scopes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(ganttPayload),
@@ -1592,7 +1626,7 @@ export function ProjectScopesModal({
             }
           }
         } else {
-          const response = await fetch(`/api/gantt-v2/projects/${ganttProjectId}/scopes`, {
+          const response = await fetch(`/api/gantt-v2/projects/${targetGanttProjectId}/scopes`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(ganttPayload),
@@ -1616,6 +1650,10 @@ export function ProjectScopesModal({
           refreshedScopes && refreshedScopes.length > 0 ? refreshedScopes : effectiveScopes
         );
       } else {
+        if (!usesLegacyScopeMetadata) {
+          throw new Error('Unable to resolve a live Gantt project for this scope.');
+        }
+
         if (activeScopeId && !isGeneratedScopeId) {
           const response = await fetch('/api/project-scopes', {
             method: 'PUT',
@@ -1670,21 +1708,6 @@ export function ProjectScopesModal({
     }
   };
 
-  const handleResetSchedule = async () => {
-    if (!project.jobKey) {
-      alert("Cannot reset schedule: No job key found.");
-      return;
-    }
-
-    alert("Reset Schedule functionality is currently being migrated to the new API. This feature will be available soon.");
-    
-    // TODO: Implement reset schedule via API
-    // This will require endpoints for:
-    // - DELETE /api/active-schedule?jobKey={jobKey}
-    // - POST /api/active-schedule/rebuild
-    // - POST /api/scope-tracking/recalculate
-  };
-
   const handleDeleteScope = async () => {
     if (!activeScopeId || activeScopeId === NEW_SCOPE_ID) return;
     const scope = effectiveScopes.find((s) => s.id === activeScopeId);
@@ -1699,6 +1722,7 @@ export function ProjectScopesModal({
 
       if (!isGeneratedId) {
         let deletedSomewhere = false;
+        let metadataError: string | undefined;
 
         // Try deleting canonical gantt scope first (primary source of truth).
         const ganttRes = await fetch(`/api/gantt-v2/scopes/${activeScopeId}`, { method: 'DELETE' });
@@ -1708,17 +1732,20 @@ export function ProjectScopesModal({
         }
 
         // Cleanup legacy metadata row by project identity and scope title so it can't be auto-recreated.
-        const metadataRes = await fetch(
-          `/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey || project.jobKey || '')}&title=${encodeURIComponent(scopeTitle)}`,
-          { method: 'DELETE' }
-        );
-        const metadataJson = await metadataRes.json().catch(() => ({}));
-        if (metadataRes.ok && metadataJson?.success && Number(metadataJson?.deletedCount || 0) > 0) {
-          deletedSomewhere = true;
+        if (usesLegacyScopeMetadata) {
+          const metadataRes = await fetch(
+            `/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey || project.jobKey || '')}&title=${encodeURIComponent(scopeTitle)}`,
+            { method: 'DELETE' }
+          );
+          const metadataJson = await metadataRes.json().catch(() => ({}));
+          metadataError = metadataJson?.error;
+          if (metadataRes.ok && metadataJson?.success && Number(metadataJson?.deletedCount || 0) > 0) {
+            deletedSomewhere = true;
+          }
         }
 
         if (!deletedSomewhere) {
-          throw new Error(ganttJson?.error || metadataJson?.error || 'Scope was not deleted');
+          throw new Error(ganttJson?.error || metadataError || 'Scope was not deleted');
         }
       }
 
@@ -1812,14 +1839,6 @@ export function ProjectScopesModal({
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">Scopes</h3>
               <div className="flex gap-2">
-                <button 
-                  type="button" 
-                  onClick={handleResetSchedule} 
-                  disabled={isResetting}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-md border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isResetting ? "Resetting..." : "Reset Schedule"}
-                </button>
                 <button
                   type="button"
                   onClick={handleStartCreateScope}

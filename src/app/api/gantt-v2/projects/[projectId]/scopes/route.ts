@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { ensureGanttV2Schema, getGanttV2Scopes } from '@/lib/ganttV2Db';
+import { ensureGanttV2Schema, getGanttV2ProjectsWithScopes } from '@/lib/ganttV2Db';
 import { syncGanttScopeToActiveSchedule } from '@/lib/scheduling/ganttScopeSync';
 import { SchedulingConflictError } from '@/lib/scheduling/dailyAssignment';
 
@@ -35,7 +35,11 @@ export async function GET(_: NextRequest, { params }: RouteParams) {
   try {
     await ensureGanttV2Schema();
     const { projectId } = await params;
-    const scopes = await getGanttV2Scopes(projectId);
+    const [project] = await getGanttV2ProjectsWithScopes({
+      includeEstimateHours: false,
+      projectId,
+    });
+    const scopes = project?.scopes || [];
     return NextResponse.json({ success: true, data: scopes });
   } catch (error) {
     return NextResponse.json(

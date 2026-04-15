@@ -35,30 +35,11 @@ type ScopeRow = {
   remainingHours: number;
 };
 
-type SchedulingDiagnostics = {
-  totals: {
-    monthlyPlannedHours: number;
-    weeklyPlannedHours: number;
-    scopePlannedHours: number;
-    scheduledHours: number;
-    remainingScopeHours: number;
-    driftVsScopePlanHours: number;
-    driftVsMonthlyPlanHours: number;
-  };
-  active: {
-    bySource: Record<string, number>;
-    byScope: Record<string, { plannedHours: number; scheduledHours: number; driftHours: number }>;
-  };
-};
-
 type ConcreteOrderSummary = {
   jobKey: string;
   date: string;
   totalYards: number;
 };
-
-const monthLabel = (value: Date) =>
-  value.toLocaleString("en-US", { month: "short", year: "2-digit" });
 
 const asDate = (value: string | null) => {
   if (!value) return null;
@@ -81,6 +62,20 @@ const buildProjectJobKey = (project: Pick<ProjectRow, "customer" | "projectNumbe
 
 const isDateKey = (value: string | null | undefined): value is string =>
   /^\d{4}-\d{2}-\d{2}$/.test(String(value || "").trim());
+
+const normalizeStatusKey = (value: unknown) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const formatStatusLabel = (value: string) =>
+  value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 
 const summarizeProjectScopes = (project: ProjectRow, scopes: Scope[]): ProjectRow => {
   const previousScopeMetrics = new Map(
@@ -182,6 +177,7 @@ export default function ProjectSchedulePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("in progress");
   const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null);
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
@@ -383,7 +379,6 @@ export default function ProjectSchedulePage() {
     if (!start || !end || start > end) return { startIdx: -1, endIdx: -1 };
 
     const timelineStart = timeline[0];
-    const timelineEnd = timeline[timeline.length - 1];
 
     if (viewMode === "day") {
       // Days
@@ -453,11 +448,6 @@ export default function ProjectSchedulePage() {
     setLoading(true);
     setLoadError(null);
     try {
-      await fetch("/api/gantt-v2/setup", {
-        method: "POST",
-        cache: "no-store",
-        credentials: "include",
-      });
       const [ganttRes, metadataRes, concreteOrdersRes] = await Promise.all([
         fetch("/api/gantt-v2/projects", { cache: "no-store", credentials: "include" }),
         fetch("/api/project-scopes", { cache: "no-store", credentials: "include" }),
@@ -490,6 +480,11 @@ export default function ProjectSchedulePage() {
         title?: string;
         startDate?: string | null;
         endDate?: string | null;
+        manpower?: number | null;
+        hours?: number | null;
+        description?: string | null;
+        color?: string | null;
+        taskColors?: Record<string, string> | null;
         tasks?: Array<string | ScheduleTask>;
       }> = Array.isArray(metadataJson?.data) ? metadataJson.data : [];
       const concreteOrders: ConcreteOrderSummary[] = Array.isArray(concreteOrdersJson?.data) ? concreteOrdersJson.data : [];
@@ -539,9 +534,31 @@ export default function ProjectSchedulePage() {
 
           const fallback = metadataForProject.find((meta) => normalized(meta.title) === titleKey);
           const matched = exact || fallback;
+          const matchedHours = Number(matched?.hours);
+          const matchedManpower = Number(matched?.manpower);
 
           return {
             ...scope,
+            totalHours:
+              Number.isFinite(matchedHours) && matchedHours >= 0
+                ? matchedHours
+                : Number(scope.totalHours || 0),
+            crewSize:
+              Number.isFinite(matchedManpower) && matchedManpower >= 0
+                ? matchedManpower
+                : scope.crewSize,
+            notes:
+              typeof matched?.description === "string" && matched.description.trim().length > 0
+                ? matched.description
+                : scope.notes,
+            color:
+              typeof matched?.color === "string" && matched.color.trim().length > 0
+                ? matched.color
+                : scope.color,
+            taskColors:
+              matched?.taskColors && typeof matched.taskColors === "object"
+                ? matched.taskColors
+                : scope.taskColors,
             tasks: hydrateTaskYards(Array.isArray(matched?.tasks) ? matched!.tasks : (scope.tasks || []), yardsByDate),
           };
         });
@@ -600,9 +617,16 @@ export default function ProjectSchedulePage() {
 
   const filteredProjects = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
-    if (!normalizedSearch) return projects;
+    const normalizedStatusFilter = normalizeStatusKey(statusFilter);
 
-    return projects
+    const statusFilteredProjects = projects.filter((project) => {
+      if (!normalizedStatusFilter || normalizedStatusFilter === "all") return true;
+      return normalizeStatusKey(project.status) === normalizedStatusFilter;
+    });
+
+    if (!normalizedSearch) return statusFilteredProjects;
+
+    return statusFilteredProjects
       .map((project) => {
         const projectName = (project.projectName || "").toLowerCase();
         const customer = (project.customer || "").toLowerCase();
@@ -622,10 +646,21 @@ export default function ProjectSchedulePage() {
         return { ...project, scopes: matchedScopes };
       })
       .filter((project): project is ProjectRow => project !== null);
-  }, [projects, searchTerm]);
+  }, [projects, searchTerm, statusFilter]);
 
-  const timelineStart = timeline[0];
-  const timelineEnd = timeline[timeline.length - 1];
+  const statusOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    options.set("all", "All Statuses");
+    options.set("in progress", "In Progress");
+
+    projects.forEach((project) => {
+      const key = normalizeStatusKey(project.status);
+      if (!key || options.has(key)) return;
+      options.set(key, formatStatusLabel(key));
+    });
+
+    return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
+  }, [projects]);
 
   const selectedProjectInfo = useMemo<ProjectInfo | null>(() => {
     if (!selectedProject) return null;
@@ -665,7 +700,21 @@ export default function ProjectSchedulePage() {
           <div>
             <p className="text-xs font-semibold text-gray-500">Project scope timeline and scheduling view</p>
           </div>
-          <div className="w-full md:w-[360px]">
+          <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
+            <div className="w-full md:w-[180px]">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:ring-1 focus:ring-orange-500 focus:border-orange-500 outline-none bg-white"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-full md:w-[360px]">
             <input
               type="text"
               value={searchTerm}
@@ -673,6 +722,7 @@ export default function ProjectSchedulePage() {
               placeholder="Search project, customer, number, or scope"
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:ring-1 focus:ring-orange-500 focus:border-orange-500 outline-none"
             />
+            </div>
           </div>
         </div>
 
@@ -761,7 +811,11 @@ export default function ProjectSchedulePage() {
                 </div>
               ) : filteredProjects.length === 0 ? (
                 <div className="p-4 text-sm text-gray-500">
-                  {searchTerm.trim() ? "No projects match your search." : "No projects yet."}
+                  {searchTerm.trim()
+                    ? "No projects match your search and status filter."
+                    : statusFilter !== "all"
+                    ? "No projects match the selected status filter."
+                    : "No projects yet."}
                 </div>
               ) : (
                 filteredProjects.map((project) => {
