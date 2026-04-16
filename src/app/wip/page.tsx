@@ -183,15 +183,6 @@ function isLiveScheduleSource(value: unknown): boolean {
   return normalized === "gantt" || normalized === "wip-page";
 }
 
-function sumScopeHours(scopes: Scope[] | undefined): number {
-  if (!Array.isArray(scopes)) return 0;
-
-  return scopes.reduce((sum, scope) => {
-    const nextHours = Number(scope.hours || 0);
-    return sum + (Number.isFinite(nextHours) && nextHours > 0 ? nextHours : 0);
-  }, 0);
-}
-
 function parseDateFromUnknown(value: unknown): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -492,8 +483,39 @@ function WIPReportContent() {
       return true;
     });
 
+    const filteredByStatusWithLiveFallback = [...filteredByStatus];
+    const existingIdentityKeys = new Set(
+      filteredByStatus.map((p) => {
+        const customer = resolveProjectCustomer(p);
+        return `${customer}~${p.projectNumber ?? ""}~${p.projectName ?? ""}`;
+      })
+    );
+
+    activeScheduleEntries
+      .filter((entry) => isLiveScheduleSource(entry.source))
+      .forEach((entry) => {
+        const entryHours = Number(entry.hours || 0);
+        if (!Number.isFinite(entryHours) || entryHours <= 0) return;
+
+        const parts = parseJobKeyParts(entry.jobKey);
+        if (!parts.projectName) return;
+
+        const syntheticKey = `${normalizeCustomerValue(parts.customer)}~${parts.projectNumber ?? ""}~${parts.projectName}`;
+        if (existingIdentityKeys.has(syntheticKey)) return;
+
+        existingIdentityKeys.add(syntheticKey);
+        filteredByStatusWithLiveFallback.push({
+          id: `live-${entry.jobKey}`,
+          customer: normalizeCustomerValue(parts.customer) || undefined,
+          projectNumber: parts.projectNumber || undefined,
+          projectName: parts.projectName,
+          status: "In Progress",
+          projectArchived: false,
+        });
+      });
+
     const keyMap = new Map<string, any[]>();
-    filteredByStatus.forEach((p) => {
+    filteredByStatusWithLiveFallback.forEach((p) => {
       const resolvedCustomer = resolveProjectCustomer(p);
       const key = `${resolvedCustomer}~${p.projectNumber ?? ""}~${p.projectName ?? ""}`;
       if (!keyMap.has(key)) {
@@ -505,10 +527,6 @@ function WIPReportContent() {
     const schedulesByExactKey = new Map<string, Schedule>();
     const schedulesByProjectNumName = new Map<string, Schedule>();
     const schedulesByProjectNumber = new Map<string, Schedule[]>();
-    const liveHoursByExactKey = new Map<string, number>();
-    const liveHoursByProjectNumName = new Map<string, number>();
-    const liveHoursByCustomerProject = new Map<string, number>();
-    const liveScopePartsByCustomerProject = new Map<string, { customer: string; projectNumber: string; projectName: string }>();
     const scheduledHoursByExactKey = new Map<string, number>();
     const scheduledHoursByProjectNumName = new Map<string, number>();
     const scheduledHoursByCustomerProject = new Map<string, number>();
@@ -528,21 +546,6 @@ function WIPReportContent() {
         const arr = schedulesByProjectNumber.get(parts.projectNumber) || [];
         arr.push(s);
         schedulesByProjectNumber.set(parts.projectNumber, arr);
-      }
-    });
-
-    Object.entries(scopesByJobKey).forEach(([jobKey, scopedRows]) => {
-      const liveHours = sumScopeHours(scopedRows);
-      if (liveHours <= 0) return;
-
-      liveHoursByExactKey.set(jobKey, liveHours);
-      const parts = parseJobKeyParts(jobKey);
-      const numNameKey = buildProjectNumNameKey(parts.projectNumber, parts.projectName);
-      const customerProjectKey = buildCustomerProjectKey(parts.customer, parts.projectName);
-      liveHoursByProjectNumName.set(numNameKey, (liveHoursByProjectNumName.get(numNameKey) || 0) + liveHours);
-      liveHoursByCustomerProject.set(customerProjectKey, (liveHoursByCustomerProject.get(customerProjectKey) || 0) + liveHours);
-      if (!liveScopePartsByCustomerProject.has(customerProjectKey)) {
-        liveScopePartsByCustomerProject.set(customerProjectKey, parts);
       }
     });
 
@@ -577,30 +580,20 @@ function WIPReportContent() {
 
       const numNameKey = buildProjectNumNameKey(keyParts.projectNumber, keyParts.projectName);
       const customerProjectKey = buildCustomerProjectKey(keyParts.customer, keyParts.projectName);
-      const liveFallbackParts = liveScopePartsByCustomerProject.get(customerProjectKey);
-      const liveTotalHours =
-        liveHoursByExactKey.get(key) ??
-        liveHoursByProjectNumName.get(numNameKey) ??
-        liveHoursByCustomerProject.get(customerProjectKey) ??
-        0;
-      const fallbackScheduledHours =
+      const totalHours =
         scheduledHoursByExactKey.get(key) ??
         scheduledHoursByProjectNumName.get(numNameKey) ??
         scheduledHoursByCustomerProject.get(customerProjectKey) ??
         0;
-      const totalHours = liveTotalHours > 0 ? liveTotalHours : fallbackScheduledHours;
       if (totalHours <= 0) return;
 
       const mergedCustomer =
         resolveProjectCustomer(representative) ||
         (matchedSchedule ? resolveScheduleCustomer(matchedSchedule) : "") ||
         normalizeCustomerValue(keyParts.customer);
-      const resolvedProjectNumber = representative.projectNumber ?? liveFallbackParts?.projectNumber ?? "";
-      const resolvedProjectName = representative.projectName ?? liveFallbackParts?.projectName ?? "Unnamed";
-      const canonicalJobKey =
-        liveFallbackParts && liveFallbackParts.projectName
-          ? `${mergedCustomer || normalizeCustomerValue(liveFallbackParts.customer)}~${liveFallbackParts.projectNumber ?? ""}~${liveFallbackParts.projectName}`
-          : matchedSchedule?.jobKey || key;
+      const resolvedProjectNumber = representative.projectNumber ?? keyParts.projectNumber ?? "";
+      const resolvedProjectName = representative.projectName ?? keyParts.projectName ?? "Unnamed";
+      const canonicalJobKey = matchedSchedule?.jobKey || key;
 
       results.push({
         id: matchedSchedule?.id || key,
@@ -614,12 +607,37 @@ function WIPReportContent() {
       });
     });
 
-    return results.sort((a, b) => {
+    const dedupedByDisplay = new Map<string, { row: Schedule; score: number }>();
+    for (const row of results) {
+      const displayKey = `${String(row.customer || "").trim().toLowerCase()}||${String(row.projectName || "").trim().toLowerCase()}`;
+      const exactScheduled = Number(scheduledHoursByExactKey.get(row.jobKey) || 0);
+      const numNameScheduled = Number(
+        scheduledHoursByProjectNumName.get(buildProjectNumNameKey(row.projectNumber, row.projectName)) || 0
+      );
+      const hasProjectNumber = Boolean(String(row.projectNumber || "").trim());
+      const score = (exactScheduled > 0 ? 4 : 0) + (numNameScheduled > 0 ? 2 : 0) + (hasProjectNumber ? 1 : 0);
+
+      const existing = dedupedByDisplay.get(displayKey);
+      if (!existing) {
+        dedupedByDisplay.set(displayKey, { row, score });
+        continue;
+      }
+
+      const shouldReplace =
+        score > existing.score ||
+        (score === existing.score && Number(row.totalHours || 0) > Number(existing.row.totalHours || 0));
+
+      if (shouldReplace) {
+        dedupedByDisplay.set(displayKey, { row, score });
+      }
+    }
+
+    return Array.from(dedupedByDisplay.values()).map((entry) => entry.row).sort((a, b) => {
       const customerCompare = (a.customer || "").localeCompare(b.customer || "");
       if (customerCompare !== 0) return customerCompare;
       return (a.projectName || "").localeCompare(b.projectName || "");
     });
-  }, [activeScheduleEntries, projects, schedules, scopesByJobKey]);
+  }, [activeScheduleEntries, projects, schedules]);
 
   // Save filters to localStorage whenever they change
   useEffect(() => {
@@ -896,6 +914,7 @@ function WIPReportContent() {
     const inProgressSchedules = schedulePageJobs;
     const inProgressJobsByExactKey = new Map<string, Schedule>();
     const inProgressJobsByProjectNumName = new Map<string, Schedule>();
+    const inProgressJobsByCustomerProject = new Map<string, Schedule>();
     
     console.log("[WIP] In Progress schedules:", inProgressSchedules.length);
 
@@ -903,6 +922,10 @@ function WIPReportContent() {
       inProgressJobsByExactKey.set(schedule.jobKey, schedule);
       inProgressJobsByProjectNumName.set(
         buildProjectNumNameKey(schedule.projectNumber, schedule.projectName),
+        schedule
+      );
+      inProgressJobsByCustomerProject.set(
+        buildCustomerProjectKey(resolveScheduleCustomer(schedule), schedule.projectName),
         schedule
       );
     });
@@ -919,7 +942,8 @@ function WIPReportContent() {
         const parts = parseJobKeyParts(entry.jobKey);
         const matchedSchedule =
           inProgressJobsByExactKey.get(entry.jobKey) ||
-          inProgressJobsByProjectNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName));
+          inProgressJobsByProjectNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName)) ||
+          inProgressJobsByCustomerProject.get(buildCustomerProjectKey(parts.customer, parts.projectName));
 
         if (!matchedSchedule) return;
 
@@ -991,10 +1015,9 @@ function WIPReportContent() {
       });
     });
     
-    // Total pool is now based on live scope hours from the Gantt/modal flow.
+    // Total pool is based only on scheduled activeSchedule hours.
     const totalPoolHours = inProgressSchedules.reduce((sum, s) => sum + (s.totalHours || 0), 0);
     const poolBreakdown = inProgressSchedules.map((schedule) => {
-      const scopeHours = sumScopeHours(scopesByJobKey[schedule.jobKey]);
       const scheduledHours = scheduledHoursByJob.get(schedule.jobKey) || 0;
       return {
         jobKey: schedule.jobKey || "",
@@ -1002,9 +1025,9 @@ function WIPReportContent() {
         projectName: schedule.projectName || "Unnamed",
         customer: resolveScheduleCustomer(schedule) || "Unknown",
         hasSchedule: scheduledHours > 0,
-        hasGantt: scopeHours > 0,
+        hasGantt: scheduledHours > 0,
         p_hours: scheduledHours,
-        p_proj: scopeHours,
+        p_proj: scheduledHours,
       };
     });
     
@@ -1016,7 +1039,7 @@ function WIPReportContent() {
       poolBreakdown,
       scheduledHoursByJob
     };
-  }, [activeScheduleEntries, projects, schedulePageJobs, scopesByJobKey]);
+  }, [activeScheduleEntries, projects, schedulePageJobs]);
 
   const months = Object.keys(monthlyData).sort();
   

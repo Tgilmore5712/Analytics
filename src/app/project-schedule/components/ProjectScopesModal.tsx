@@ -583,7 +583,6 @@ export function ProjectScopesModal({
     })), [project.jobKey, resolvedJobKey]);
 
   const loadPersistedProjectScopes = useCallback(async (): Promise<Scope[]> => {
-    if (!usesLegacyScopeMetadata) return [];
     if (!resolvedJobKey) return [];
 
     const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey)}`);
@@ -624,13 +623,9 @@ export function ProjectScopesModal({
       const projectNameMatch = normalizeText(scopeProjectName) === normalizedProjectName;
       return customerMatch && projectNumberMatch && projectNameMatch;
     });
-  }, [project.customer, project.projectName, project.projectNumber, resolvedJobKey, usesLegacyScopeMetadata]);
+  }, [project.customer, project.projectName, project.projectNumber, resolvedJobKey]);
 
   const mergePersistedScopeMetadata = useCallback(async (scopes: Scope[]): Promise<Scope[]> => {
-    if (!usesLegacyScopeMetadata) {
-      return scopes;
-    }
-
     try {
       const persistedScopes = await loadPersistedProjectScopes();
       if (persistedScopes.length === 0) {
@@ -676,7 +671,7 @@ export function ProjectScopesModal({
       console.warn('Failed to merge project-scope metadata into canonical scopes:', error);
       return scopes;
     }
-  }, [loadPersistedProjectScopes, scopeMatchKey, usesLegacyScopeMetadata]);
+  }, [loadPersistedProjectScopes, scopeMatchKey]);
 
   const loadScopesForGanttProject = useCallback(async (projectId: string): Promise<Scope[] | null> => {
     const response = await fetch(`/api/gantt-v2/projects/${projectId}/scopes`);
@@ -740,8 +735,6 @@ export function ProjectScopesModal({
     payload: ScopeMetadataPayload,
     options?: { activeScope?: Scope | null }
   ) => {
-    if (!usesLegacyScopeMetadata) return;
-
     const titleKey = normalizeText(payload?.title || '');
     if (!titleKey) return;
 
@@ -1572,6 +1565,7 @@ export function ProjectScopesModal({
         activeScopeId.startsWith('virtual-') ||
         activeScopeId.startsWith('generated-')
       );
+      const shouldCreateNewScope = isCreatingNewScope || !activeScopeId || isGeneratedScopeId;
 
       const targetGanttProjectId = ganttProjectId || liveGanttProjectId;
       let savedScope;
@@ -1589,7 +1583,7 @@ export function ProjectScopesModal({
           notes: payload.description || null,
         };
 
-        if (activeScopeId && !isGeneratedScopeId) {
+        if (activeScopeId && !shouldCreateNewScope) {
           const response = await fetch(`/api/gantt-v2/scopes/${activeScopeId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -1654,7 +1648,7 @@ export function ProjectScopesModal({
           throw new Error('Unable to resolve a live Gantt project for this scope.');
         }
 
-        if (activeScopeId && !isGeneratedScopeId) {
+        if (activeScopeId && !shouldCreateNewScope) {
           const response = await fetch('/api/project-scopes', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -1731,8 +1725,8 @@ export function ProjectScopesModal({
           deletedSomewhere = true;
         }
 
-        // Cleanup legacy metadata row by project identity and scope title so it can't be auto-recreated.
-        if (usesLegacyScopeMetadata) {
+        // Cleanup metadata row by project identity and scope title so it can't be auto-recreated.
+        if (resolvedJobKey || project.jobKey) {
           const metadataRes = await fetch(
             `/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey || project.jobKey || '')}&title=${encodeURIComponent(scopeTitle)}`,
             { method: 'DELETE' }
