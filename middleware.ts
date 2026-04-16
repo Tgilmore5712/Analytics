@@ -27,6 +27,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith('/api/');
   const isAuthApiRoute = pathname.startsWith('/api/auth/');
+  const isPublicVersionRoute = pathname === '/api/public/version';
   const isDiagnosticsOrTestApiRoute = matchesDiagnosticsOrTestRoute(
     pathname,
     DIAGNOSTICS_OR_TEST_API_ROUTES
@@ -53,6 +54,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // In production or if Auth0 is configured, enforce auth
+  if (isPublicVersionRoute) {
+    return NextResponse.next();
+  }
+
   // Allow auth routes
   if (isAuthApiRoute) {
     const response = await auth0.middleware(request);
