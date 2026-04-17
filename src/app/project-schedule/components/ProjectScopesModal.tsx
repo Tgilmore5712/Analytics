@@ -731,6 +731,41 @@ export function ProjectScopesModal({
     return mergedScopes;
   }, [ganttProjectId, liveGanttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
 
+  const sanitizePredecessorScopeId = useCallback(
+    async (projectId: string, predecessorId: string | null | undefined, currentScopeId?: string | null) => {
+      if (!isCanonicalScopeId(predecessorId)) return null;
+
+      const candidate = String(predecessorId).trim();
+      if (!candidate) return null;
+      if (currentScopeId && candidate === currentScopeId) return null;
+
+      // Fast path from currently loaded canonical scopes.
+      const localCanonicalIds = new Set(
+        (canonicalScopes || [])
+          .map((scope) => String(scope.id || "").trim())
+          .filter((id) => isCanonicalScopeId(id))
+      );
+      if (localCanonicalIds.has(candidate)) {
+        return candidate;
+      }
+
+      // Fallback to backend project scopes to avoid cross-project predecessor ids.
+      const response = await fetch(`/api/gantt-v2/projects/${projectId}/scopes`);
+      const result = await readJsonResponse<{ success?: boolean; data?: Array<{ id?: string | null }> }>(response, {
+        label: "Validate predecessor scope",
+        fallback: { success: false, data: [] },
+      });
+
+      if (!response.ok || !result?.success || !Array.isArray(result?.data)) {
+        return null;
+      }
+
+      const existsInProject = result.data.some((scope) => String(scope?.id || "").trim() === candidate);
+      return existsInProject ? candidate : null;
+    },
+    [canonicalScopes]
+  );
+
   const upsertProjectScopeMetadata = async (
     payload: ScopeMetadataPayload,
     options?: { activeScope?: Scope | null }
@@ -1570,6 +1605,12 @@ export function ProjectScopesModal({
       const targetGanttProjectId = ganttProjectId || liveGanttProjectId;
       let savedScope;
       if (targetGanttProjectId) {
+        payload.predecessorScopeId = await sanitizePredecessorScopeId(
+          targetGanttProjectId,
+          payload.predecessorScopeId,
+          shouldCreateNewScope ? null : activeScopeId
+        );
+
         // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
         await upsertProjectScopeMetadata(payload, { activeScope });
 
