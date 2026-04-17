@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getErrorMessage, shouldFallbackToEmptyRead, withDatabaseRetry } from "@/lib/dbResilience";
+import { getRolledUpCostCode, normalizeCostCodeForRollup } from "@/lib/costCodeRollup";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,18 @@ type ProposalLineItemLiveRow = {
   synced_at: string;
 };
 
+type TimecardActualRow = {
+  procore_project_id: string | null;
+  cost_code: string | null;
+  hours: number | string | null;
+};
+
+type ProductivityActualRow = {
+  procore_project_id: string | null;
+  cost_code: string | null;
+  quantity_used: number | string | null;
+};
+
 function normalizeId(value: unknown): string {
   if (typeof value === "bigint") return value.toString();
   if (typeof value === "number") return String(value);
@@ -48,6 +61,21 @@ function isMissingTableError(error: unknown): boolean {
   const code = String((error as { code?: string })?.code || "").toUpperCase();
   const message = error instanceof Error ? error.message : String(error);
   return code === "42P01" || /relation .* does not exist/i.test(message);
+}
+
+function normalizeMetric(value: number | string | null | undefined): number {
+  const num = typeof value === "number" ? value : Number(value || 0);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function buildActualsKey(projectId: string | null | undefined, costCode: string | null | undefined): string | null {
+  const normalizedProjectId = String(projectId || "").trim();
+  if (!normalizedProjectId) return null;
+
+  const normalizedCostCode = getRolledUpCostCode(costCode) || normalizeCostCodeForRollup(costCode);
+  if (!normalizedCostCode) return null;
+
+  return `${normalizedProjectId}::${normalizedCostCode}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -276,16 +304,9 @@ export async function GET(request: NextRequest) {
     const total = normalizeCount(countRows[0]?.total ?? 0);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-    return NextResponse.json({
-      success: true,
-      count: rows.length,
-      total,
-      page,
-      pageSize,
-      totalPages,
-      hasNextPage: skip + rows.length < total,
-      hasPreviousPage: page > 1,
-      data: rows.map((row) => ({
+    const materializedRows = rows.map((row) => {
+      const rollupCostCode = getRolledUpCostCode(row.cost_code) || row.cost_code || null;
+      return {
         id: normalizeId(row.id),
         companyId: row.company_id,
         bidBoardProjectId: row.bid_board_project_id,
@@ -300,13 +321,99 @@ export async function GET(request: NextRequest) {
         name: row.name,
         status: row.status,
         costCode: row.cost_code,
+        rollupCostCode,
         uom: row.uom,
         lineItemType: row.line_item_type,
         totalCost: row.total_cost === null ? null : Number(row.total_cost),
         totalSales: row.total_sales === null ? null : Number(row.total_sales),
         payload: row.payload,
         syncedAt: row.synced_at,
-      })),
+      };
+    });
+
+    const projectIds = Array.from(
+      new Set(
+        materializedRows
+          .map((row) => String(row.procoreProjectId || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    const timecardActualsByKey = new Map<string, number>();
+    const productivityActualsByKey = new Map<string, number>();
+
+    if (projectIds.length > 0) {
+      const [timecardRows, productivityRows] = await Promise.all([
+        withDatabaseRetry(() =>
+          prisma.$queryRawUnsafe<TimecardActualRow[]>(
+            `
+              SELECT
+                t."procoreProjectId" AS procore_project_id,
+                t."costCodeFullCode" AS cost_code,
+                COALESCE(SUM(t.hours), 0) AS hours
+              FROM "TimecardEntry" t
+              WHERE t."procoreProjectId" = ANY($1)
+                AND t."costCodeFullCode" IS NOT NULL
+                AND BTRIM(t."costCodeFullCode") <> ''
+              GROUP BY t."procoreProjectId", t."costCodeFullCode"
+            `,
+            projectIds
+          )
+        ),
+        withDatabaseRetry(() =>
+          prisma.$queryRawUnsafe<ProductivityActualRow[]>(
+            `
+              SELECT
+                pl."procoreProjectId" AS procore_project_id,
+                li."costCode" AS cost_code,
+                COALESCE(SUM(pl."quantityUsed"), 0) AS quantity_used
+              FROM "ProductivityLog" pl
+              LEFT JOIN "PurchaseOrderLineItemContractDetail" li
+                ON li."procoreId" = pl."lineItemId"
+              WHERE pl."procoreProjectId" = ANY($1)
+                AND pl."quantityUsed" IS NOT NULL
+              GROUP BY pl."procoreProjectId", li."costCode"
+            `,
+            projectIds
+          )
+        ),
+      ]);
+
+      for (const row of timecardRows) {
+        const key = buildActualsKey(row.procore_project_id, row.cost_code);
+        if (!key) continue;
+        timecardActualsByKey.set(key, (timecardActualsByKey.get(key) || 0) + normalizeMetric(row.hours));
+      }
+
+      for (const row of productivityRows) {
+        const key = buildActualsKey(row.procore_project_id, row.cost_code);
+        if (!key) continue;
+        productivityActualsByKey.set(key, (productivityActualsByKey.get(key) || 0) + normalizeMetric(row.quantity_used));
+      }
+    }
+
+    const enrichedRows = materializedRows.map((row) => {
+      const key = buildActualsKey(row.procoreProjectId, row.rollupCostCode || row.costCode);
+      const actualTimecardHours = key ? Number(timecardActualsByKey.get(key) || 0) : 0;
+      const actualProductivityQty = key ? Number(productivityActualsByKey.get(key) || 0) : 0;
+
+      return {
+        ...row,
+        actualTimecardHours,
+        actualProductivityQty,
+      };
+    });
+
+    return NextResponse.json({
+      success: true,
+      count: rows.length,
+      total,
+      page,
+      pageSize,
+      totalPages,
+      hasNextPage: skip + rows.length < total,
+      hasPreviousPage: page > 1,
+      data: enrichedRows,
     });
   } catch (error) {
     if (isMissingTableError(error) || shouldFallbackToEmptyRead(error)) {

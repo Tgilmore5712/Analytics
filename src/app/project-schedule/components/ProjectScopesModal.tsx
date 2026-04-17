@@ -1704,22 +1704,26 @@ export function ProjectScopesModal({
 
   const handleDeleteScope = async () => {
     if (!activeScopeId || activeScopeId === NEW_SCOPE_ID) return;
-    const scope = effectiveScopes.find((s) => s.id === activeScopeId);
+    const deletedScopeId = activeScopeId;
+    const scope = effectiveScopes.find((s) => s.id === deletedScopeId);
     const scopeTitle = scope?.title || 'this scope';
+    const deletedTitleKey = normalizeText(scope?.title || '');
+    const deletedStartKey = dateKey(scope?.startDate);
+    const deletedEndKey = dateKey(scope?.endDate);
     if (!window.confirm(`Delete scope "${scopeTitle}"? This cannot be undone.`)) return;
 
     try {
       const isGeneratedId =
-        activeScopeId.startsWith('fallback-') ||
-        activeScopeId.startsWith('virtual-') ||
-        activeScopeId.startsWith('generated-');
+        deletedScopeId.startsWith('fallback-') ||
+        deletedScopeId.startsWith('virtual-') ||
+        deletedScopeId.startsWith('generated-');
 
       if (!isGeneratedId) {
         let deletedSomewhere = false;
         let metadataError: string | undefined;
 
         // Try deleting canonical gantt scope first (primary source of truth).
-        const ganttRes = await fetch(`/api/gantt-v2/scopes/${activeScopeId}`, { method: 'DELETE' });
+        const ganttRes = await fetch(`/api/gantt-v2/scopes/${deletedScopeId}`, { method: 'DELETE' });
         const ganttJson = await ganttRes.json().catch(() => ({}));
         if (ganttRes.ok && ganttJson?.success) {
           deletedSomewhere = true;
@@ -1746,8 +1750,17 @@ export function ProjectScopesModal({
       setActiveScopeId(null);
       setIsCreatingNewScope(false);
       const refreshedScopes = await loadCanonicalScopes();
-      const remaining = refreshedScopes ?? effectiveScopes.filter((s) => s.id !== activeScopeId);
+      const remainingBase = refreshedScopes ?? effectiveScopes;
+      const remaining = remainingBase.filter((s) => {
+        if (s.id === deletedScopeId) return false;
+
+        const sameTitle = deletedTitleKey && normalizeText(s.title || '') === deletedTitleKey;
+        if (!sameTitle) return true;
+
+        return !(dateKey(s.startDate) === deletedStartKey && dateKey(s.endDate) === deletedEndKey);
+      });
       onScopesUpdated(resolvedJobKey || project.jobKey || '', remaining);
+      onClose();
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       alert(`Failed to delete scope: ${msg}`);
@@ -1757,6 +1770,8 @@ export function ProjectScopesModal({
   const handleStartCreateScope = () => {
     previousActiveScopeIdRef.current =
       activeScopeId && activeScopeId !== NEW_SCOPE_ID ? activeScopeId : null;
+    // Start a fresh scope draft so prior scope values (especially hours) do not leak.
+    setScopeDetail(emptyScopeDetail);
     setIsCreatingNewScope(true);
     setActiveScopeId(NEW_SCOPE_ID);
   };

@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Navigation from "@/components/Navigation";
+import { getRolledUpCostCode } from "@/lib/costCodeRollup";
 
 type PersistedLineItem = {
   id: string;
@@ -18,10 +19,13 @@ type PersistedLineItem = {
   name: string | null;
   status: string | null;
   costCode: string | null;
+  rollupCostCode?: string | null;
   uom?: string | null;
   lineItemType?: string | null;
   totalCost?: number | null;
   totalSales?: number | null;
+  actualTimecardHours?: number;
+  actualProductivityQty?: number;
   payload: unknown;
   syncedAt: string;
 };
@@ -98,6 +102,7 @@ type BudgetLineRow = {
   budgetLineItemId: string;
   name: string | null;
   costCode: string | null;
+  rollupCostCode?: string | null;
   costCodeDescription: string | null;
   lineItemType: string | null;
   uom: string | null;
@@ -105,6 +110,8 @@ type BudgetLineRow = {
   unitCost: number | null;
   originalBudgetAmount: number | null;
   amount: number | null;
+  actualTimecardHours?: number;
+  actualProductivityQty?: number;
   syncedAt: string;
 };
 
@@ -455,10 +462,12 @@ export default function ProposalLineItemsLivePage() {
               <tr className="text-left uppercase tracking-wider text-gray-500 border-b border-gray-200">
                 <th className="py-2 pr-3 pl-3">Budget Item</th>
                 <th className="py-2 pr-3">Cost Code</th>
+                <th className="py-2 pr-3">Rollup Cost Code</th>
                 <th className="py-2 pr-3">Description</th>
                 <th className="py-2 pr-3">Type</th>
                 <th className="py-2 pr-3">UOM</th>
                 <th className="py-2 pr-3 text-right">Qty</th>
+                <th className="py-2 pr-3 text-right">Actual Units</th>
                 <th className="py-2 pr-3 text-right">Unit Cost</th>
                 <th className="py-2 pr-3 text-right">Original Budget</th>
                 <th className="py-2 pr-3 text-right">Amount</th>
@@ -469,10 +478,12 @@ export default function ProposalLineItemsLivePage() {
                 <tr key={budgetRow.id} className="border-b border-gray-100 text-gray-800 align-top">
                   <td className="py-2 pr-3 pl-3 whitespace-nowrap">{budgetRow.budgetLineItemId}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">{budgetRow.costCode || "-"}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{budgetRow.rollupCostCode || getRolledUpCostCode(budgetRow.costCode) || "-"}</td>
                   <td className="py-2 pr-3">{budgetRow.name || budgetRow.costCodeDescription || "-"}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">{budgetRow.lineItemType || "-"}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">{budgetRow.uom || "-"}</td>
                   <td className="py-2 pr-3 whitespace-nowrap text-right">{formatNumber(budgetRow.quantity)}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap text-right">{formatActualUnits(budgetRow.uom, budgetRow.actualTimecardHours, budgetRow.actualProductivityQty)}</td>
                   <td className="py-2 pr-3 whitespace-nowrap text-right">{formatCurrencyMaybe(budgetRow.unitCost)}</td>
                   <td className="py-2 pr-3 whitespace-nowrap text-right">{formatCurrencyMaybe(budgetRow.originalBudgetAmount)}</td>
                   <td className="py-2 pr-3 whitespace-nowrap text-right">{formatCurrencyMaybe(budgetRow.amount)}</td>
@@ -747,6 +758,7 @@ export default function ProposalLineItemsLivePage() {
                                             <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
                                             <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
                                             <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
+                                            <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
                                             <td className="py-2 pr-3 whitespace-nowrap text-right font-semibold">{formatCurrency(group.totalSales)}</td>
                                           </tr>
                                           {!collapsed &&
@@ -771,6 +783,8 @@ export default function ProposalLineItemsLivePage() {
                                                 <td className="py-2 pr-3">{itemRow.name || "-"}</td>
                                                 <td className="py-2 pr-3 whitespace-nowrap">{itemRow.status || "-"}</td>
                                                 <td className="py-2 pr-3 whitespace-nowrap">{itemRow.costCode || "-"}</td>
+                                                <td className="py-2 pr-3 whitespace-nowrap">{itemRow.rollupCostCode || getRolledUpCostCode(itemRow.costCode) || "-"}</td>
+                                                <td className="py-2 pr-3 whitespace-nowrap text-right">{formatActualUnits(itemRow.uom, itemRow.actualTimecardHours, itemRow.actualProductivityQty)}</td>
                                                 <td className="py-2 pr-3 whitespace-nowrap text-right">
                                                   {typeof itemRow.totalSales === "number" ? formatCurrency(itemRow.totalSales) : "-"}
                                                 </td>
@@ -810,13 +824,15 @@ export default function ProposalLineItemsLivePage() {
                   <th className="py-2 pr-3">Name</th>
                   <th className="py-2 pr-3">Status</th>
                   <th className="py-2 pr-3">Cost Code</th>
+                  <th className="py-2 pr-3">Rollup Cost Code</th>
+                  <th className="py-2 pr-3 text-right">Actual Units</th>
                   <th className="py-2 pr-3 text-right">Sales</th>
                 </tr>
               </thead>
               <tbody>
                 {!loading && proposalGroups.length === 0 && (
                   <tr>
-                    <td className="py-4 text-gray-500" colSpan={17}>
+                    <td className="py-4 text-gray-500" colSpan={19}>
                       No rows found.
                     </td>
                   </tr>
@@ -852,11 +868,13 @@ export default function ProposalLineItemsLivePage() {
                         <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
                         <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
                         <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
+                        <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
+                        <td className="py-2 pr-3 whitespace-nowrap text-gray-500">-</td>
                         <td className="py-2 pr-3 whitespace-nowrap text-right font-semibold">{formatCurrency(group.totalSales)}</td>
                       </tr>
                       {!collapsed && (
                         <tr className="border-b border-gray-200 bg-white">
-                          <td colSpan={17} className="p-0">
+                          <td colSpan={19} className="p-0">
                             <div className="overflow-auto">
                               <table className="min-w-full text-xs">
                                 <tbody>
@@ -878,6 +896,8 @@ export default function ProposalLineItemsLivePage() {
                                       <td className="py-2 pr-3">{row.name || "-"}</td>
                                       <td className="py-2 pr-3 whitespace-nowrap">{row.status || "-"}</td>
                                       <td className="py-2 pr-3 whitespace-nowrap">{row.costCode || "-"}</td>
+                                      <td className="py-2 pr-3 whitespace-nowrap">{row.rollupCostCode || getRolledUpCostCode(row.costCode) || "-"}</td>
+                                      <td className="py-2 pr-3 whitespace-nowrap text-right">{formatActualUnits(row.uom, row.actualTimecardHours, row.actualProductivityQty)}</td>
                                       <td className="py-2 pr-3 whitespace-nowrap text-right">
                                         {typeof row.totalSales === "number" ? formatCurrency(row.totalSales) : "-"}
                                       </td>
@@ -917,4 +937,20 @@ function formatCurrencyMaybe(value: number | null | undefined) {
 
 function formatNumber(value: number | null | undefined) {
   return typeof value === "number" ? value.toLocaleString() : "-";
+}
+
+function formatActualUnits(
+  uom: string | null | undefined,
+  timecardHours: number | null | undefined,
+  productivityQty: number | null | undefined
+) {
+  const normalizedUom = String(uom || "").trim().toLowerCase();
+  const isHourUom = /\b(hours?|hrs?|h)\b/.test(normalizedUom);
+
+  if (isHourUom) {
+    const tc = typeof timecardHours === "number" ? timecardHours.toFixed(1) : "0.0";
+    return tc;
+  }
+
+  return typeof productivityQty === "number" ? productivityQty.toFixed(1) : "0.0";
 }
