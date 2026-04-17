@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ? null
       : Number(body.crewSize);
     const notes = (body?.notes || '').toString().trim() || null;
-    const predecessorScopeId = body?.predecessorScopeId
+    let predecessorScopeId = body?.predecessorScopeId
       ? String(body.predecessorScopeId).trim()
       : null;
 
@@ -78,10 +78,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         projectId
       );
       if (!predecessor || predecessor.length === 0) {
-        return NextResponse.json(
-          { success: false, error: 'Predecessor scope must belong to the same project' },
-          { status: 400 }
-        );
+        console.warn('[POST] Dropping invalid predecessor scope for project', {
+          projectId,
+          predecessorScopeId,
+          title,
+        });
+        predecessorScopeId = null;
       }
     }
 

@@ -356,6 +356,7 @@ export function ProjectScopesModal({
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [draggedTaskIndex, setDraggedTaskIndex] = useState<number | null>(null);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Set<string>>(new Set());
+
   const [scopeDetail, setScopeDetail] = useState<Partial<Scope>>({
     title: "",
     predecessorScopeId: null,
@@ -460,6 +461,11 @@ export function ProjectScopesModal({
     customer: project.customer,
     projectNumber: project.projectNumber,
   }), [project.customer, project.jobKey, project.projectName, project.projectNumber, resolvedJobKey]);
+
+  useEffect(() => {
+    setCanonicalScopes(null);
+    setGanttProjectId(liveGanttProjectId);
+  }, [liveGanttProjectId, resolvedJobKey]);
 
   useEffect(() => {
     const effectiveJobKey = (resolvedJobKey || project.jobKey || '').trim();
@@ -804,17 +810,8 @@ export function ProjectScopesModal({
       if (!candidate) return null;
       if (currentScopeId && candidate === currentScopeId) return null;
 
-      // Fast path from currently loaded canonical scopes.
-      const localCanonicalIds = new Set(
-        (canonicalScopes || [])
-          .map((scope) => String(scope.id || "").trim())
-          .filter((id) => isCanonicalScopeId(id))
-      );
-      if (localCanonicalIds.has(candidate)) {
-        return candidate;
-      }
-
-      // Fallback to backend project scopes to avoid cross-project predecessor ids.
+      // Always validate against the target project's backend scopes so cached modal state
+      // from a previously opened project cannot leak a cross-project predecessor id.
       const response = await fetch(`/api/gantt-v2/projects/${projectId}/scopes`);
       const result = await readJsonResponse<{ success?: boolean; data?: Array<{ id?: string | null }> }>(response, {
         label: "Validate predecessor scope",
@@ -828,7 +825,7 @@ export function ProjectScopesModal({
       const existsInProject = result.data.some((scope) => String(scope?.id || "").trim() === candidate);
       return existsInProject ? candidate : null;
     },
-    [canonicalScopes]
+    []
   );
 
   const upsertProjectScopeMetadata = async (
@@ -1785,6 +1782,10 @@ export function ProjectScopesModal({
           resolvedJobKey || project.jobKey || '',
           refreshedScopes && refreshedScopes.length > 0 ? refreshedScopes : effectiveScopes
         );
+
+        if (!shouldCreateNewScope && targetCanonicalScopeId) {
+          setActiveScopeId(targetCanonicalScopeId);
+        }
       } else {
         if (!usesLegacyScopeMetadata) {
           throw new Error('Unable to resolve a valid Gantt project id for this scope. Refresh and try again.');
@@ -1807,6 +1808,7 @@ export function ProjectScopesModal({
             scope.id === targetCanonicalScopeId ? { ...scope, ...savedScope } : scope
           );
           onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
+          setActiveScopeId(targetCanonicalScopeId);
         } else {
           const response = await fetch('/api/project-scopes', {
             method: 'POST',

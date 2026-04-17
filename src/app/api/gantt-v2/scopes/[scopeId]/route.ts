@@ -91,7 +91,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const notes = body?.notes === undefined
       ? (existingScope[0].notes ?? null)
       : ((body?.notes || '').toString().trim() || null);
-    const predecessorScopeId = body?.predecessorScopeId === undefined
+    let predecessorScopeId = body?.predecessorScopeId === undefined
       ? (existingScope[0].predecessor_scope_id ?? null)
       : (body?.predecessorScopeId
           ? String(body.predecessorScopeId).trim()
@@ -112,10 +112,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         projectId
       );
       if (!predecessor || predecessor.length === 0) {
-        return NextResponse.json(
-          { success: false, error: 'Predecessor scope must belong to the same project' },
-          { status: 400 }
-        );
+        console.warn('[PUT] Dropping invalid predecessor scope for project', {
+          projectId,
+          scopeId,
+          predecessorScopeId,
+          title,
+        });
+        predecessorScopeId = null;
       }
     }
 
