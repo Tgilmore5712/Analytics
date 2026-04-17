@@ -1488,8 +1488,12 @@ export function ProjectScopesModal({
   const handleSaveScope = async () => {
     setIsSaving(true);
     try {
+      // Refresh scope list before matching to prevent duplicates from stale data
+      const latestScopes = await loadCanonicalScopes();
+      const scopesToMatchAgainst = latestScopes && latestScopes.length > 0 ? latestScopes : effectiveScopes;
+
       const activeScope = activeScopeId
-        ? (effectiveScopes.find((item) => item.id === activeScopeId) || null)
+        ? (scopesToMatchAgainst.find((item) => item.id === activeScopeId) || null)
         : null;
 
       const effectiveSchedulingMode: 'contiguous' | 'specific-days' =
@@ -1659,7 +1663,7 @@ export function ProjectScopesModal({
         payload.hours = computedHours;
       }
 
-      const canonicalScopeCandidates = effectiveScopes.filter((scope) => isCanonicalScopeId(scope.id));
+      const canonicalScopeCandidates = scopesToMatchAgainst.filter((scope) => isCanonicalScopeId(scope.id));
       const payloadTitleKey = normalizeText(payload.title || '');
       const payloadStartKey = dateKey(payload.startDate);
       const payloadEndKey = dateKey(payload.endDate);
@@ -1785,7 +1789,7 @@ export function ProjectScopesModal({
             throw new Error(result.error || `Failed to update scope metadata (HTTP ${response.status})`);
           }
           savedScope = result.data;
-          const updatedScopes = effectiveScopes.map((scope) =>
+          const updatedScopes = scopesToMatchAgainst.map((scope) =>
             scope.id === targetCanonicalScopeId ? { ...scope, ...savedScope } : scope
           );
           onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
@@ -1805,8 +1809,8 @@ export function ProjectScopesModal({
           const newScope: Scope = { ...savedScope } as Scope;
 
           const filteredScopes = activeScopeId && !isCanonicalScopeId(activeScopeId)
-            ? effectiveScopes.filter((scope) => scope.id !== activeScopeId)
-            : effectiveScopes;
+            ? scopesToMatchAgainst.filter((scope) => scope.id !== activeScopeId)
+            : scopesToMatchAgainst;
 
           onScopesUpdated(resolvedJobKey || project.jobKey || '', [...filteredScopes, newScope]);
           setIsCreatingNewScope(false);
