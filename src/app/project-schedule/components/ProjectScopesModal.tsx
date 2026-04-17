@@ -1659,13 +1659,31 @@ export function ProjectScopesModal({
         payload.hours = computedHours;
       }
 
-      const isGeneratedScopeId = !!activeScopeId && (
-        activeScopeId === NEW_SCOPE_ID ||
-        activeScopeId.startsWith('fallback-') ||
-        activeScopeId.startsWith('virtual-') ||
-        activeScopeId.startsWith('generated-')
+      const canonicalScopeCandidates = effectiveScopes.filter((scope) => isCanonicalScopeId(scope.id));
+      const payloadTitleKey = normalizeText(payload.title || '');
+      const payloadStartKey = dateKey(payload.startDate);
+      const payloadEndKey = dateKey(payload.endDate);
+
+      const exactCanonicalMatch = canonicalScopeCandidates.find((scope) =>
+        normalizeText(scope.title || '') === payloadTitleKey &&
+        dateKey(scope.startDate) === payloadStartKey &&
+        dateKey(scope.endDate) === payloadEndKey
       );
-      const shouldCreateNewScope = isCreatingNewScope || !activeScopeId || isGeneratedScopeId;
+
+      const titleOnlyCanonicalMatches = canonicalScopeCandidates.filter(
+        (scope) => normalizeText(scope.title || '') === payloadTitleKey
+      );
+
+      const targetCanonicalScopeId =
+        activeScopeId && isCanonicalScopeId(activeScopeId)
+          ? activeScopeId
+          : (exactCanonicalMatch?.id || (titleOnlyCanonicalMatches.length === 1 ? titleOnlyCanonicalMatches[0].id : null));
+
+      const shouldCreateNewScope = isCreatingNewScope || !targetCanonicalScopeId;
+
+      if (!isCreatingNewScope && !targetCanonicalScopeId) {
+        throw new Error('Select an existing scope to update, or click + Add Scope to create a new one.');
+      }
 
       const targetGanttProjectId = await resolveWritableGanttProjectId();
       let savedScope;
@@ -1673,7 +1691,7 @@ export function ProjectScopesModal({
         payload.predecessorScopeId = await sanitizePredecessorScopeId(
           targetGanttProjectId,
           payload.predecessorScopeId,
-          shouldCreateNewScope ? null : activeScopeId
+          shouldCreateNewScope ? null : targetCanonicalScopeId
         );
 
         // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
@@ -1689,8 +1707,8 @@ export function ProjectScopesModal({
           notes: payload.description || null,
         };
 
-        if (activeScopeId && !shouldCreateNewScope) {
-          const response = await fetch(`/api/gantt-v2/scopes/${activeScopeId}`, {
+        if (!shouldCreateNewScope && targetCanonicalScopeId) {
+          const response = await fetch(`/api/gantt-v2/scopes/${targetCanonicalScopeId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(ganttPayload),
@@ -1754,11 +1772,11 @@ export function ProjectScopesModal({
           throw new Error('Unable to resolve a valid Gantt project id for this scope. Refresh and try again.');
         }
 
-        if (activeScopeId && !shouldCreateNewScope) {
+        if (!shouldCreateNewScope && targetCanonicalScopeId) {
           const response = await fetch('/api/project-scopes', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: activeScopeId, ...payload }),
+            body: JSON.stringify({ id: targetCanonicalScopeId, ...payload }),
           });
           const result = await readJsonResponse<{ success?: boolean; error?: string; data?: Scope }>(response, {
             label: 'Update scope metadata',
@@ -1768,7 +1786,7 @@ export function ProjectScopesModal({
           }
           savedScope = result.data;
           const updatedScopes = effectiveScopes.map((scope) =>
-            scope.id === activeScopeId ? { ...scope, ...savedScope } : scope
+            scope.id === targetCanonicalScopeId ? { ...scope, ...savedScope } : scope
           );
           onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
         } else {
@@ -1786,7 +1804,7 @@ export function ProjectScopesModal({
           savedScope = result.data;
           const newScope: Scope = { ...savedScope } as Scope;
 
-          const filteredScopes = isGeneratedScopeId
+          const filteredScopes = activeScopeId && !isCanonicalScopeId(activeScopeId)
             ? effectiveScopes.filter((scope) => scope.id !== activeScopeId)
             : effectiveScopes;
 
