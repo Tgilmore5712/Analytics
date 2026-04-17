@@ -861,6 +861,20 @@ export function ProjectScopesModal({
     }
 
     if (!existing && activeScope) {
+      const dateOnlyMatches = projectScopes.filter(
+        (scope) =>
+          dateKey(scope.startDate) === activeStartDate &&
+          dateKey(scope.endDate) === activeEndDate
+      );
+
+      // If exactly one persisted row matches the active scope dates, treat it as the same scope
+      // even when the title has been edited (e.g., "Scope" -> "Place Holder").
+      if (dateOnlyMatches.length === 1) {
+        existing = dateOnlyMatches[0];
+      }
+    }
+
+    if (!existing && activeScope) {
       existing = titleMatches.find(
         (scope) =>
           dateKey(scope.startDate) === activeStartDate &&
