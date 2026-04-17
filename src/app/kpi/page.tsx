@@ -54,11 +54,20 @@ type LeadtimeBudgetProject = {
   projectNumber?: string;
   projectName?: string;
   customer?: string;
+  procoreId?: string | null;
   status?: string;
   hours?: number;
   pmcgroup?: boolean;
   projectArchived?: boolean;
   dateCreated?: unknown;
+};
+
+type ActiveScheduleEntry = {
+  id: string;
+  jobKey: string;
+  date: string;
+  hours: number;
+  source?: string | null;
 };
 
 type KPIDrilldownEntry = {
@@ -92,6 +101,24 @@ function getProjectIdentityKeys(project: Pick<Project, "customer" | "projectNumb
   if (procoreId) {
     keys.add(`${customer}~${procoreId}~${projectName}`);
     keys.add(`~${procoreId}~${projectName}`);
+  }
+
+  return Array.from(keys).filter((key) => key !== "~~");
+}
+
+function getScheduleIdentityKeys(schedule: Pick<Schedule, "customer" | "projectNumber" | "projectName" | "jobKey">) {
+  const customer = (schedule.customer ?? "").toString();
+  const projectNumber = (schedule.projectNumber ?? "").toString();
+  const projectName = (schedule.projectName ?? "").toString();
+  const keys = new Set<string>([
+    `${customer}~${projectNumber}~${projectName}`,
+    `~${projectNumber}~${projectName}`,
+    `${customer}~~${projectName}`,
+  ]);
+
+  const jobKey = (schedule.jobKey ?? "").toString().trim();
+  if (jobKey) {
+    keys.add(jobKey);
   }
 
   return Array.from(keys).filter((key) => key !== "~~");
@@ -276,6 +303,14 @@ function parseJobKeyParts(jobKey: string): { customer: string; projectNumber: st
   return { customer, projectNumber, projectName };
 }
 
+function buildProjectNumNameKey(projectNumber: unknown, projectName: unknown): string {
+  return `${String(projectNumber || "").trim()}~${String(projectName || "").trim()}`;
+}
+
+function buildCustomerProjectKey(customer: unknown, projectName: unknown): string {
+  return `${String(customer || "").trim()}~${String(projectName || "").trim()}`;
+}
+
 function normalizeCustomerValue(value: unknown): string {
   const normalized = (value ?? "").toString().trim();
   if (!normalized) return "";
@@ -301,6 +336,11 @@ function resolveLeadtimeScheduleCustomer(schedule: Pick<Schedule, "customer" | "
 
   const parsed = parseJobKeyParts(schedule.jobKey || "");
   return normalizeCustomerValue(parsed.customer);
+}
+
+function isLiveScheduleSource(value: unknown): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "gantt" || normalized === "wip-page" || normalized === "schedules";
 }
 
 function parseDateFromUnknown(value: unknown): Date | null {
@@ -520,6 +560,7 @@ export default function KPIPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsForHours, setProjectsForHours] = useState<LeadtimeBudgetProject[]>([]);
+  const [activeScheduleEntries, setActiveScheduleEntries] = useState<ActiveScheduleEntry[]>([]);
   const [kpiData, setKpiData] = useState<any[]>([]);
   const [cardLoadData, setCardLoadData] = useState<Record<string, { kpi: string; values: string[] }[]>>(defaultCardLoadData);
   const [loading, setLoading] = useState(true);
@@ -584,27 +625,67 @@ export default function KPIPage() {
 
         try {
           console.log("[KPI] Fetching projects and schedules in parallel...");
-          const [loadedProjects, loadedSchedules, budgetProjectsRes] = await Promise.all([
+          const [loadedProjects, loadedSchedules, budgetProjectsRes, activeScheduleRes] = await Promise.all([
             fetchAllParallel<Project>('/api/projects?mode=dashboard'),
             fetchAllParallel<any>('/api/scheduling', 'data'),
-            fetch('/api/scheduling/projects-with-budget?bidBoardStatus=IN_PROGRESS'),
+            fetch('/api/scheduling/projects-with-budget?bidBoardStatus=All'),
+            fetch('/api/short-term-schedule?action=active-schedule'),
           ]);
           projectsData = loadedProjects;
           schedulesData = loadedSchedules;
 
+          if (activeScheduleRes.ok) {
+            const activeScheduleJson = await activeScheduleRes.json();
+            const activeRows = Array.isArray(activeScheduleJson?.data) ? activeScheduleJson.data : [];
+            setActiveScheduleEntries(activeRows.map((row: any) => ({
+              id: String(row.id || ''),
+              jobKey: String(row.jobKey || ''),
+              date: String(row.date || ''),
+              hours: Number(row.hours || 0),
+              source: typeof row.source === 'string' ? row.source : null,
+            })));
+          } else {
+            setActiveScheduleEntries([]);
+          }
+
           if (budgetProjectsRes.ok) {
             const budgetJson = await budgetProjectsRes.json();
             const budgetRows = Array.isArray(budgetJson?.data) ? budgetJson.data : [];
-            projectsForHoursData = budgetRows.map((project: any) => ({
-              id: String(project.projectId || ""),
-              projectName: String(project.projectName || ""),
-              projectNumber: String(project.projectId || ""),
-              customer: String(project.customer || ""),
-              status: "In Progress",
-              hours: Number(project.totalQuantity) || 0,
-              pmcgroup: false,
-              projectArchived: false,
-            }));
+            const projectsByProcoreId = new Map(
+              loadedProjects
+                .filter((project) => String(project.procoreId || '').trim())
+                .map((project) => [String(project.procoreId || '').trim(), project])
+            );
+            const projectsByCustomerAndName = new Map<string, Project[]>();
+
+            loadedProjects.forEach((project) => {
+              const key = `${project.customer || ''}~${project.projectName || ''}`;
+              const existing = projectsByCustomerAndName.get(key) || [];
+              existing.push(project);
+              projectsByCustomerAndName.set(key, existing);
+            });
+
+            projectsForHoursData = budgetRows.map((project: any) => {
+              const procoreId = String(project.projectId || '').trim();
+              const fallbackMatches = projectsByCustomerAndName.get(`${project.customer || ''}~${project.projectName || ''}`) || [];
+              const matchedProject = projectsByProcoreId.get(procoreId)
+                || (fallbackMatches.length === 1 ? fallbackMatches[0] : null);
+
+              return {
+                id: String(matchedProject?.id || project.projectId || ""),
+                jobKey: matchedProject
+                  ? `${matchedProject.customer || ''}~${matchedProject.projectNumber || ''}~${matchedProject.projectName || ''}`
+                  : undefined,
+                projectName: String(matchedProject?.projectName || project.projectName || ""),
+                projectNumber: String(matchedProject?.projectNumber || ""),
+                customer: String(matchedProject?.customer || project.customer || ""),
+                procoreId: procoreId || (matchedProject?.procoreId ?? null),
+                status: String(matchedProject?.bidBoardStatus || matchedProject?.status || project.bidBoardStatus || ""),
+                hours: Number(project.totalQuantity) || 0,
+                pmcgroup: false,
+                projectArchived: false,
+              };
+            });
           } else {
             console.warn("[KPI] projects-with-budget endpoint not available");
           }
@@ -616,6 +697,7 @@ export default function KPIPage() {
           console.warn("[KPI] Error fetching data:", err);
           setProjects([]);
           setProjectsForHours([]);
+          setActiveScheduleEntries([]);
         }
 
         // Build O(1) lookup map instead of O(n×m) scan
@@ -639,6 +721,7 @@ export default function KPIPage() {
         console.warn("[KPI] Error loading data (using empty defaults):", error);
         setProjects([]);
         setProjectsForHours([]);
+        setActiveScheduleEntries([]);
         setSchedules([]);
       } finally {
         setLoading(false);
@@ -654,6 +737,7 @@ export default function KPIPage() {
       projects={projects}
       setProjects={setProjects}
       projectsForHours={projectsForHours}
+      activeScheduleEntries={activeScheduleEntries}
       kpiData={kpiData}
       setKpiData={setKpiData}
       cardLoadData={cardLoadData}
@@ -681,6 +765,7 @@ function KPIPageContent({
   projects,
   setProjects,
   projectsForHours,
+  activeScheduleEntries,
   kpiData,
   setKpiData,
   cardLoadData,
@@ -886,6 +971,64 @@ function KPIPageContent({
     () => aggregatedProjects.filter((project) => normalizeStatusValue(project.status) === "bid submitted"),
     [aggregatedProjects]
   );
+
+  const budgetHoursByIdentity = useMemo(() => {
+    const budgetHours = new Map<string, number>();
+
+    projectsForHours.forEach((project: LeadtimeBudgetProject) => {
+      const hours = Number(project.hours ?? 0);
+      if (!Number.isFinite(hours) || hours <= 0) return;
+
+      getProjectIdentityKeys({
+        customer: project.customer,
+        projectNumber: project.projectNumber,
+        projectName: project.projectName,
+        procoreId: project.procoreId ?? null,
+      }).forEach((key) => {
+        budgetHours.set(key, hours);
+      });
+    });
+
+    return budgetHours;
+  }, [projectsForHours]);
+
+  const scheduledHoursByScheduleMonth = useMemo(() => {
+    const hoursBySchedule = new Map<string, Map<string, number>>();
+    const schedulesByExactJobKey = new Map<string, Schedule>();
+    const schedulesByProjectNumName = new Map<string, Schedule>();
+    const schedulesByCustomerProject = new Map<string, Schedule>();
+
+    schedules.forEach((schedule: Schedule) => {
+      schedulesByExactJobKey.set(schedule.jobKey, schedule);
+      const parts = parseJobKeyParts(schedule.jobKey || '');
+      schedulesByProjectNumName.set(buildProjectNumNameKey(parts.projectNumber, parts.projectName), schedule);
+      schedulesByCustomerProject.set(buildCustomerProjectKey(parts.customer, parts.projectName), schedule);
+    });
+
+    (activeScheduleEntries || [])
+      .filter((entry: ActiveScheduleEntry) => isLiveScheduleSource(entry.source))
+      .forEach((entry: ActiveScheduleEntry) => {
+        const monthKey = String(entry.date || '').slice(0, 7);
+        if (!isValidMonthKey(monthKey)) return;
+
+        const entryHours = Number(entry.hours || 0);
+        if (!Number.isFinite(entryHours) || entryHours <= 0) return;
+
+        const parts = parseJobKeyParts(entry.jobKey || '');
+        const matchedSchedule =
+          schedulesByExactJobKey.get(entry.jobKey || '') ||
+          schedulesByProjectNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName)) ||
+          schedulesByCustomerProject.get(buildCustomerProjectKey(parts.customer, parts.projectName));
+
+        if (!matchedSchedule) return;
+
+        const scheduleMonthMap = hoursBySchedule.get(matchedSchedule.id) || new Map<string, number>();
+        scheduleMonthMap.set(monthKey, (scheduleMonthMap.get(monthKey) || 0) + entryHours);
+        hoursBySchedule.set(matchedSchedule.id, scheduleMonthMap);
+      });
+
+    return hoursBySchedule;
+  }, [activeScheduleEntries, schedules]);
 
   const leadtimeScheduleJobs = useMemo(() => {
     const qualifyingStatuses = ["In Progress", "IN_PROGRESS"];
@@ -1329,20 +1472,34 @@ function KPIPageContent({
     });
 
     schedules.forEach((schedule: Schedule) => {
-      const key = schedule.jobKey || getProjectKey(schedule.customer, schedule.projectNumber, schedule.projectName);
-      const project = keyToProject.get(key);
+      const scheduleKeys = getScheduleIdentityKeys(schedule);
+      const project = scheduleKeys
+        .map((key) => keyToProject.get(key))
+        .find((candidate): candidate is Project => Boolean(candidate));
       if (!project) return;
       if (!isScheduledSalesQualifyingStatus(project)) return;
 
       const projectSales = Number(project.sales ?? 0);
       if (!Number.isFinite(projectSales) || projectSales <= 0) return;
 
-      normalizeAllocations(schedule.allocations).forEach((alloc) => {
-        const allocationRatio = getScheduleAllocationRatio(schedule, alloc);
-        if (!Number.isFinite(allocationRatio) || allocationRatio <= 0) return;
+      const budgetHours = scheduleKeys
+        .map((key) => budgetHoursByIdentity.get(key))
+        .find((hours): hours is number => Number.isFinite(hours) && hours > 0);
 
-        const monthKey = alloc.month;
+      const baseHours = Number.isFinite(budgetHours) && budgetHours > 0
+        ? budgetHours
+        : Number(schedule.totalHours ?? 0);
+      if (!Number.isFinite(baseHours) || baseHours <= 0) return;
+
+      const monthlyScheduledHours = scheduledHoursByScheduleMonth.get(schedule.id);
+      if (!monthlyScheduledHours || monthlyScheduledHours.size === 0) return;
+
+      monthlyScheduledHours.forEach((scheduledHours, monthKey) => {
         if (!isValidMonthKey(monthKey)) return;
+        if (!Number.isFinite(scheduledHours) || scheduledHours <= 0) return;
+
+        const allocationRatio = Math.min(scheduledHours / baseHours, 1);
+        if (!Number.isFinite(allocationRatio) || allocationRatio <= 0) return;
 
         const monthlySales = projectSales * allocationRatio;
         if (!result[monthKey]) result[monthKey] = [];
@@ -1382,7 +1539,7 @@ function KPIPageContent({
 
     Object.keys(result).forEach((monthKey) => result[monthKey].sort((a, b) => b.value - a.value));
     return result;
-  }, [aggregatedProjects, schedules]);
+  }, [aggregatedProjects, budgetHoursByIdentity, scheduledHoursByScheduleMonth, schedules]);
 
   const getDrilldownEntriesForYearMonth = (
     sourceMap: Record<string, KPIDrilldownEntry[]>,
@@ -1673,16 +1830,32 @@ function KPIPageContent({
   });
 
   schedules.forEach((schedule: Schedule) => {
-    const key = schedule.jobKey || getProjectKey(schedule.customer, schedule.projectNumber, schedule.projectName);
-    const projectSales = scheduleSalesMap.get(key);
+    const scheduleKeys = getScheduleIdentityKeys(schedule);
+    const projectSales = scheduleKeys
+      .map((key) => scheduleSalesMap.get(key))
+      .find((value): value is number => Number.isFinite(value) && value > 0);
     
     if (!projectSales) return;
 
-    normalizeAllocations(schedule.allocations).forEach((alloc: any) => {
-      const allocationRatio = getScheduleAllocationRatio(schedule, alloc);
-      if (!Number.isFinite(allocationRatio) || allocationRatio <= 0) return;
-      const monthKey = alloc.month;
+    const budgetHours = scheduleKeys
+      .map((key) => budgetHoursByIdentity.get(key))
+      .find((hours): hours is number => Number.isFinite(hours) && hours > 0);
+
+    const baseHours = Number.isFinite(budgetHours) && budgetHours > 0
+      ? budgetHours
+      : Number(schedule.totalHours ?? 0);
+    if (!Number.isFinite(baseHours) || baseHours <= 0) return;
+
+    const monthlyScheduledHours = scheduledHoursByScheduleMonth.get(schedule.id);
+    if (!monthlyScheduledHours || monthlyScheduledHours.size === 0) return;
+
+    monthlyScheduledHours.forEach((scheduledHours, monthKey) => {
       if (!isValidMonthKey(monthKey)) return;
+      if (!Number.isFinite(scheduledHours) || scheduledHours <= 0) return;
+
+      const allocationRatio = Math.min(scheduledHours / baseHours, 1);
+      if (!Number.isFinite(allocationRatio) || allocationRatio <= 0) return;
+
       const monthlySales = projectSales * allocationRatio;
       scheduledSalesByMonth[monthKey] = (scheduledSalesByMonth[monthKey] || 0) + monthlySales;
     });

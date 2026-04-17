@@ -9,6 +9,7 @@ type ProjectBudgetRow = {
   customer: string | null;
   bidboardstatus: string | null;
   totalamount: number | null;
+  totalquantity: number | null;
   lineitemcount: number;
   uoms: string | null;
   syncedat: string;
@@ -31,6 +32,14 @@ export async function GET(request: NextRequest) {
           s.customer AS customer,
           s.bid_board_status AS bidBoardStatus,
           SUM(COALESCE(b.amount, 0))::float AS totalAmount,
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(b.uom, '')) IN ('hours', 'hr', 'hrs')
+                AND LOWER(COALESCE(b.cost_code, '')) NOT IN ('project management.other', '01-300-10-20.o')
+              THEN COALESCE(b.quantity, 0)
+              ELSE 0
+            END
+          )::float AS totalQuantity,
           COUNT(DISTINCT b.id)::int AS lineItemCount,
           STRING_AGG(DISTINCT NULLIF(LOWER(TRIM(COALESCE(b.uom, ''))), ''), ', ' ORDER BY NULLIF(LOWER(TRIM(COALESCE(b.uom, ''))), '')) AS uoms,
           MAX(s.synced_at)::text AS syncedAt
@@ -62,6 +71,7 @@ export async function GET(request: NextRequest) {
         customer: row.customer || '',
         bidBoardStatus: row.bidboardstatus,
         totalAmount: row.totalamount || 0,
+        totalQuantity: row.totalquantity || 0,
         lineItemCount: row.lineitemcount,
         uoms: row.uoms || '',
         syncedAt: row.syncedat,
