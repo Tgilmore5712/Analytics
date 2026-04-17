@@ -352,6 +352,7 @@ export function ProjectScopesModal({
   const [isCreatingNewScope, setIsCreatingNewScope] = useState(false);
   const [ganttProjectId, setGanttProjectId] = useState<string | null>(liveGanttProjectId);
   const [canonicalScopes, setCanonicalScopes] = useState<Scope[] | null>(null);
+  const [isLoadingScopes, setIsLoadingScopes] = useState(true);
   const [projectBudgetHours, setProjectBudgetHours] = useState<number | null>(null);
   const [draggedScopeId, setDraggedScopeId] = useState<string | null>(null);
   const [draggedTaskIndex, setDraggedTaskIndex] = useState<number | null>(null);
@@ -464,6 +465,7 @@ export function ProjectScopesModal({
 
   useEffect(() => {
     setCanonicalScopes(null);
+    setIsLoadingScopes(true);
     setGanttProjectId(liveGanttProjectId);
   }, [liveGanttProjectId, resolvedJobKey]);
 
@@ -1065,17 +1067,27 @@ export function ProjectScopesModal({
   ]);
 
   useEffect(() => {
-    loadCanonicalScopes().catch((error) => {
-      console.error('Failed to load canonical gantt scopes:', error);
-      setGanttProjectId(null);
-      setCanonicalScopes(null);
-    });
+    setIsLoadingScopes(true);
+    loadCanonicalScopes()
+      .catch((error) => {
+        console.error('Failed to load canonical gantt scopes:', error);
+        setGanttProjectId(null);
+        setCanonicalScopes(null);
+      })
+      .finally(() => setIsLoadingScopes(false));
 
     loadProjectBudgetHours().catch((error) => {
       console.error('Failed to load project budget hours:', error);
       setProjectBudgetHours(null);
     });
   }, [loadCanonicalScopes, loadProjectBudgetHours]);
+
+  // Notify parent when canonical scopes finish loading
+  useEffect(() => {
+    if (canonicalScopes && canonicalScopes.length > 0 && !isLoadingScopes) {
+      onScopesUpdated(resolvedJobKey || project.jobKey || '', canonicalScopes);
+    }
+  }, [canonicalScopes, isLoadingScopes, onScopesUpdated, resolvedJobKey, project.jobKey]);
 
   useEffect(() => {
     const loadPaidHolidays = async () => {
@@ -2013,7 +2025,9 @@ export function ProjectScopesModal({
               </div>
             )}
             <div className="grid gap-2 max-h-40 overflow-y-auto">
-              {visibleScopes.length === 0 ? (
+              {isLoadingScopes ? (
+                <div className="text-sm text-gray-400 italic px-1">Loading scopes...</div>
+              ) : visibleScopes.length === 0 ? (
                 <div className="text-sm text-gray-500">No scopes yet.</div>
               ) : (
                 visibleScopes.map((scope, index) => {
