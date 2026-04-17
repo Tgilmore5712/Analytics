@@ -731,6 +731,45 @@ export function ProjectScopesModal({
     return mergedScopes;
   }, [ganttProjectId, liveGanttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
 
+  const resolveWritableGanttProjectId = useCallback(async (): Promise<string | null> => {
+    const candidateIds = [ganttProjectId, liveGanttProjectId].filter((id): id is string => Boolean(id));
+
+    for (const candidateId of candidateIds) {
+      const probeRes = await fetch(`/api/gantt-v2/projects/${candidateId}/scopes`);
+      if (probeRes.ok) {
+        if (ganttProjectId !== candidateId) {
+          setGanttProjectId(candidateId);
+        }
+        return candidateId;
+      }
+    }
+
+    const projectsRes = await fetch('/api/gantt-v2/projects');
+    const projectsResult = await readJsonResponse<{ success?: boolean; data?: GanttProjectResponse[] }>(projectsRes, {
+      label: 'Resolve writable Gantt project',
+      fallback: { success: false, data: [] },
+    });
+
+    if (!projectsRes.ok || !projectsResult?.success || !Array.isArray(projectsResult?.data)) {
+      return null;
+    }
+
+    const matchedProject = projectsResult.data.find((item) =>
+      matchesProjectIdentity({
+        customer: item.customer,
+        projectNumber: item.projectNumber,
+        projectName: item.projectName,
+      })
+    );
+
+    if (!matchedProject?.id) {
+      return null;
+    }
+
+    setGanttProjectId(matchedProject.id);
+    return matchedProject.id;
+  }, [ganttProjectId, liveGanttProjectId, matchesProjectIdentity]);
+
   const sanitizePredecessorScopeId = useCallback(
     async (projectId: string, predecessorId: string | null | undefined, currentScopeId?: string | null) => {
       if (!isCanonicalScopeId(predecessorId)) return null;
@@ -1602,7 +1641,7 @@ export function ProjectScopesModal({
       );
       const shouldCreateNewScope = isCreatingNewScope || !activeScopeId || isGeneratedScopeId;
 
-      const targetGanttProjectId = ganttProjectId || liveGanttProjectId;
+      const targetGanttProjectId = await resolveWritableGanttProjectId();
       let savedScope;
       if (targetGanttProjectId) {
         payload.predecessorScopeId = await sanitizePredecessorScopeId(
@@ -1686,7 +1725,7 @@ export function ProjectScopesModal({
         );
       } else {
         if (!usesLegacyScopeMetadata) {
-          throw new Error('Unable to resolve a live Gantt project for this scope.');
+          throw new Error('Unable to resolve a valid Gantt project id for this scope. Refresh and try again.');
         }
 
         if (activeScopeId && !shouldCreateNewScope) {
