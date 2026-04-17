@@ -124,6 +124,11 @@ const normalizeText = (value: string | null | undefined) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const parseJobKeyParts = (jobKey: string | null | undefined): { customer: string; projectNumber: string; projectName: string } => {
+  const [customer = "", projectNumber = "", projectName = ""] = String(jobKey || "").split("~");
+  return { customer, projectNumber, projectName };
+};
+
 const isGiantProjectName = (projectName: string | null | undefined) =>
   normalizeText(projectName).includes("giant");
 
@@ -732,18 +737,6 @@ export function ProjectScopesModal({
   }, [ganttProjectId, liveGanttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
 
   const resolveWritableGanttProjectId = useCallback(async (): Promise<string | null> => {
-    const candidateIds = [ganttProjectId, liveGanttProjectId].filter((id): id is string => Boolean(id));
-
-    for (const candidateId of candidateIds) {
-      const probeRes = await fetch(`/api/gantt-v2/projects/${candidateId}/scopes`);
-      if (probeRes.ok) {
-        if (ganttProjectId !== candidateId) {
-          setGanttProjectId(candidateId);
-        }
-        return candidateId;
-      }
-    }
-
     const projectsRes = await fetch('/api/gantt-v2/projects');
     const projectsResult = await readJsonResponse<{ success?: boolean; data?: GanttProjectResponse[] }>(projectsRes, {
       label: 'Resolve writable Gantt project',
@@ -752,6 +745,17 @@ export function ProjectScopesModal({
 
     if (!projectsRes.ok || !projectsResult?.success || !Array.isArray(projectsResult?.data)) {
       return null;
+    }
+
+    const candidateIds = [ganttProjectId, liveGanttProjectId].filter((id): id is string => Boolean(id));
+    const existingProjectIds = new Set(projectsResult.data.map((item) => String(item.id || '').trim()).filter(Boolean));
+
+    for (const candidateId of candidateIds) {
+      if (!existingProjectIds.has(candidateId)) continue;
+      if (ganttProjectId !== candidateId) {
+        setGanttProjectId(candidateId);
+      }
+      return candidateId;
     }
 
     const matchedProject = projectsResult.data.find((item) =>
@@ -763,12 +767,34 @@ export function ProjectScopesModal({
     );
 
     if (!matchedProject?.id) {
-      return null;
+      const createRes = await fetch('/api/gantt-v2/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectName: project.projectName || parseJobKeyParts(project.jobKey).projectName,
+          customer: project.customer || parseJobKeyParts(project.jobKey).customer || null,
+          projectNumber: project.projectNumber || parseJobKeyParts(project.jobKey).projectNumber || null,
+          status: 'In Progress',
+        }),
+      });
+
+      const createResult = await readJsonResponse<{ success?: boolean; data?: { id?: string | null } }>(createRes, {
+        label: 'Create writable Gantt project',
+        fallback: { success: false, data: { id: null } },
+      });
+
+      if (!createRes.ok || !createResult?.success || !createResult?.data?.id) {
+        return null;
+      }
+
+      const newProjectId = String(createResult.data.id).trim();
+      setGanttProjectId(newProjectId);
+      return newProjectId;
     }
 
     setGanttProjectId(matchedProject.id);
     return matchedProject.id;
-  }, [ganttProjectId, liveGanttProjectId, matchesProjectIdentity]);
+  }, [ganttProjectId, liveGanttProjectId, matchesProjectIdentity, project.customer, project.jobKey, project.projectName, project.projectNumber]);
 
   const sanitizePredecessorScopeId = useCallback(
     async (projectId: string, predecessorId: string | null | undefined, currentScopeId?: string | null) => {
