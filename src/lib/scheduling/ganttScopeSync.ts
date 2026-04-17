@@ -11,6 +11,13 @@ type SyncGanttScopeParams = {
   crewSize: number | null;
 };
 
+type ScopeTask = {
+  name?: string | null;
+  startDate?: string | null;
+  days?: number | null;
+  manpower?: number | null;
+};
+
 function parseDateOnly(value: string): Date {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -21,6 +28,66 @@ function formatDateOnly(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function toPositiveNumber(value: unknown): number | null {
+  const numeric = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return numeric;
+}
+
+function toPositiveWholeDays(value: unknown): number | null {
+  const numeric = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return Math.round(numeric);
+}
+
+function isDateKey(value: unknown): value is string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "").trim());
+}
+
+function getNextWorkingDate(date: Date, paidHolidaySet: Set<string>): Date {
+  const next = new Date(date);
+  while (true) {
+    const key = formatDateOnly(next);
+    const day = next.getDay();
+    if (day >= 1 && day <= 5 && !paidHolidaySet.has(key)) {
+      return next;
+    }
+    next.setDate(next.getDate() + 1);
+  }
+}
+
+function buildTaskBasedDailyHours(
+  tasks: ScopeTask[],
+  paidHolidaySet: Set<string>
+): Array<{ date: string; hours: number }> {
+  const byDate = new Map<string, number>();
+
+  tasks.forEach((task) => {
+    const startDate = String(task?.startDate || "").trim();
+    if (!isDateKey(startDate)) return;
+
+    const days = toPositiveWholeDays(task?.days);
+    const manpower = toPositiveNumber(task?.manpower);
+    if (!days || !manpower) return;
+
+    const perDayHours = manpower * 10;
+    let cursor = parseDateOnly(startDate);
+
+    for (let i = 0; i < days; i += 1) {
+      const workingDate = getNextWorkingDate(cursor, paidHolidaySet);
+      const dateKey = formatDateOnly(workingDate);
+      byDate.set(dateKey, (byDate.get(dateKey) || 0) + perDayHours);
+
+      cursor = new Date(workingDate);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+
+  return Array.from(byDate.entries())
+    .map(([date, hours]) => ({ date, hours }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 async function getPaidHolidaySet(startDate: string, endDate: string): Promise<Set<string>> {
@@ -56,14 +123,16 @@ export async function syncGanttScopeToActiveSchedule(params: SyncGanttScopeParam
 
   let schedulingMode: "contiguous" | "specific-days" = "contiguous";
   let selectedDays: Array<{ date: string; hours: number; foreman: string | null }> = [];
+  let scopeTasks: ScopeTask[] = [];
 
   if (scopeId) {
     const scopeRows = await prisma.$queryRawUnsafe<Array<{
       schedulingMode: string | null;
       selectedDays: unknown;
+      tasks: unknown;
     }>>(
       `
-        SELECT "schedulingMode", "selectedDays"
+        SELECT "schedulingMode", "selectedDays", "tasks"
         FROM "ProjectScope"
         WHERE "jobKey" = $1 AND "title" = $2
         ORDER BY "updatedAt" DESC
@@ -87,6 +156,10 @@ export async function syncGanttScopeToActiveSchedule(params: SyncGanttScopeParam
         }))
         .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && Number.isFinite(entry.hours) && entry.hours > 0);
     }
+
+    scopeTasks = Array.isArray(scopeMeta?.tasks)
+      ? (scopeMeta.tasks as ScopeTask[])
+      : [];
   }
 
   if (schedulingMode === "specific-days") {
@@ -210,16 +283,21 @@ export async function syncGanttScopeToActiveSchedule(params: SyncGanttScopeParam
   const end = parseDateOnly(endDate);
   const paidHolidaySet = await getPaidHolidaySet(startDate, endDate);
 
+  const taskBasedDays = buildTaskBasedDailyHours(scopeTasks, paidHolidaySet);
+  const hasTaskBasedDistribution = taskBasedDays.length > 0;
+
   const workingDays: Date[] = [];
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dayOfWeek = d.getDay();
-    const dateKey = formatDateOnly(d);
-    if (dayOfWeek >= 1 && dayOfWeek <= 5 && !paidHolidaySet.has(dateKey)) {
-      workingDays.push(new Date(d));
+  if (!hasTaskBasedDistribution) {
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dayOfWeek = d.getDay();
+      const dateKey = formatDateOnly(d);
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && !paidHolidaySet.has(dateKey)) {
+        workingDays.push(new Date(d));
+      }
     }
   }
 
-  if (workingDays.length === 0) {
+  if (!hasTaskBasedDistribution && workingDays.length === 0) {
     console.warn('[GANTT-SCOPE-SYNC] Clearing active schedule for scope with zero working days', {
       projectId,
       jobKey,
@@ -244,9 +322,9 @@ export async function syncGanttScopeToActiveSchedule(params: SyncGanttScopeParam
     return;
   }
 
-  // Always distribute from the scope's totalHours. Crew size is stored as
-  // manpower metadata and should not inflate scheduled hours.
-  const hoursPerDay = totalHours / workingDays.length;
+  // Use explicit task distribution when dated task inputs are complete; otherwise
+  // fall back to even distribution from the scope total across working days.
+  const hoursPerDay = hasTaskBasedDistribution ? 0 : totalHours / workingDays.length;
 
   const existingAssignments = await prisma.activeSchedule.findMany({
     where: {
@@ -287,15 +365,21 @@ export async function syncGanttScopeToActiveSchedule(params: SyncGanttScopeParam
     );
   }
 
-  for (const date of workingDays) {
-    const dateStr = formatDateOnly(date);
+  const distribution = hasTaskBasedDistribution
+    ? taskBasedDays
+    : workingDays.map((date) => ({ date: formatDateOnly(date), hours: hoursPerDay }));
+
+  for (const entry of distribution) {
+    const dateStr = entry.date;
+    const scheduledHours = Number(entry.hours || 0);
+    if (!Number.isFinite(scheduledHours) || scheduledHours <= 0) continue;
 
     await reconcileDailyAssignment({
       jobKey,
       scopeOfWork: title,
       targetDateKey: dateStr,
       targetForemanId: foremanByDate.get(dateStr) ?? defaultForeman,
-      hours: hoursPerDay,
+      hours: scheduledHours,
       fallbackSource: "gantt",
       enforceScopeHourCap: false,
     });
@@ -321,7 +405,7 @@ export async function syncGanttScopeToActiveSchedule(params: SyncGanttScopeParam
         crypto.randomUUID(),
         scopeId,
         dateStr,
-        hoursPerDay
+        scheduledHours
       );
     }
   }
