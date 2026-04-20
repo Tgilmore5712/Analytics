@@ -492,11 +492,14 @@ function getSalesActHoursDate(project: any) {
 function selectBestProjectEntry(projects: Project[]) {
   if (projects.length === 0) return null;
 
-  const preferredStatuses = new Set(["accepted", "in progress"]);
+  const preferredStatuses = new Set(["accepted", "in progress", "course of construction"]);
   const preferredCandidates = projects.filter((project) => preferredStatuses.has(normalizeStatusValue(project.status)));
   const candidates = preferredCandidates.length > 0 ? preferredCandidates : projects;
 
-  return candidates.reduce((best, current) => {
+  const withSales = candidates.filter((project) => Number(project.sales ?? 0) > 0);
+  const effectiveCandidates = withSales.length > 0 ? withSales : candidates;
+
+  return effectiveCandidates.reduce((best, current) => {
     const bestDate = getProjectDate(best);
     const currentDate = getProjectDate(current);
 
@@ -512,7 +515,7 @@ function selectBestProjectEntry(projects: Project[]) {
     const bestCustomer = (best.customer || "").toString();
     const currentCustomer = (current.customer || "").toString();
     return currentCustomer.localeCompare(bestCustomer) < 0 ? current : best;
-  }, candidates[0]);
+  }, effectiveCandidates[0]);
 }
 
 function dedupeProjectsByName(projects: Project[]) {
