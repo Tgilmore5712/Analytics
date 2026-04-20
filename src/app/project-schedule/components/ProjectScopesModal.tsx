@@ -407,6 +407,7 @@ export function ProjectScopesModal({
   const onScopesUpdatedRef = useRef(onScopesUpdated);
   const lastNotifiedScopesSignatureRef = useRef<string>('');
   const suppressPopulateEffectRef = useRef(false);
+  const lastCanonicalLoadRequestKeyRef = useRef<string>('');
   const [highlightedTaskIndex, setHighlightedTaskIndex] = useState<number | null>(null);
 
   const emptyScopeDetail = useMemo<Partial<Scope>>(() => ({
@@ -473,6 +474,19 @@ export function ProjectScopesModal({
 
     return `${customer}~${projectNumber}~${projectName}`;
   }, [project.customer, project.jobKey, project.projectName, project.projectNumber]);
+
+  const canonicalLoadRequestKey = useMemo(() => {
+    const customerKey = normalizeText(project.customer || '');
+    const projectNumberKey = normalizeText(project.projectNumber || '');
+    const projectNameKey = normalizeText(project.projectName || '');
+    return [
+      (resolvedJobKey || '').trim(),
+      (liveGanttProjectId || '').trim(),
+      customerKey,
+      projectNumberKey,
+      projectNameKey,
+    ].join('|');
+  }, [liveGanttProjectId, project.customer, project.projectName, project.projectNumber, resolvedJobKey]);
 
   const concreteProjectRef = useMemo<ConcreteOrderProjectRef>(() => ({
     jobKey: resolvedJobKey || project.jobKey,
@@ -1180,6 +1194,13 @@ export function ProjectScopesModal({
   ]);
 
   useEffect(() => {
+    // Avoid duplicate canonical reloads caused by callback identity churn
+    // (e.g., ganttProjectId updates during initial load).
+    if (lastCanonicalLoadRequestKeyRef.current === canonicalLoadRequestKey) {
+      return;
+    }
+    lastCanonicalLoadRequestKeyRef.current = canonicalLoadRequestKey;
+
     setIsLoadingScopes(true);
     loadCanonicalScopes()
       .catch((error) => {
@@ -1193,7 +1214,7 @@ export function ProjectScopesModal({
       console.error('Failed to load project budget hours:', error);
       setProjectBudgetHours(null);
     });
-  }, [loadCanonicalScopes, loadProjectBudgetHours]);
+  }, [canonicalLoadRequestKey, loadCanonicalScopes, loadProjectBudgetHours]);
 
   // Notify parent when canonical scopes finish loading
   useEffect(() => {
