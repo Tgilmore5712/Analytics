@@ -375,6 +375,7 @@ export default function ProcoreProductivityFeedPage() {
   const [perPage, setPerPage] = useState(100);
   const [persist, setPersist] = useState(true);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [combinedBudgetSyncLoading, setCombinedBudgetSyncLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bulkResponse, setBulkResponse] = useState<BulkSyncResponse | null>(null);
   const [contractsLoading, setContractsLoading] = useState(false);
@@ -534,7 +535,7 @@ export default function ProcoreProductivityFeedPage() {
     }
   }, []);
 
-  async function syncProjectsWithActivity() {
+  async function syncProjectsWithActivity(): Promise<boolean> {
     setBulkLoading(true);
     setError(null);
 
@@ -564,13 +565,15 @@ export default function ProcoreProductivityFeedPage() {
           setProcoreConnected(false);
         }
         setBulkResponse(null);
-        return;
+        return false;
       }
 
       setBulkResponse(json);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setBulkResponse(null);
+      return false;
     } finally {
       setBulkLoading(false);
     }
@@ -1192,7 +1195,7 @@ export default function ProcoreProductivityFeedPage() {
     }
   }
 
-  async function syncCompanyBudgetLineItems() {
+  async function syncCompanyBudgetLineItems(): Promise<boolean> {
     setBudgetLineItemsSyncLoading(true);
     setBudgetLineItemsSyncError(null);
     try {
@@ -1213,16 +1216,30 @@ export default function ProcoreProductivityFeedPage() {
         setBudgetLineItemsSyncError(json.error || "Failed to sync company budget line items");
         if (res.status === 401) setProcoreConnected(false);
         setBudgetLineItemsSyncResponse(null);
-        return;
+        return false;
       }
 
       setBudgetLineItemsSyncResponse(json);
+      return true;
     } catch (err) {
       setBudgetLineItemsSyncError(err instanceof Error ? err.message : "Unknown error");
       setBudgetLineItemsSyncResponse(null);
+      return false;
     } finally {
       setBudgetLineItemsSyncLoading(false);
     }
+  }
+
+  async function syncProjectsAndBudgets() {
+    setCombinedBudgetSyncLoading(true);
+    const projectsSynced = await syncProjectsWithActivity();
+    if (!projectsSynced) {
+      setCombinedBudgetSyncLoading(false);
+      return;
+    }
+
+    await syncCompanyBudgetLineItems();
+    setCombinedBudgetSyncLoading(false);
   }
 
   async function runBidFormQuantityPatch(dryRun: boolean) {
@@ -1521,10 +1538,18 @@ export default function ProcoreProductivityFeedPage() {
 
             <button
               onClick={syncProjectsWithActivity}
-              disabled={bulkLoading || checkingAuth || !procoreConnected}
+              disabled={bulkLoading || combinedBudgetSyncLoading || checkingAuth || !procoreConnected}
               className="px-4 py-2 rounded-xl bg-emerald-700 text-white font-black text-xs uppercase tracking-widest hover:bg-emerald-800 disabled:opacity-50"
             >
               {bulkLoading ? "Syncing..." : "Sync Active Projects"}
+            </button>
+
+            <button
+              onClick={syncProjectsAndBudgets}
+              disabled={bulkLoading || budgetLineItemsSyncLoading || combinedBudgetSyncLoading || checkingAuth || !procoreConnected}
+              className="px-4 py-2 rounded-xl bg-cyan-700 text-white font-black text-xs uppercase tracking-widest hover:bg-cyan-800 disabled:opacity-50"
+            >
+              {combinedBudgetSyncLoading ? "Syncing Projects + Budgets..." : "Sync Projects + Budgets"}
             </button>
           </div>
         </section>

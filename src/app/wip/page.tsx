@@ -129,6 +129,28 @@ function formatMonthLabelShort(month: string) {
   return date.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
 }
 
+function formatCurrencyAmount(value: number): string {
+  return Number(value || 0).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function resolveProjectBudgetHours(project: any): number {
+  const projectHours = Number(project?.hours || 0);
+  if (Number.isFinite(projectHours) && projectHours > 0) return projectHours;
+
+  const projectedPreconstHours = Number(project?.projectedPreconstHours || 0);
+  if (Number.isFinite(projectedPreconstHours) && projectedPreconstHours > 0) return projectedPreconstHours;
+
+  return 0;
+}
+
+function formatPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
 function parseJobKeyParts(jobKey: string): { customer: string; projectNumber: string; projectName: string } {
   const [customer = "", projectNumber = "", projectName = ""] = (jobKey || "").split("~");
   return { customer, projectNumber, projectName };
@@ -580,11 +602,19 @@ function WIPReportContent() {
 
       const numNameKey = buildProjectNumNameKey(keyParts.projectNumber, keyParts.projectName);
       const customerProjectKey = buildCustomerProjectKey(keyParts.customer, keyParts.projectName);
-      const totalHours =
+      const liveScheduledHours =
         scheduledHoursByExactKey.get(key) ??
         scheduledHoursByProjectNumName.get(numNameKey) ??
         scheduledHoursByCustomerProject.get(customerProjectKey) ??
         0;
+      const projectedPreconHours = resolveProjectBudgetHours(representative);
+      const scheduleBudgetHours = Number(matchedSchedule?.totalHours || 0);
+      const totalHours =
+        projectedPreconHours > 0
+          ? projectedPreconHours
+          : scheduleBudgetHours > 0
+            ? scheduleBudgetHours
+            : liveScheduledHours;
       if (totalHours <= 0) return;
 
       const mergedCustomer =
@@ -696,7 +726,7 @@ function WIPReportContent() {
       normalizeAllocations(existingSchedule.allocations).forEach((a) => {
         allocations[a.month] = a.percent;
       });
-      const totalHours = liveJob?.totalHours || existingSchedule.totalHours || project.projectedPreconstHours || 0;
+      const totalHours = liveJob?.totalHours || existingSchedule.totalHours || resolveProjectBudgetHours(project) || 0;
       
       setSelectedJob({
         jobKey,
@@ -719,7 +749,7 @@ function WIPReportContent() {
         projectNumber,
         projectName,
         status: project.status || "In Progress",
-        totalHours: liveJob?.totalHours || project.projectedPreconstHours || 0,
+        totalHours: liveJob?.totalHours || resolveProjectBudgetHours(project) || 0,
         allocations,
         months: sortedMonths,
       });
@@ -997,10 +1027,30 @@ function WIPReportContent() {
       }
     });
     
+    const projectsByExactKey = new Map<string, any>();
+    const projectsByProjectNumName = new Map<string, any>();
+    projects.forEach((project) => {
+      const projectKey = (project.jobKey || `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`).toString();
+      if (projectKey && !projectsByExactKey.has(projectKey)) {
+        projectsByExactKey.set(projectKey, project);
+      }
+
+      const numNameKey = buildProjectNumNameKey(project.projectNumber, project.projectName);
+      if (numNameKey !== "~" && !projectsByProjectNumName.has(numNameKey)) {
+        projectsByProjectNumName.set(numNameKey, project);
+      }
+    });
+
+    const resolveProjectForSchedule = (schedule: Schedule) => {
+      return (
+        projectsByExactKey.get(schedule.jobKey) ||
+        projectsByProjectNumName.get(buildProjectNumNameKey(schedule.projectNumber, schedule.projectName))
+      );
+    };
+
     // Calculate scheduled sales from live monthly scheduled hours
     inProgressSchedules.forEach((schedule) => {
-      const key = schedule.jobKey || `${schedule.customer || ""}~${schedule.projectNumber || ""}~${schedule.projectName || ""}`;
-      const project = projects.find(p => (p.jobKey || `${p.customer || ""}~${p.projectNumber || ""}~${p.projectName || ""}`) === key);
+      const project = resolveProjectForSchedule(schedule);
       const projectSales = Number(project?.sales ?? 0);
       
       if (!Number.isFinite(projectSales) || projectSales <= 0) return;
@@ -1019,15 +1069,31 @@ function WIPReportContent() {
     const totalPoolHours = inProgressSchedules.reduce((sum, s) => sum + (s.totalHours || 0), 0);
     const poolBreakdown = inProgressSchedules.map((schedule) => {
       const scheduledHours = scheduledHoursByJob.get(schedule.jobKey) || 0;
+      const budgetHours = schedule.totalHours || 0;
+      const project = resolveProjectForSchedule(schedule);
+      const budgetAmount = Number(project?.sales ?? 0);
+      const scheduledSalesAmount = budgetHours > 0
+        ? Math.max(0, budgetAmount) * Math.min(scheduledHours / budgetHours, 1)
+        : 0;
+      const unreconciledAmount = budgetAmount - scheduledSalesAmount;
+      const deltaPercent = budgetHours > 0
+        ? ((scheduledHours - budgetHours) / budgetHours) * 100
+        : 0;
+
       return {
         jobKey: schedule.jobKey || "",
-        budget: schedule.totalHours || 0,
+        budget: budgetHours,
+        budgetAmount,
+        scheduledSalesAmount,
+        unreconciledAmount,
+        deltaPercent,
+        projectNumber: schedule.projectNumber || parseJobKeyParts(schedule.jobKey || "").projectNumber || "",
         projectName: schedule.projectName || "Unnamed",
         customer: resolveScheduleCustomer(schedule) || "Unknown",
         hasSchedule: scheduledHours > 0,
         hasGantt: scheduledHours > 0,
         p_hours: scheduledHours,
-        p_proj: scheduledHours,
+        p_proj: budgetHours,
       };
     });
     
@@ -1194,6 +1260,17 @@ function WIPReportContent() {
   
   const combinedSalesYears = Array.from(new Set([...scheduledSalesYears, ...bidSubmittedSalesYears])).filter(year => year !== "2024").sort();
   const filteredCombinedSalesYears = yearFilter ? combinedSalesYears.filter(year => year === yearFilter) : combinedSalesYears;
+  const displayedPoolBreakdown = poolBreakdown.slice(0, 50);
+  const totalScheduledPoolHours = poolBreakdown.reduce((sum, item) => sum + Number(item.p_hours || 0), 0);
+  const totalBudgetPoolHours = poolBreakdown.reduce((sum, item) => sum + Number(item.budget || 0), 0);
+  const totalBudgetAmount = poolBreakdown.reduce((sum, item) => sum + Number(item.budgetAmount || 0), 0);
+  const totalScheduledSalesAmount = poolBreakdown.reduce((sum, item) => sum + Number(item.scheduledSalesAmount || 0), 0);
+  const totalUnreconciledAmount = poolBreakdown.reduce((sum, item) => sum + Number(item.unreconciledAmount || 0), 0);
+  const displayedScheduledPoolHours = displayedPoolBreakdown.reduce((sum, item) => sum + Number(item.p_hours || 0), 0);
+  const displayedBudgetPoolHours = displayedPoolBreakdown.reduce((sum, item) => sum + Number(item.budget || 0), 0);
+  const displayedBudgetAmount = displayedPoolBreakdown.reduce((sum, item) => sum + Number(item.budgetAmount || 0), 0);
+  const displayedScheduledSalesAmount = displayedPoolBreakdown.reduce((sum, item) => sum + Number(item.scheduledSalesAmount || 0), 0);
+  const displayedUnreconciledAmount = displayedPoolBreakdown.reduce((sum, item) => sum + Number(item.unreconciledAmount || 0), 0);
 
   if (loading) {
 
@@ -1619,15 +1696,18 @@ function WIPReportContent() {
             <h3 style={{ color: "#15616D", margin: 0 }}>Labor Pool Breakdown (Top 50)</h3>
             <button
               onClick={() => {
-                const headers = ["Customer", "Project Name", "Job Key", "Source", "Contract Hr", "Proj PreHr", "Total Budget"];
+                const headers = ["Customer", "Project Name", "Job Key", "Source", "Scheduled Hours", "Delta %", "Total Budget Hr", "Budget Amount", "Scheduled Sales Amount", "Unreconciled Amount"];
                 const rows = poolBreakdown.map(item => [
                   `"${item.customer}"`,
                   `"${item.projectName}"`,
                   `"${item.jobKey}"`,
                   `"${(item.hasSchedule ? "SCHED" : "NO-SCH") + " " + (item.hasGantt ? "GANTT" : "BASE")}"`,
                   item.p_hours.toFixed(0),
-                  item.p_proj.toFixed(0),
-                  item.budget.toFixed(0)
+                  item.deltaPercent.toFixed(2),
+                  item.budget.toFixed(0),
+                  item.budgetAmount.toFixed(2),
+                  item.scheduledSalesAmount.toFixed(2),
+                  item.unreconciledAmount.toFixed(2)
                 ]);
                 const csvContent = headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1665,22 +1745,63 @@ function WIPReportContent() {
           <div style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>
             This list shows the projects contributing to the {totalPoolHours.toFixed(0)} hour pool.
           </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>
+            <div style={{ padding: 10, borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+              <div style={{ fontSize: 11, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Scheduled Hours (All Projects)</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#1e3a8a", marginTop: 4 }}>{totalScheduledPoolHours.toFixed(1)}</div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Budget Hours (All Projects)</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{totalBudgetPoolHours.toFixed(1)}</div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 8, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Budget Amount (All Projects)</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{formatCurrencyAmount(totalBudgetAmount)}</div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+              <div style={{ fontSize: 11, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>Scheduled Sales Amount (All Projects)</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#166534", marginTop: 4 }}>{formatCurrencyAmount(totalScheduledSalesAmount)}</div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa" }}>
+              <div style={{ fontSize: 11, color: "#9a3412", textTransform: "uppercase", letterSpacing: "0.04em" }}>Unreconciled Amount (All Projects)</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#9a3412", marginTop: 4 }}>{formatCurrencyAmount(totalUnreconciledAmount)}</div>
+            </div>
+          </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #eee", textAlign: "left" }}>
                 <th style={{ padding: 8 }}>Customer / Project</th>
                 <th style={{ padding: 8, textAlign: "center" }}>Source</th>
-                <th style={{ padding: 8, textAlign: "right" }}>Contract Hr</th>
-                <th style={{ padding: 8, textAlign: "right" }}>Proj PreHr</th>
-                <th style={{ padding: 8, textAlign: "right" }}>Total Budget</th>
+                <th style={{ padding: 8, textAlign: "right" }}>Scheduled Hours</th>
+                <th style={{ padding: 8, textAlign: "right" }}>Delta %</th>
+                <th style={{ padding: 8, textAlign: "right" }}>Total Budget Hr</th>
+                <th style={{ padding: 8, textAlign: "right" }}>Budget Amount</th>
+                <th style={{ padding: 8, textAlign: "right" }}>Scheduled Sales Amount</th>
+                <th style={{ padding: 8, textAlign: "right" }}>Unreconciled Amount</th>
               </tr>
             </thead>
             <tbody>
-              {poolBreakdown.slice(0, 50).map((item, i) => (
+              {displayedPoolBreakdown.map((item, i) => (
                 <tr key={i} style={{ borderBottom: "1px solid #f9f9f9" }}>
                   <td style={{ padding: 8 }}>
                     <div style={{ fontWeight: 600 }}>{item.customer}</div>
-                    <div style={{ fontSize: 11, color: "#666" }}>{item.projectName}</div>
+                    <button
+                      type="button"
+                      onClick={() => openGanttModal(item.customer, item.projectName, item.projectNumber || "")}
+                      style={{
+                        fontSize: 11,
+                        color: "#0f766e",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        textDecoration: "underline",
+                      }}
+                      title="Open schedule modal"
+                    >
+                      {item.projectName}
+                    </button>
                   </td>
                   <td style={{ padding: 8, textAlign: "center" }}>
                     <span style={{ fontSize: 10, padding: "2px 4px", borderRadius: 4, background: item.hasSchedule ? "#dcfce7" : "#fee2e2", color: item.hasSchedule ? "#166534" : "#991b1b", marginRight: 4 }}>
@@ -1691,10 +1812,25 @@ function WIPReportContent() {
                     </span>
                   </td>
                   <td style={{ padding: 8, textAlign: "right" }}>{item.p_hours.toFixed(0)}</td>
-                  <td style={{ padding: 8, textAlign: "right", color: "#666" }}>{item.p_proj.toFixed(0)}</td>
+                  <td style={{ padding: 8, textAlign: "right", color: item.deltaPercent >= 0 ? "#166534" : "#9a3412", fontWeight: 600 }}>
+                    {formatPercent(item.deltaPercent)}
+                  </td>
                   <td style={{ padding: 8, textAlign: "right", fontWeight: 700 }}>{item.budget.toFixed(0)}</td>
+                  <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#0f172a" }}>{formatCurrencyAmount(item.budgetAmount)}</td>
+                  <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#166534" }}>{formatCurrencyAmount(item.scheduledSalesAmount)}</td>
+                  <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#9a3412" }}>{formatCurrencyAmount(item.unreconciledAmount)}</td>
                 </tr>
               ))}
+              <tr style={{ borderTop: "2px solid #cbd5e1", background: "#f8fafc" }}>
+                <td style={{ padding: 8, fontWeight: 700 }}>Top 50 Totals</td>
+                <td style={{ padding: 8 }}></td>
+                <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#1e3a8a" }}>{displayedScheduledPoolHours.toFixed(1)}</td>
+                <td style={{ padding: 8 }}></td>
+                <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#0f172a" }}>{displayedBudgetPoolHours.toFixed(1)}</td>
+                <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#0f172a" }}>{formatCurrencyAmount(displayedBudgetAmount)}</td>
+                <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#166534" }}>{formatCurrencyAmount(displayedScheduledSalesAmount)}</td>
+                <td style={{ padding: 8, textAlign: "right", fontWeight: 700, color: "#9a3412" }}>{formatCurrencyAmount(displayedUnreconciledAmount)}</td>
+              </tr>
             </tbody>
           </table>
         </div>

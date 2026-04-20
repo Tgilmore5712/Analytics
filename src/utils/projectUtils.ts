@@ -258,13 +258,28 @@ export const getEnrichedScopes = (scopes: Scope[], projects: Project[]): Scope[]
       .replace(/^[\d,]+\s*(sq\s*ft\.?|ln\s*ft\.?|each|lf)?\s*([-–]\s*)?/i, "")
       .trim();
 
+    // Guard against empty-title matching: ''.includes('') is true and can cause
+    // every scope to match every cost item, which inflates hours on all cards.
+    if (!titleWithoutQty) {
+      return s;
+    }
+
     const costItems = projectCostItems[jobKey] || [];
-    const matchedItems = costItems.filter((item) =>
-      item.scopeOfWork.includes(titleWithoutQty) || 
-      titleWithoutQty.includes(item.scopeOfWork) ||
-      item.costitems.includes(titleWithoutQty) || 
-      titleWithoutQty.includes(item.costitems)
-    );
+    const matchedItems = costItems.filter((item) => {
+      const scopeOfWork = (item.scopeOfWork || "").trim();
+      const costItemText = (item.costitems || "").trim();
+
+      if (!scopeOfWork && !costItemText) return false;
+
+      const scopeMatch =
+        scopeOfWork.length > 0 &&
+        (scopeOfWork.includes(titleWithoutQty) || titleWithoutQty.includes(scopeOfWork));
+      const costItemMatch =
+        costItemText.length > 0 &&
+        (costItemText.includes(titleWithoutQty) || titleWithoutQty.includes(costItemText));
+
+      return scopeMatch || costItemMatch;
+    });
 
     const totals = matchedItems.reduce(
       (acc, item) => {
@@ -278,11 +293,14 @@ export const getEnrichedScopes = (scopes: Scope[], projects: Project[]): Scope[]
       { sales: 0, cost: 0, hours: 0 }
     );
 
+    const existingHours = typeof s.hours === "number" ? s.hours : Number.parseFloat(String(s.hours || ""));
+    const shouldOverrideHours = matchedItems.length > 0 && (!Number.isFinite(existingHours) || existingHours <= 0);
+
     return {
       ...s,
       sales: matchedItems.length > 0 ? totals.sales : s.sales,
       cost: matchedItems.length > 0 ? totals.cost : s.cost,
-      hours: matchedItems.length > 0 ? totals.hours : s.hours,
+      hours: shouldOverrideHours ? totals.hours : s.hours,
     };
   });
 };

@@ -22,6 +22,7 @@ type GanttProjectResponse = {
 };
 
 const NEW_SCOPE_ID = '__new_scope__';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const isCanonicalScopeId = (value: string | null | undefined) =>
   Boolean(
@@ -131,6 +132,17 @@ const parseJobKeyParts = (jobKey: string | null | undefined): { customer: string
 
 const isGiantProjectName = (projectName: string | null | undefined) =>
   normalizeText(projectName).includes("giant");
+
+const isPlaceholderScopeTitle = (title: string | null | undefined) => {
+  const normalized = normalizeText(title);
+  if (!normalized) return false;
+  return (
+    normalized.includes('placeholder') ||
+    normalized.includes('place holder') ||
+    normalized.includes('tbd') ||
+    normalized.includes('temp scope')
+  );
+};
 
 const dateKey = (value: unknown) => String(value || "").trim();
 
@@ -345,7 +357,10 @@ export function ProjectScopesModal({
     [project.projectName]
   );
   const liveGanttProjectId = useMemo(
-    () => String(project.projectDocId || "").trim() || null,
+    () => {
+      const candidate = String(project.projectDocId || "").trim();
+      return UUID_REGEX.test(candidate) ? candidate : null;
+    },
     [project.projectDocId]
   );
   const [activeScopeId, setActiveScopeId] = useState<string | null>(selectedScopeId);
@@ -389,6 +404,9 @@ export function ProjectScopesModal({
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const taskRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const previousActiveScopeIdRef = useRef<string | null>(selectedScopeId);
+  const onScopesUpdatedRef = useRef(onScopesUpdated);
+  const lastNotifiedScopesSignatureRef = useRef<string>('');
+  const suppressPopulateEffectRef = useRef(false);
   const [highlightedTaskIndex, setHighlightedTaskIndex] = useState<number | null>(null);
 
   const emptyScopeDetail = useMemo<Partial<Scope>>(() => ({
@@ -467,7 +485,18 @@ export function ProjectScopesModal({
     setCanonicalScopes(null);
     setIsLoadingScopes(true);
     setGanttProjectId(liveGanttProjectId);
+    lastNotifiedScopesSignatureRef.current = '';
   }, [liveGanttProjectId, resolvedJobKey]);
+
+  useEffect(() => {
+    onScopesUpdatedRef.current = onScopesUpdated;
+  }, [onScopesUpdated]);
+
+  useEffect(() => {
+    if (activeScopeId && activeScopeId !== NEW_SCOPE_ID) {
+      previousActiveScopeIdRef.current = activeScopeId;
+    }
+  }, [activeScopeId]);
 
   useEffect(() => {
     const effectiveJobKey = (resolvedJobKey || project.jobKey || '').trim();
@@ -574,10 +603,43 @@ export function ProjectScopesModal({
     return 0;
   }, [effectiveScopes?.length, projectBudgetHours]);
 
-  const displayedTotalBudgetedHours =
-    projectBudgetHours && projectBudgetHours > 0
-      ? projectBudgetHours
-      : effectiveScopes.reduce((sum, s) => sum + getEffectiveScopeHours(s), 0);
+  const shouldExcludePlaceholderScopeHours = useMemo(() => {
+    const explicitBudgetHours = Number(projectBudgetHours || 0);
+    if (Number.isFinite(explicitBudgetHours) && explicitBudgetHours > 0) {
+      return true;
+    }
+
+    const realScopeBudgetHours = effectiveScopes.reduce((sum, scope) => {
+      if (isPlaceholderScopeTitle(scope.title)) return sum;
+      return sum + getEffectiveScopeHours(scope);
+    }, 0);
+
+    return realScopeBudgetHours > 0;
+  }, [effectiveScopes, getEffectiveScopeHours, projectBudgetHours]);
+
+  const getDisplayedScopeHours = useCallback((scope: Partial<Scope>) => {
+    if (shouldExcludePlaceholderScopeHours && isPlaceholderScopeTitle(scope.title)) {
+      return 0;
+    }
+
+    return getEffectiveScopeHours(scope);
+  }, [getEffectiveScopeHours, shouldExcludePlaceholderScopeHours]);
+
+  const displayedTotalBudgetedHours = useMemo(() => {
+    const explicitBudgetHours = Number(projectBudgetHours || 0);
+    if (Number.isFinite(explicitBudgetHours) && explicitBudgetHours > 0) {
+      return explicitBudgetHours;
+    }
+
+    const realScopeBudgetHours = effectiveScopes.reduce((sum, scope) => sum + getDisplayedScopeHours(scope), 0);
+
+    if (realScopeBudgetHours > 0) {
+      return realScopeBudgetHours;
+    }
+
+    // If no real/explicit budget exists yet, allow placeholder scopes to drive planning totals.
+    return effectiveScopes.reduce((sum, scope) => sum + getEffectiveScopeHours(scope), 0);
+  }, [effectiveScopes, getDisplayedScopeHours, getEffectiveScopeHours, projectBudgetHours]);
 
   const mapGanttScopes = useCallback((rows: NonNullable<GanttProjectResponse["scopes"]>): Scope[] =>
     rows.map((scope) => ({
@@ -670,8 +732,13 @@ export function ProjectScopesModal({
 
         if (!persisted) return scope;
 
+        const persistedHours = toOptionalPositiveNumber(persisted.hours);
+        const persistedManpower = toOptionalPositiveNumber(persisted.manpower);
+
         return {
           ...scope,
+          hours: persistedHours !== null ? persistedHours : scope.hours,
+          manpower: persistedManpower !== null ? persistedManpower : scope.manpower,
           description: persisted.description || scope.description || '',
           tasks: Array.isArray(persisted.tasks) ? persisted.tasks : (scope.tasks || []),
           schedulingMode: persisted.schedulingMode === 'specific-days' ? 'specific-days' : (scope.schedulingMode || 'contiguous'),
@@ -973,8 +1040,37 @@ export function ProjectScopesModal({
       page += 1;
     }
 
+    // Final fallback: pull Project.hours by exact identity when no Schedule exists yet.
+    if (foundHours === null) {
+      const projectParams = new URLSearchParams({
+        customer: String(project.customer || '').trim(),
+        projectName: String(project.projectName || '').trim(),
+        page: '1',
+        pageSize: '200',
+      });
+
+      if (String(project.projectNumber || '').trim()) {
+        projectParams.set('projectNumber', String(project.projectNumber || '').trim());
+      }
+
+      const projectsRes = await fetch(`/api/projects?${projectParams.toString()}`);
+      const projectsJson = await projectsRes.json().catch(() => ({}));
+
+      if (projectsRes.ok && projectsJson?.success && Array.isArray(projectsJson?.data)) {
+        const projectMatch = (projectsJson.data as Array<{ hours?: number | null }>).find((row) => {
+          const hours = Number(row?.hours || 0);
+          return Number.isFinite(hours) && hours > 0;
+        });
+
+        const projectHours = Number(projectMatch?.hours || 0);
+        if (Number.isFinite(projectHours) && projectHours > 0) {
+          foundHours = projectHours;
+        }
+      }
+    }
+
     setProjectBudgetHours(foundHours);
-  }, [matchesProjectIdentity, project.jobKey]);
+  }, [matchesProjectIdentity, project.customer, project.jobKey, project.projectName, project.projectNumber]);
 
   const getScheduledHoursForScope = (scope: Scope) => {
     if (!scheduledHoursByJobKeyDate || !project.jobKey) return 0;
@@ -1054,8 +1150,25 @@ export function ProjectScopesModal({
       return;
     }
 
+    const currentActiveExists = activeScopeId
+      ? effectiveScopes.some((scope) => scope.id === activeScopeId)
+      : false;
+    if (currentActiveExists) {
+      return;
+    }
+
+    const previousActiveScopeId = previousActiveScopeIdRef.current;
+    const previousActiveExists = previousActiveScopeId
+      ? effectiveScopes.some((scope) => scope.id === previousActiveScopeId)
+      : false;
+    if (previousActiveExists) {
+      setActiveScopeId(previousActiveScopeId);
+      return;
+    }
+
     setActiveScopeId(null);
   }, [
+    activeScopeId,
     selectedScopeId,
     selectedScopeTitle,
     selectedScheduleDate,
@@ -1084,10 +1197,26 @@ export function ProjectScopesModal({
 
   // Notify parent when canonical scopes finish loading
   useEffect(() => {
-    if (canonicalScopes && canonicalScopes.length > 0 && !isLoadingScopes) {
-      onScopesUpdated(resolvedJobKey || project.jobKey || '', canonicalScopes);
-    }
-  }, [canonicalScopes, isLoadingScopes, onScopesUpdated, resolvedJobKey, project.jobKey]);
+    if (!canonicalScopes || canonicalScopes.length === 0 || isLoadingScopes) return;
+
+    const effectiveJobKey = resolvedJobKey || project.jobKey || '';
+    const signature = JSON.stringify({
+      jobKey: effectiveJobKey,
+      scopes: canonicalScopes.map((scope) => ({
+        id: String(scope.id || ''),
+        title: String(scope.title || ''),
+        startDate: String(scope.startDate || ''),
+        endDate: String(scope.endDate || ''),
+        hours: Number(scope.hours || 0),
+        manpower: Number(scope.manpower || 0),
+      })),
+    });
+
+    if (signature === lastNotifiedScopesSignatureRef.current) return;
+    lastNotifiedScopesSignatureRef.current = signature;
+
+    void onScopesUpdatedRef.current(effectiveJobKey, canonicalScopes);
+  }, [canonicalScopes, isLoadingScopes, resolvedJobKey, project.jobKey]);
 
   useEffect(() => {
     const loadPaidHolidays = async () => {
@@ -1132,6 +1261,7 @@ export function ProjectScopesModal({
   // Populate from selected scope only when editing an existing scope.
   useEffect(() => {
     if (isCreatingNewScope || !activeScopeId) return;
+    if (suppressPopulateEffectRef.current) return;
     const scope = effectiveScopes.find((item) => item.id === activeScopeId);
     if (!scope) return;
 
@@ -1508,8 +1638,9 @@ export function ProjectScopesModal({
     setConcreteModalTarget(target);
   };
 
-  const handleSaveScope = async () => {
+  const handleSaveScope = async (closeAfterSave = false) => {
     setIsSaving(true);
+    suppressPopulateEffectRef.current = true;
     try {
       // Refresh scope list before matching to prevent duplicates from stale data
       const latestScopes = await loadCanonicalScopes();
@@ -1621,7 +1752,9 @@ export function ProjectScopesModal({
         });
 
         onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
-        onClose();
+        if (closeAfterSave) {
+          onClose();
+        }
         return;
       }
 
@@ -1665,11 +1798,21 @@ export function ProjectScopesModal({
         payload.predecessorScopeId = null;
       }
 
-      payload.startDate = dateKey(payload.startDate);
-      payload.endDate = dateKey(payload.endDate) || payload.startDate;
+      const normalizedStartDate = dateKey(payload.startDate);
+      const normalizedEndDate = dateKey(payload.endDate);
 
-      if (!payload.startDate) {
-        throw new Error('Scope start date is required.');
+      if (normalizedStartDate && normalizedEndDate) {
+        payload.startDate = normalizedStartDate;
+        payload.endDate = normalizedEndDate;
+      } else if (normalizedStartDate || normalizedEndDate) {
+        const singleDate = normalizedStartDate || normalizedEndDate;
+        // If only one side is provided, treat it as a one-day range.
+        payload.startDate = singleDate;
+        payload.endDate = singleDate;
+      } else {
+        // Allow clearing both dates to unschedule the scope.
+        payload.startDate = "";
+        payload.endDate = "";
       }
 
       const canUseRollupsForPayload = hasCompleteTaskInputs(normalizedTasks);
@@ -1681,7 +1824,14 @@ export function ProjectScopesModal({
         payload.manpower = scopeDetail.manpower;
       }
       
-      const computedHours = canUseRollupsForPayload && rollups.hours > 0 ? rollups.hours : computeScopeHours(scopeDetail);
+      const computedHoursFromInputs = canUseRollupsForPayload && rollups.hours > 0
+        ? rollups.hours
+        : computeScopeHours(scopeDetail);
+      const existingScopeHours = toOptionalPositiveNumber(activeScope?.hours) || 0;
+      const draftScopeHours = toOptionalPositiveNumber(scopeDetail.hours) || 0;
+      const computedHours = computedHoursFromInputs > 0
+        ? computedHoursFromInputs
+        : (draftScopeHours > 0 ? draftScopeHours : existingScopeHours);
       if (computedHours > 0) {
         payload.hours = computedHours;
       }
@@ -1789,6 +1939,7 @@ export function ProjectScopesModal({
           }
         }
 
+        suppressPopulateEffectRef.current = false;
         const refreshedScopes = await loadCanonicalScopes();
         onScopesUpdated(
           resolvedJobKey || project.jobKey || '',
@@ -1819,6 +1970,7 @@ export function ProjectScopesModal({
           const updatedScopes = scopesToMatchAgainst.map((scope) =>
             scope.id === targetCanonicalScopeId ? { ...scope, ...savedScope } : scope
           );
+          suppressPopulateEffectRef.current = false;
           onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
           setActiveScopeId(targetCanonicalScopeId);
         } else {
@@ -1840,6 +1992,7 @@ export function ProjectScopesModal({
             ? scopesToMatchAgainst.filter((scope) => scope.id !== activeScopeId)
             : scopesToMatchAgainst;
 
+          suppressPopulateEffectRef.current = false;
           onScopesUpdated(resolvedJobKey || project.jobKey || '', [...filteredScopes, newScope]);
           setIsCreatingNewScope(false);
           setActiveScopeId(savedScope.id);
@@ -1848,12 +2001,15 @@ export function ProjectScopesModal({
       if (usedSpecificDaysFallback) {
         alert('No specific days were selected. Scope was saved as Continuous Range.');
       }
-      onClose();
+      if (closeAfterSave) {
+        onClose();
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Failed to save scope:", errorMessage, error);
       alert(`Failed to save scope: ${errorMessage}`);
     } finally {
+      suppressPopulateEffectRef.current = false;
       setIsSaving(false);
     }
   };
@@ -2032,7 +2188,7 @@ export function ProjectScopesModal({
               ) : (
                 visibleScopes.map((scope, index) => {
                   const scopeTasks = normalizeTaskEntries(scope.tasks);
-                  const scopeHours = getEffectiveScopeHours(scope);
+                  const scopeHours = getDisplayedScopeHours(scope);
                   const scheduledHours = getScheduledHoursForScope(scope);
                   const unscheduledHours = Math.max(scopeHours - scheduledHours, 0);
                   const isNew = scope.id === NEW_SCOPE_ID;
@@ -2124,6 +2280,9 @@ export function ProjectScopesModal({
                         <div className="text-xs text-gray-500">
                           {scope.startDate || "No start"} - {scope.endDate || "No end"}
                           {predecessorScope && <span className="ml-2 text-orange-600 font-semibold">→ after {predecessorScope.title}</span>}
+                          {shouldExcludePlaceholderScopeHours && isPlaceholderScopeTitle(scope.title) && (
+                            <span className="ml-2 text-slate-500 font-medium">planning only</span>
+                          )}
                         </div>
                         {isExpanded && scopeTasks.length > 0 && (
                           <div className="mt-2 ml-4 space-y-1">
@@ -2410,6 +2569,16 @@ export function ProjectScopesModal({
               <textarea value={scopeDetail.description || ""} onChange={(e) => setScopeDetail(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm" rows={4} />
             </div>
             <div className="mb-4">
+              <button
+                type="button"
+                onClick={() => handleSaveScope(false)}
+                disabled={isSaving}
+                className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-semibold hover:bg-orange-700 disabled:bg-gray-400"
+              >
+                {isSaving ? "Saving..." : "Save Scope"}
+              </button>
+            </div>
+            <div className="mb-4">
               <label className="block text-sm font-semibold mb-2">Tasks (Drag to Reorder Dependencies)</label>
               <p className="text-xs text-gray-500 mb-3">Tasks follow in order within each scope. First task in next scope starts after last task in previous scope.</p>
               <div className="mb-4">
@@ -2626,8 +2795,8 @@ export function ProjectScopesModal({
           </div>
 
           <div className="flex gap-2 pt-4 border-t">
-            <button type="button" onClick={handleSaveScope} disabled={isSaving} className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-semibold hover:bg-orange-700 disabled:bg-gray-400">
-              {isSaving ? "Saving..." : "Save Scope of Work"}
+            <button type="button" onClick={() => handleSaveScope(true)} disabled={isSaving} className="flex-1 px-4 py-2 bg-orange-100 text-orange-800 rounded-md text-sm font-semibold hover:bg-orange-200 disabled:bg-gray-200 disabled:text-gray-500">
+              Save & Close
             </button>
             {activeScopeId && activeScopeId !== NEW_SCOPE_ID && !activeScopeId.startsWith('fallback-') && !activeScopeId.startsWith('virtual-') && !activeScopeId.startsWith('generated-') && (
               <button type="button" onClick={handleDeleteScope} className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-semibold hover:bg-red-700">

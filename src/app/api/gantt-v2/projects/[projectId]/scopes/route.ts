@@ -87,6 +87,59 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Upsert by title: if a scope with the same title already exists for this project,
+    // update it instead of creating a duplicate.
+    const existingByTitle = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM gantt_v2_scopes WHERE project_id = $1 AND title = $2 LIMIT 1`,
+      projectId,
+      title
+    );
+
+    const safeHours = Number.isFinite(totalHours) ? totalHours : 0;
+
+    if (existingByTitle && existingByTitle.length > 0) {
+      const existingId = existingByTitle[0].id;
+      console.log('[POST] Scope with same title already exists — updating instead of creating duplicate', { existingId, title });
+
+      await prisma.$executeRawUnsafe(
+        `
+          UPDATE gantt_v2_scopes
+          SET start_date = CAST($2 AS date),
+              end_date = CAST($3 AS date),
+              total_hours = $4,
+              crew_size = $5,
+              notes = $6,
+              predecessor_scope_id = $7,
+              updated_at = NOW()
+          WHERE id = $1;
+        `,
+        existingId,
+        startDate,
+        endDate,
+        safeHours,
+        crewSize,
+        notes,
+        predecessorScopeId
+      );
+
+      await syncScopeToActiveSchedule(existingId, projectId, title, startDate, endDate, safeHours, crewSize);
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          id: existingId,
+          projectId,
+          predecessorScopeId,
+          title,
+          startDate,
+          endDate,
+          totalHours: safeHours,
+          crewSize,
+          notes,
+        },
+      });
+    }
+
     const id = crypto.randomUUID();
     await prisma.$executeRawUnsafe(
       `
@@ -98,7 +151,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       title,
       startDate,
       endDate,
-      Number.isFinite(totalHours) ? totalHours : 0,
+      safeHours,
       crewSize,
       notes,
       predecessorScopeId
@@ -106,15 +159,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Sync to ActiveSchedule if dates and hours are provided
     console.log('[POST] About to sync scope for ActiveSchedule');
-    await syncScopeToActiveSchedule(
-      id,
-      projectId,
-      title,
-      startDate,
-      endDate,
-      Number.isFinite(totalHours) ? totalHours : 0,
-      crewSize
-    );
+    await syncScopeToActiveSchedule(id, projectId, title, startDate, endDate, safeHours, crewSize);
     console.log('[POST] Scope sync complete');
 
     return NextResponse.json({
@@ -126,7 +171,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         title,
         startDate,
         endDate,
-        totalHours: Number.isFinite(totalHours) ? totalHours : 0,
+        totalHours: safeHours,
         crewSize,
         notes,
       },
