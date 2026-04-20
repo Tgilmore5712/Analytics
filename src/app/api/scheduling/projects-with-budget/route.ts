@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 
 type ProjectBudgetRow = {
   projectid: string;
+  externalid: string | null;
   projectname: string | null;
   customer: string | null;
   bidboardstatus: string | null;
@@ -27,7 +28,8 @@ export async function GET(request: NextRequest) {
     const rows = await prisma.$queryRawUnsafe<ProjectBudgetRow[]>(
       `
         SELECT
-          s.external_id AS projectId,
+          s.procore_project_id AS projectId,
+          s.external_id AS externalId,
           s.name AS projectName,
           s.customer AS customer,
           s.bid_board_status AS bidBoardStatus,
@@ -49,10 +51,10 @@ export async function GET(request: NextRequest) {
           AND b.project_id = s.procore_project_id
         WHERE s.source = 'procore_v1_projects'
           AND s.company_id = $1
-          AND s.external_id IS NOT NULL
+          AND s.procore_project_id IS NOT NULL
           AND s.name IS NOT NULL
           AND ($2::text IS NULL OR s.bid_board_status = $2::text)
-        GROUP BY s.external_id, s.name, s.customer, s.bid_board_status, s.synced_at
+        GROUP BY s.procore_project_id, s.external_id, s.name, s.customer, s.bid_board_status, s.synced_at
         ORDER BY s.name ASC NULLS LAST
       `,
       companyId,
@@ -67,6 +69,7 @@ export async function GET(request: NextRequest) {
       companyId,
       data: rows.map((row) => ({
         projectId: row.projectid,
+        externalId: row.externalid,
         projectName: row.projectname,
         customer: row.customer || '',
         bidBoardStatus: row.bidboardstatus,

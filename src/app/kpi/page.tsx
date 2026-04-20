@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 const Line = dynamic(() => import('react-chartjs-2').then(mod => mod.Line), { ssr: false });
 import {
@@ -131,7 +131,7 @@ function getScheduledSalesStatus(project: Pick<Project, "bidBoardStatus" | "stat
 }
 
 function isScheduledSalesQualifyingStatus(project: Pick<Project, "bidBoardStatus" | "status">) {
-  return new Set(["accepted", "in progress", "complete"]).has(getScheduledSalesStatus(project));
+  return new Set(["accepted", "in progress", "course of construction", "complete"]).has(getScheduledSalesStatus(project));
 }
 
 function parseDateValue(value: any) {
@@ -972,6 +972,91 @@ function KPIPageContent({
     [aggregatedProjects]
   );
 
+  const projectsByIdentityKey = useMemo(() => {
+    const map = new Map<string, Project[]>();
+
+    aggregatedProjects.forEach((project) => {
+      getProjectIdentityKeys(project).forEach((key) => {
+        const existing = map.get(key) || [];
+        existing.push(project);
+        map.set(key, existing);
+      });
+    });
+
+    return map;
+  }, [aggregatedProjects]);
+
+  const projectsByNumName = useMemo(() => {
+    const map = new Map<string, Project[]>();
+
+    aggregatedProjects.forEach((project) => {
+      const key = buildProjectNumNameKey(project.projectNumber, project.projectName);
+      if (!key || key === "~") return;
+      const existing = map.get(key) || [];
+      existing.push(project);
+      map.set(key, existing);
+    });
+
+    return map;
+  }, [aggregatedProjects]);
+
+  const projectsByCustomerName = useMemo(() => {
+    const map = new Map<string, Project[]>();
+
+    aggregatedProjects.forEach((project) => {
+      const key = buildCustomerProjectKey(project.customer, project.projectName);
+      if (!key || key === "~") return;
+      const existing = map.get(key) || [];
+      existing.push(project);
+      map.set(key, existing);
+    });
+
+    return map;
+  }, [aggregatedProjects]);
+
+  const pickBestProjectMatch = useCallback((candidates: Project[]): Project | null => {
+    if (!candidates.length) return null;
+
+    const qualifyingWithSales = candidates.filter((candidate) =>
+      isScheduledSalesQualifyingStatus(candidate) && Number(candidate.sales ?? 0) > 0
+    );
+
+    const pool = qualifyingWithSales.length > 0 ? qualifyingWithSales : candidates;
+    return pool.reduce((best, current) => {
+      const bestSales = Number(best.sales ?? 0);
+      const currentSales = Number(current.sales ?? 0);
+      if (!Number.isFinite(currentSales) || currentSales <= bestSales) return best;
+      return current;
+    }, pool[0]);
+  }, []);
+
+  const resolveProjectForSchedule = useCallback((schedule: Schedule): Project | null => {
+    const candidates: Project[] = [];
+    const seenProjectIds = new Set<string>();
+
+    const addCandidates = (rows: Project[] | undefined) => {
+      (rows || []).forEach((row) => {
+        const candidateId = String(row.id || `${row.customer || ''}~${row.projectNumber || ''}~${row.projectName || ''}`);
+        if (seenProjectIds.has(candidateId)) return;
+        seenProjectIds.add(candidateId);
+        candidates.push(row);
+      });
+    };
+
+    const scheduleKeys = getScheduleIdentityKeys(schedule);
+    scheduleKeys.forEach((key) => addCandidates(projectsByIdentityKey.get(key)));
+
+    const parts = parseJobKeyParts(schedule.jobKey || "");
+    addCandidates(projectsByNumName.get(buildProjectNumNameKey(schedule.projectNumber, schedule.projectName)));
+    addCandidates(projectsByNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName)));
+
+    const scheduleCustomer = resolveLeadtimeScheduleCustomer(schedule);
+    addCandidates(projectsByCustomerName.get(buildCustomerProjectKey(scheduleCustomer, schedule.projectName)));
+    addCandidates(projectsByCustomerName.get(buildCustomerProjectKey(parts.customer, parts.projectName)));
+
+    return pickBestProjectMatch(candidates);
+  }, [pickBestProjectMatch, projectsByCustomerName, projectsByIdentityKey, projectsByNumName]);
+
   const budgetHoursByIdentity = useMemo(() => {
     const budgetHours = new Map<string, number>();
 
@@ -1463,26 +1548,17 @@ function KPIPageContent({
 
   const scheduledSalesProjectsByMonth = useMemo(() => {
     const result: Record<string, KPIDrilldownEntry[]> = {};
-    const keyToProject = new Map<string, Project>();
-
-    aggregatedProjects.forEach((project) => {
-      getProjectIdentityKeys(project).forEach((key) => {
-        keyToProject.set(key, project);
-      });
-    });
 
     schedules.forEach((schedule: Schedule) => {
       const scheduleKeys = getScheduleIdentityKeys(schedule);
-      const project = scheduleKeys
-        .map((key) => keyToProject.get(key))
-        .find((candidate): candidate is Project => Boolean(candidate));
+      const project = resolveProjectForSchedule(schedule);
       if (!project) return;
       if (!isScheduledSalesQualifyingStatus(project)) return;
 
       const projectSales = Number(project.sales ?? 0);
       if (!Number.isFinite(projectSales) || projectSales <= 0) return;
 
-      const budgetHours = scheduleKeys
+      const budgetHours = [...scheduleKeys, ...getProjectIdentityKeys(project)]
         .map((key) => budgetHoursByIdentity.get(key))
         .find((hours): hours is number => Number.isFinite(hours) && hours > 0);
 
@@ -1539,7 +1615,7 @@ function KPIPageContent({
 
     Object.keys(result).forEach((monthKey) => result[monthKey].sort((a, b) => b.value - a.value));
     return result;
-  }, [aggregatedProjects, budgetHoursByIdentity, scheduledHoursByScheduleMonth, schedules]);
+  }, [budgetHoursByIdentity, resolveProjectForSchedule, scheduledHoursByScheduleMonth, schedules]);
 
   const getDrilldownEntriesForYearMonth = (
     sourceMap: Record<string, KPIDrilldownEntry[]>,
@@ -1815,29 +1891,21 @@ function KPIPageContent({
   };
 
   const scheduledSalesByMonth: Record<string, number> = {};
-  
-  const scheduleSalesMap = new Map<string, number>();
-  aggregatedProjects.forEach((project: Project) => {
-    if (!isScheduledSalesQualifyingStatus(project)) return;
 
-    const sales = Number(project.sales ?? 0);
-    if (!Number.isFinite(sales)) return;
-
-    getProjectIdentityKeys(project).forEach((key) => {
-      const currentTotal = scheduleSalesMap.get(key) || 0;
-      scheduleSalesMap.set(key, currentTotal + sales);
-    });
-  });
+  const qualifyingProjectsWithSalesCount = aggregatedProjects.filter((project: Project) =>
+    isScheduledSalesQualifyingStatus(project) && Number(project.sales ?? 0) > 0
+  ).length;
 
   schedules.forEach((schedule: Schedule) => {
     const scheduleKeys = getScheduleIdentityKeys(schedule);
-    const projectSales = scheduleKeys
-      .map((key) => scheduleSalesMap.get(key))
-      .find((value): value is number => Number.isFinite(value) && value > 0);
-    
-    if (!projectSales) return;
+    const project = resolveProjectForSchedule(schedule);
+    if (!project) return;
+    if (!isScheduledSalesQualifyingStatus(project)) return;
 
-    const budgetHours = scheduleKeys
+    const projectSales = Number(project.sales ?? 0);
+    if (!Number.isFinite(projectSales) || projectSales <= 0) return;
+
+    const budgetHours = [...scheduleKeys, ...getProjectIdentityKeys(project)]
       .map((key) => budgetHoursByIdentity.get(key))
       .find((hours): hours is number => Number.isFinite(hours) && hours > 0);
 
@@ -1866,7 +1934,7 @@ function KPIPageContent({
   const scheduledTotal = Object.values(scheduledSalesByMonth).reduce((sum, val) => sum + val, 0);
   
   console.log("[KPI] === Scheduled Sales Breakdown ===");
-  console.log(`[KPI] Projects with qualifying status (In Progress/Accepted/Complete): ${scheduleSalesMap.size}`);
+  console.log(`[KPI] Projects with qualifying status (In Progress/Accepted/Complete): ${qualifyingProjectsWithSalesCount}`);
   console.log(`[KPI] Schedules used for allocation: ${schedules.length}`);
   console.log(`[KPI] Total Scheduled sales: $${scheduledTotal.toLocaleString()}`);
   console.log("[KPI] Scheduled sales by month:", scheduledSalesByMonth);
