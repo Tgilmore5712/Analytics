@@ -338,9 +338,9 @@ function resolveLeadtimeScheduleCustomer(schedule: Pick<Schedule, "customer" | "
   return normalizeCustomerValue(parsed.customer);
 }
 
-function isLiveScheduleSource(value: unknown): boolean {
+function isWipScheduleSource(value: unknown): boolean {
   const normalized = String(value || "").trim().toLowerCase();
-  return normalized === "gantt" || normalized === "wip-page" || normalized === "schedules";
+  return normalized === "gantt" || normalized === "wip-page" || normalized === "wip page" || normalized === "wip_page";
 }
 
 function parseDateFromUnknown(value: unknown): Date | null {
@@ -1093,27 +1093,27 @@ function KPIPageContent({
       schedulesByCustomerProject.set(buildCustomerProjectKey(parts.customer, parts.projectName), schedule);
     });
 
-    (activeScheduleEntries || [])
-      .filter((entry: ActiveScheduleEntry) => isLiveScheduleSource(entry.source))
-      .forEach((entry: ActiveScheduleEntry) => {
-        const monthKey = String(entry.date || '').slice(0, 7);
-        if (!isValidMonthKey(monthKey)) return;
+    const wipFiltered = (activeScheduleEntries || []).filter((entry: ActiveScheduleEntry) => isWipScheduleSource(entry.source));
+    
+    wipFiltered.forEach((entry: ActiveScheduleEntry) => {
+      const monthKey = String(entry.date || '').slice(0, 7);
+      if (!isValidMonthKey(monthKey)) return;
 
-        const entryHours = Number(entry.hours || 0);
-        if (!Number.isFinite(entryHours) || entryHours <= 0) return;
+      const entryHours = Number(entry.hours || 0);
+      if (!Number.isFinite(entryHours) || entryHours <= 0) return;
 
-        const parts = parseJobKeyParts(entry.jobKey || '');
-        const matchedSchedule =
-          schedulesByExactJobKey.get(entry.jobKey || '') ||
-          schedulesByProjectNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName)) ||
-          schedulesByCustomerProject.get(buildCustomerProjectKey(parts.customer, parts.projectName));
+      const parts = parseJobKeyParts(entry.jobKey || '');
+      const matchedSchedule =
+        schedulesByExactJobKey.get(entry.jobKey || '') ||
+        schedulesByProjectNumName.get(buildProjectNumNameKey(parts.projectNumber, parts.projectName)) ||
+        schedulesByCustomerProject.get(buildCustomerProjectKey(parts.customer, parts.projectName));
 
-        if (!matchedSchedule) return;
+      if (!matchedSchedule) return;
 
-        const scheduleMonthMap = hoursBySchedule.get(matchedSchedule.id) || new Map<string, number>();
-        scheduleMonthMap.set(monthKey, (scheduleMonthMap.get(monthKey) || 0) + entryHours);
-        hoursBySchedule.set(matchedSchedule.id, scheduleMonthMap);
-      });
+      const scheduleMonthMap = hoursBySchedule.get(matchedSchedule.id) || new Map<string, number>();
+      scheduleMonthMap.set(monthKey, (scheduleMonthMap.get(monthKey) || 0) + entryHours);
+      hoursBySchedule.set(matchedSchedule.id, scheduleMonthMap);
+    });
 
     return hoursBySchedule;
   }, [activeScheduleEntries, schedules]);
@@ -1802,6 +1802,15 @@ function KPIPageContent({
           return value > 0 ? value.toString() : "";
         });
       }
+
+      if (normalizeCardName(cardName) === normalizeCardName("Sales By Month") && rowLabel.includes("sched")) {
+        const selectedYear = yearFilter || new Date().getFullYear().toString();
+        rowValues = monthNames.map((_, idx) => {
+          const month = idx + 1;
+          const calculatedValue = scheduledSalesYearMonthMap[selectedYear]?.[month] || 0;
+          return calculatedValue > 0 ? calculatedValue.toString() : "";
+        });
+      }
       
       // Check if this is a percentage column (contains % values)
       const isPercentage = rowValues.some((val: any) => String(val).includes("%"));
@@ -2230,14 +2239,12 @@ function KPIPageContent({
                 <tbody>
                   {filteredCombinedSalesYears.map((year, yearIndex) => {
                     const scheduledTotal = monthNames.reduce((sum, _, idx) => {
-                      const manualValue = kpiData.find((k: any) => k.year === year && k.month === idx + 1)?.scheduledSales;
                       const calculatedValue = scheduledSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + (manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue);
+                      return sum + calculatedValue;
                     }, 0);
                     const scheduledYtdTotal = monthNames.slice(0, ytdMonthCutoff).reduce((sum, _, idx) => {
-                      const manualValue = kpiData.find((k: any) => k.year === year && k.month === idx + 1)?.scheduledSales;
                       const calculatedValue = scheduledSalesYearMonthMap[year]?.[idx + 1] || 0;
-                      return sum + (manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue);
+                      return sum + calculatedValue;
                     }, 0);
                     const bidSubmittedMonthValues = monthNames.map((_, idx) => {
                       const month = idx + 1;
@@ -2260,9 +2267,8 @@ function KPIPageContent({
                       <tr style={{ borderBottom: "1px solid #eee", backgroundColor: (yearIndex * 2) % 2 === 0 ? "#ffffff" : "#f9f9f9" }}>
                         <td style={{ padding: "4px 6px", color: (yearIndex * 2) % 2 === 0 ? "#15616D" : "#E06C00", fontWeight: 700, fontSize: 13 }}>Scheduled</td>
                         {monthNames.map((_, idx) => {
-                          const manualValue = kpiData.find((k: any) => k.year === year && k.month === idx + 1)?.scheduledSales;
                           const calculatedValue = scheduledSalesYearMonthMap[year]?.[idx + 1] || 0;
-                          const sales = manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue;
+                          const sales = calculatedValue;
                           
                           return (
                             <td 
@@ -2369,17 +2375,13 @@ function KPIPageContent({
                 });
                 
                 const scheduledTotal = allYearMonths.reduce((sum, { year, month }) => {
-                  const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.scheduledSales;
                   const calculatedValue = scheduledSalesYearMonthMap[year]?.[month] || 0;
-                  const value = manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue;
-                  return sum + value;
+                  return sum + calculatedValue;
                 }, 0);
                 const scheduledYtdTotal = allYearMonths.reduce((sum, { year, month }) => {
                   if (month > ytdMonthCutoff) return sum;
-                  const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.scheduledSales;
                   const calculatedValue = scheduledSalesYearMonthMap[year]?.[month] || 0;
-                  const value = manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue;
-                  return sum + value;
+                  return sum + calculatedValue;
                 }, 0);
                 const bidSubmittedValues = allYearMonths.map(({ year, month, label }) => {
                   const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.bidSubmittedSales;
@@ -2417,9 +2419,8 @@ function KPIPageContent({
                       <tr style={{ borderBottom: "1px solid #eee", backgroundColor: "#ffffff" }}>
                         <td style={{ padding: "4px 6px", color: "#15616D", fontWeight: 700, fontSize: 13 }}>Scheduled</td>
                         {allYearMonths.map(({ year, month }, idx) => {
-                          const manualValue = kpiData.find((k: any) => k.year === year && k.month === month)?.scheduledSales;
                           const calculatedValue = scheduledSalesYearMonthMap[year]?.[month] || 0;
-                          const sales = manualValue !== undefined && manualValue !== null ? manualValue : calculatedValue;
+                          const sales = calculatedValue;
                           return (
                             <td 
                               key={idx} 
