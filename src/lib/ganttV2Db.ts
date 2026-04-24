@@ -164,6 +164,7 @@ type GanttProjectsOptions = {
 
 const formatMonthKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+let ensureGanttV2SchemaPromise: Promise<void> | null = null;
 
 const parseDate = (value: Date | string | null): Date | null => {
   if (!value) return null;
@@ -201,100 +202,111 @@ const getWorkdayCountPerMonth = (start: Date, end: Date): Map<string, number> =>
 };
 
 export async function ensureGanttV2Schema(): Promise<void> {
-  const statements = [
-    `
-      CREATE TABLE IF NOT EXISTS gantt_v2_projects (
-        id TEXT PRIMARY KEY,
-        project_name TEXT NOT NULL,
-        customer TEXT,
-        project_number TEXT,
-        status TEXT,
-        source TEXT,
-        source_company_id TEXT,
-        source_external_id TEXT,
-        source_project_id TEXT,
-        source_staging_project_id TEXT,
-        source_display_name TEXT,
-        source_project_owner_type TEXT,
-        source_project_owner_type_id TEXT,
-        source_procore_created_at TIMESTAMPTZ,
-        source_procore_updated_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `,
-    `
-      CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL REFERENCES gantt_v2_projects(id) ON DELETE CASCADE,
-        predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL,
-        title TEXT NOT NULL,
-        start_date DATE,
-        end_date DATE,
-        total_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-        crew_size DOUBLE PRECISION,
-        notes TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `,
-    `
-      CREATE TABLE IF NOT EXISTS gantt_v2_schedule_entries (
-        id TEXT PRIMARY KEY,
-        scope_id TEXT NOT NULL REFERENCES gantt_v2_scopes(id) ON DELETE CASCADE,
-        work_date DATE NOT NULL,
-        scheduled_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(scope_id, work_date)
-      );
-    `,
-    `ALTER TABLE gantt_v2_scopes ADD COLUMN IF NOT EXISTS predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_company_id TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_external_id TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_id TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_staging_project_id TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_display_name TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_owner_type TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_owner_type_id TEXT;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_procore_created_at TIMESTAMPTZ;`,
-    `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_procore_updated_at TIMESTAMPTZ;`,
-    `UPDATE gantt_v2_projects SET source = CASE WHEN COALESCE(NULLIF(TRIM(source_company_id), ''), NULL) IS NOT NULL AND COALESCE(NULLIF(TRIM(source_external_id), ''), NULL) IS NOT NULL THEN 'procore' ELSE 'app' END WHERE COALESCE(NULLIF(TRIM(source), ''), NULL) IS NULL;`,
-    `
-      UPDATE gantt_v2_projects p
-      SET source_staging_project_id = s.project_id,
-          source_display_name = COALESCE(NULLIF(TRIM(s.display_name), ''), p.source_display_name),
-          source_project_owner_type = COALESCE(NULLIF(TRIM(s.project_owner_type), ''), p.source_project_owner_type),
-          source_project_owner_type_id = COALESCE(NULLIF(TRIM(s.project_owner_type_id), ''), p.source_project_owner_type_id),
-          source_procore_created_at = COALESCE(s.procore_created_at, p.source_procore_created_at),
-          source_procore_updated_at = COALESCE(s.procore_updated_at, p.source_procore_updated_at),
-          source_project_id = COALESCE(NULLIF(TRIM(s.procore_project_id), ''), p.source_project_id)
-      FROM procore_project_staging s
-      WHERE COALESCE(NULLIF(TRIM(p.source), ''), 'app') = 'procore'
-        AND s.source = 'procore_v1_projects'
-        AND s.company_id = p.source_company_id
-        AND s.external_id = p.source_external_id;
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_source ON gantt_v2_projects(source);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_source_identity ON gantt_v2_projects(source_company_id, source_external_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_predecessor_scope_id ON gantt_v2_scopes(predecessor_scope_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_scope_id ON gantt_v2_schedule_entries(scope_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_work_date ON gantt_v2_schedule_entries(work_date);`,
-  ];
+  if (!ensureGanttV2SchemaPromise) {
+    ensureGanttV2SchemaPromise = (async () => {
+      const statements = [
+        `
+          CREATE TABLE IF NOT EXISTS gantt_v2_projects (
+            id TEXT PRIMARY KEY,
+            project_name TEXT NOT NULL,
+            customer TEXT,
+            project_number TEXT,
+            status TEXT,
+            source TEXT,
+            source_company_id TEXT,
+            source_external_id TEXT,
+            source_project_id TEXT,
+            source_staging_project_id TEXT,
+            source_display_name TEXT,
+            source_project_owner_type TEXT,
+            source_project_owner_type_id TEXT,
+            source_procore_created_at TIMESTAMPTZ,
+            source_procore_updated_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+        `,
+        `
+          CREATE TABLE IF NOT EXISTS gantt_v2_scopes (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES gantt_v2_projects(id) ON DELETE CASCADE,
+            predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL,
+            title TEXT NOT NULL,
+            start_date DATE,
+            end_date DATE,
+            total_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+            crew_size DOUBLE PRECISION,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+        `,
+        `
+          CREATE TABLE IF NOT EXISTS gantt_v2_schedule_entries (
+            id TEXT PRIMARY KEY,
+            scope_id TEXT NOT NULL REFERENCES gantt_v2_scopes(id) ON DELETE CASCADE,
+            work_date DATE NOT NULL,
+            scheduled_hours DOUBLE PRECISION NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(scope_id, work_date)
+          );
+        `,
+        `ALTER TABLE gantt_v2_scopes ADD COLUMN IF NOT EXISTS predecessor_scope_id TEXT REFERENCES gantt_v2_scopes(id) ON DELETE SET NULL;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_company_id TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_external_id TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_id TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_staging_project_id TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_display_name TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_owner_type TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_project_owner_type_id TEXT;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_procore_created_at TIMESTAMPTZ;`,
+        `ALTER TABLE gantt_v2_projects ADD COLUMN IF NOT EXISTS source_procore_updated_at TIMESTAMPTZ;`,
+        `UPDATE gantt_v2_projects SET source = CASE WHEN COALESCE(NULLIF(TRIM(source_company_id), ''), NULL) IS NOT NULL AND COALESCE(NULLIF(TRIM(source_external_id), ''), NULL) IS NOT NULL THEN 'procore' ELSE 'app' END WHERE COALESCE(NULLIF(TRIM(source), ''), NULL) IS NULL;`,
+        `
+          UPDATE gantt_v2_projects p
+          SET source_staging_project_id = s.project_id,
+              source_display_name = COALESCE(NULLIF(TRIM(s.display_name), ''), p.source_display_name),
+              source_project_owner_type = COALESCE(NULLIF(TRIM(s.project_owner_type), ''), p.source_project_owner_type),
+              source_project_owner_type_id = COALESCE(NULLIF(TRIM(s.project_owner_type_id), ''), p.source_project_owner_type_id),
+              source_procore_created_at = COALESCE(s.procore_created_at, p.source_procore_created_at),
+              source_procore_updated_at = COALESCE(s.procore_updated_at, p.source_procore_updated_at),
+              source_project_id = COALESCE(NULLIF(TRIM(s.procore_project_id), ''), p.source_project_id)
+          FROM procore_project_staging s
+          WHERE COALESCE(NULLIF(TRIM(p.source), ''), 'app') = 'procore'
+            AND s.source = 'procore_v1_projects'
+            AND s.company_id = p.source_company_id
+            AND s.external_id = p.source_external_id;
+        `,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_created_at ON gantt_v2_projects(created_at DESC);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_status ON gantt_v2_projects(status);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_source ON gantt_v2_projects(source);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_projects_source_identity ON gantt_v2_projects(source_company_id, source_external_id);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_project_id ON gantt_v2_scopes(project_id);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_predecessor_scope_id ON gantt_v2_scopes(predecessor_scope_id);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_scopes_created_at ON gantt_v2_scopes(created_at ASC);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_scope_id ON gantt_v2_schedule_entries(scope_id);`,
+        `CREATE INDEX IF NOT EXISTS idx_gantt_v2_schedule_entries_work_date ON gantt_v2_schedule_entries(work_date);`,
+      ];
 
-  for (const statement of statements) {
-    try {
-      await prisma.$executeRawUnsafe(statement);
-    } catch (error) {
-      if (!shouldFallbackToEmptyRead(error)) {
-        throw error;
+      for (const statement of statements) {
+        try {
+          await prisma.$executeRawUnsafe(statement);
+        } catch (error) {
+          if (!shouldFallbackToEmptyRead(error)) {
+            throw error;
+          }
+        }
       }
-    }
+    })();
+  }
+
+  try {
+    await ensureGanttV2SchemaPromise;
+  } catch (error) {
+    ensureGanttV2SchemaPromise = null;
+    throw error;
   }
 }
 

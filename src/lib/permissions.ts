@@ -34,37 +34,39 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
  
 };
 
-// Map Procore email addresses to groups or specific pages
-export const USER_PERMISSIONS: Record<string, string[]> = {
-  // OWNER access + Personnel Management (employees + onboarding pages)
-  "todd@pmcdecor.com": ["OWNER", "employees", "onboarding"],
-  "todd.gilmore@hotmail.com": ["OWNER", "employees", "onboarding"],
+function parseUserPermissionsFromEnv(): Record<string, string[]> {
+  const sources = [
+    process.env.USER_PERMISSIONS_JSON,
+    process.env.NEXT_PUBLIC_USER_PERMISSIONS_JSON,
+  ];
 
-  "levi@paradise-concrete.com": ["ADMIN"],
-  "rick@pmcdecor.com": ["ADMIN"],
-  "shelly@pmcdecor.com": ["ADMIN"],
-  "dave@pmcdecor.com": ["ADMIN"],
-  "david@pmcdecor.com": ["ADMIN", "employees", "onboarding"],
+  for (const raw of sources) {
+    if (!raw || !raw.trim()) continue;
 
-  // HR access + Personnel Management (employees + onboarding pages)
-  "jane@pmcdecor.com": ["HR", "employees", "onboarding"],
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
 
+      const normalized: Record<string, string[]> = {};
+      for (const [email, permissions] of Object.entries(parsed)) {
+        if (typeof email !== "string" || !Array.isArray(permissions)) continue;
+        const normalizedPermissions = permissions.filter((perm): perm is string => typeof perm === "string");
+        if (normalizedPermissions.length > 0) {
+          normalized[email.toLowerCase()] = normalizedPermissions;
+        }
+      }
 
-// PM access
-"mervin@pmcdecor.com": ["PMs", "OPERATIONS"],
-"abner@pmcdecor.com": ["PMs", "OPERATIONS"],
+      return normalized;
+    } catch {
+      // Ignore malformed JSON and continue to fallback.
+    }
+  }
 
-// Operations access
-"john@pmcdecor.com": ["OPERATIONS"],
+  return {};
+}
 
-  //Estimator access
-  "isaac@pmcdecor.com": ["ESTIMATOR"],
-
-  // Field access
-  "matt@pmcdecor.com": ["FIELD"],
-  "matthew@pmcdecor.com": ["FIELD"],
-  "jason@pmcdecor.com": ["FIELD"]
-};
+// Map user emails to permission groups/pages from environment variables.
+export const USER_PERMISSIONS: Record<string, string[]> = parseUserPermissionsFromEnv();
 
 export function hasPageAccess(userEmail: string | null, page: string): boolean {
   if (!userEmail) return false;

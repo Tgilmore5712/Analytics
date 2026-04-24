@@ -290,6 +290,26 @@ function normalizeScopeTitle(value?: string | null): string {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeJobKey(value?: string | null): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const parts = raw.split("~");
+  if (parts.length < 3) {
+    return raw;
+  }
+
+  const [customer = "", projectNumber = "", ...projectNameParts] = parts;
+  return [customer.trim(), projectNumber.trim(), projectNameParts.join("~").trim()].join("~");
+}
+
+function getJobKeyLookupCandidates(value?: string | null): string[] {
+  const raw = String(value || "").trim();
+  const normalized = normalizeJobKey(value);
+  const normalizedLower = normalized.toLowerCase();
+  return Array.from(new Set([raw, normalized, normalizedLower].filter(Boolean)));
+}
+
 function findMatchingScopeForScheduleEntry(
   scopesByJobKey: Record<string, Scope[]>,
   entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">
@@ -456,10 +476,6 @@ export default function LongTermSchedulePage() {
   const [pmEmployees, setPmEmployees] = useState<Employee[]>([]);
   const [pmOverrides, setPmOverrides] = useState<Record<string, string>>({});
   const [jobKeyToProjectPM, setJobKeyToProjectPM] = useState<Record<string, string>>({});
-  const [editingPMForJob, setEditingPMForJob] = useState<string | null>(null);
-  const [editingForemanForJob, setEditingForemanForJob] = useState<string | null>(null);
-  const [savingPM, setSavingPM] = useState(false);
-  const [savingForeman, setSavingForeman] = useState(false);
   const [removingAssignmentKey, setRemovingAssignmentKey] = useState<string | null>(null);
   const [removeSuccessMessage, setRemoveSuccessMessage] = useState<string | null>(null);
   const [collapsedPMGroups, setCollapsedPMGroups] = useState<Set<string>>(new Set());
@@ -470,6 +486,9 @@ export default function LongTermSchedulePage() {
   const [selectedModalProject, setSelectedModalProject] = useState<ProjectInfo | null>(null);
   const [selectedModalScopeId, setSelectedModalScopeId] = useState<string | null>(null);
   const [selectedModalScopeTitle, setSelectedModalScopeTitle] = useState<string | null>(null);
+  const [selectedModalScheduleDate, setSelectedModalScheduleDate] = useState<string | null>(null);
+  const [selectedModalScheduledHours, setSelectedModalScheduledHours] = useState<number | null>(null);
+  const [selectedModalForemanId, setSelectedModalForemanId] = useState<string | null>(null);
   const [scopesByJobKey, setScopesByJobKey] = useState<Record<string, Scope[]>>({});
   const [jobKeyToProjectDocId, setJobKeyToProjectDocId] = useState<Record<string, string>>({});
 
@@ -570,9 +589,15 @@ export default function LongTermSchedulePage() {
 
       const pmOverrideMap: Record<string, string> = {};
       pmAssignments.forEach((a) => {
-        const key = (a?.assignmentKey || a?.jobKey || "").trim();
-        if (key && a?.pmId) {
-          pmOverrideMap[key] = a.pmId;
+        const projectKey = normalizeJobKey(a?.jobKey || a?.assignmentKey || "");
+        if (projectKey && a?.pmId) {
+          getJobKeyLookupCandidates(projectKey).forEach((candidate) => {
+            // Keep the first (newest) assignment encountered for this project key,
+            // even if the row came from a legacy scope-level assignment key.
+            if (!pmOverrideMap[candidate]) {
+              pmOverrideMap[candidate] = a.pmId;
+            }
+          });
         }
       });
       setPmOverrides(pmOverrideMap);
@@ -581,7 +606,9 @@ export default function LongTermSchedulePage() {
       projects.forEach((project) => {
         const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
         if (project.projectManager) {
-          projectPMMap[jobKey] = project.projectManager;
+          getJobKeyLookupCandidates(jobKey).forEach((candidate) => {
+            projectPMMap[candidate] = project.projectManager as string;
+          });
         }
       });
       setJobKeyToProjectPM(projectPMMap);
@@ -589,7 +616,11 @@ export default function LongTermSchedulePage() {
       const docIdMap: Record<string, string> = {};
       projects.forEach((project) => {
         const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
-        if (project.id) docIdMap[jobKey] = project.id;
+        if (project.id) {
+          getJobKeyLookupCandidates(jobKey).forEach((candidate) => {
+            docIdMap[candidate] = project.id as string;
+          });
+        }
       });
       setJobKeyToProjectDocId(docIdMap);
 
@@ -824,54 +855,21 @@ export default function LongTermSchedulePage() {
     }
   }
 
-  async function saveForemanAssignment(jobKey: string, scopeOfWork: string, foremanId: string) {
-    try {
-      setSavingForeman(true);
-      await assignProjectToForeman(jobKey, scopeOfWork, foremanId);
-    } finally {
-      setSavingForeman(false);
-      setEditingForemanForJob(null);
+  const getResolvedPMId = useCallback((jobKey: string): string => {
+    for (const candidate of getJobKeyLookupCandidates(jobKey)) {
+      const override = pmOverrides[candidate];
+      if (override) return override;
     }
-  }
 
-  async function savePMAssignment(assignmentKey: string, jobKey: string, pmId: string) {
-    try {
-      setSavingPM(true);
-      let res: Response;
-      if (pmId === "__project_default__") {
-        res = await fetch("/api/long-term-schedule/pm-assignments", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assignmentKey, jobKey }),
-        });
-      } else {
-        res = await fetch("/api/long-term-schedule/pm-assignments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assignmentKey, jobKey, pmId }),
-        });
+    let projectPMName = "";
+    for (const candidate of getJobKeyLookupCandidates(jobKey)) {
+      const mappedName = (jobKeyToProjectPM[candidate] || "").trim().toLowerCase();
+      if (mappedName) {
+        projectPMName = mappedName;
+        break;
       }
-
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
-        throw new Error(payload?.error || "Failed to save PM assignment");
-      }
-
-      await loadSchedules();
-    } catch (err) {
-      console.error("Failed to save PM assignment:", err);
-      alert(err instanceof Error ? err.message : "Failed to save PM assignment");
-    } finally {
-      setSavingPM(false);
-      setEditingPMForJob(null);
     }
-  }
 
-  const getResolvedPMId = useCallback((assignmentKey: string, jobKey: string): string => {
-    const override = pmOverrides[assignmentKey] || pmOverrides[jobKey];
-    if (override) return override;
-
-    const projectPMName = (jobKeyToProjectPM[jobKey] || "").trim().toLowerCase();
     if (projectPMName) {
       const match = pmEmployees.find((emp) => `${emp.firstName} ${emp.lastName}`.trim().toLowerCase() === projectPMName);
       if (match) return match.id;
@@ -1059,8 +1057,6 @@ export default function LongTermSchedulePage() {
       }
       return next;
     });
-    setEditingPMForJob(null);
-    setEditingForemanForJob(null);
   }
 
   const pmGroups = useMemo<PMGroup[]>(() => {
@@ -1077,8 +1073,7 @@ export default function LongTermSchedulePage() {
         if (!allocation || allocation.projects.length === 0) return;
 
         allocation.projects.forEach((project) => {
-          const assignmentKey = getAssignmentKey(project.jobKey, project.scopeOfWork);
-          const pmId = getResolvedPMId(assignmentKey, project.jobKey);
+          const pmId = getResolvedPMId(project.jobKey);
           if (!pmRowMap.has(pmId)) {
             const emptyWeekAllocations: Record<string, WeekAllocation> = {};
             weekKeys.forEach((wk) => {
@@ -1101,8 +1096,7 @@ export default function LongTermSchedulePage() {
 
       Object.entries(row.dayAllocations).forEach(([dayKey, allocation]) => {
         allocation.projects.forEach((project) => {
-          const assignmentKey = getAssignmentKey(project.jobKey, project.scopeOfWork);
-          const pmId = getResolvedPMId(assignmentKey, project.jobKey);
+          const pmId = getResolvedPMId(project.jobKey);
           const pmScopedRow = pmRowMap.get(pmId);
           if (!pmScopedRow) return;
 
@@ -1187,7 +1181,13 @@ export default function LongTermSchedulePage() {
     [foremanRows]
   );
 
-  function openScopeModal(jobKey: string, scopeTitle?: string, dateKey?: string) {
+  function openScopeModal(
+    jobKey: string,
+    scopeTitle?: string,
+    dateKey?: string,
+    scheduleHours?: number,
+    foremanId?: string
+  ) {
     const parts = jobKey.split("~");
     const normalizedScopeTitle = (scopeTitle || "").trim().toLowerCase();
     const scopeCandidates = scopesByJobKey[jobKey] || [];
@@ -1213,6 +1213,9 @@ export default function LongTermSchedulePage() {
 
     setSelectedModalScopeId(resolvedScopeId);
     setSelectedModalScopeTitle((scopeTitle || "").trim() || null);
+    setSelectedModalScheduleDate(dateKey || null);
+    setSelectedModalScheduledHours(Number.isFinite(Number(scheduleHours)) ? Number(scheduleHours) : null);
+    setSelectedModalForemanId(foremanId || null);
     setSelectedModalProject({
       jobKey,
       customer: parts[0] || "",
@@ -1230,16 +1233,15 @@ export default function LongTermSchedulePage() {
   ) {
     return projects.map((proj, idx) => {
       const assignmentKey = getAssignmentKey(proj.jobKey, proj.scopeOfWork);
-      const resolvedPmId = getResolvedPMId(assignmentKey, proj.jobKey);
       const resolvedForemanId = dragContext?.sourceForemanId || "__unassigned__";
-      const defaultPMName = jobKeyToProjectPM[proj.jobKey] || "Project Default";
       const canDrag = Boolean(dragContext?.sourceDateKey);
       const canRemoveFromDay = Boolean(dragContext?.sourceDateKey);
+      const projectName = proj.jobKey.split("~")[2] || proj.jobKey;
 
       return (
         <div
           key={`${proj.jobKey}-${proj.scopeOfWork}-${idx}`}
-          className={`text-[10px] text-left text-gray-700 mt-1.5 ${isCompact ? "p-1.5" : "px-2 py-1.5"} ${canDrag ? "cursor-move" : "cursor-default"} bg-white rounded border border-gray-300 hover:border-orange-500 hover:bg-orange-50 transition-colors`}
+          className={`text-[9px] text-left text-gray-700 mt-1 ${isCompact ? "p-1" : "px-1.5 py-1"} ${canDrag ? "cursor-move" : "cursor-pointer"} bg-white rounded-sm border border-gray-300 hover:border-orange-500 hover:bg-orange-50 transition-colors`}
           draggable={canDrag}
           onDragStart={(e) =>
             handleDragStart(
@@ -1251,123 +1253,56 @@ export default function LongTermSchedulePage() {
               proj.hours
             )
           }
+          onClick={() => {
+            openScopeModal(
+              proj.jobKey,
+              proj.scopeOfWork,
+              dragContext?.sourceDateKey,
+              proj.hours,
+              resolvedForemanId
+            );
+          }}
+          title={projectName}
         >
-          <div className="text-[10px] font-black text-orange-700 mb-1">
-            {getFteFromHours(proj.hours, granularity).toFixed(1)} Man Power
-          </div>
-          <div className="font-black text-gray-900 whitespace-normal break-words">{proj.scopeOfWork}</div>
-          <div className="text-gray-500 whitespace-normal break-words">{proj.jobKey.split("~")[2] || proj.jobKey}</div>
-          <div className="mt-1.5 flex items-center gap-1">
-            {canRemoveFromDay && (
-              <button
-                type="button"
-                disabled={removingAssignmentKey === assignmentKey}
-                className="text-[10px] text-red-700 font-black hover:text-red-800 disabled:opacity-50"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const sourceDateKey = dragContext?.sourceDateKey;
-                  if (!sourceDateKey) return;
-
-                  const confirmed = window.confirm(
-                    `Remove "${proj.scopeOfWork}" from ${proj.jobKey.split("~")[2] || proj.jobKey} on ${sourceDateKey}?`
-                  );
-                  if (!confirmed) return;
-
-                  try {
-                    setRemovingAssignmentKey(assignmentKey);
-                    await removeProjectFromDay(proj.jobKey, proj.scopeOfWork, sourceDateKey);
-                    await loadSchedules();
-                    setRemoveSuccessMessage(`Removed from ${sourceDateKey}`);
-                  } catch (error) {
-                    console.error('Failed removing assignment from long-term day view:', error);
-                    alert(error instanceof Error ? error.message : 'Failed to remove assignment from day');
-                  } finally {
-                    setRemovingAssignmentKey(null);
-                  }
-                }}
-              >
-                Remove from Day
-              </button>
-            )}
-            <button
-              type="button"
-              className="text-[10px] text-blue-600 font-black hover:text-blue-800 mr-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                openScopeModal(proj.jobKey, proj.scopeOfWork, dragContext?.sourceDateKey);
-              }}
-              title="Edit scope details"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              className="text-[10px] text-orange-700 font-black hover:text-orange-800"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingForemanForJob(null);
-                setEditingPMForJob(editingPMForJob === assignmentKey ? null : assignmentKey);
-              }}
-            >
-              PM: {getResolvedPMName(resolvedPmId)}
-            </button>
-            <button
-              type="button"
-              className="text-[10px] text-sky-700 font-black hover:text-sky-800"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingPMForJob(null);
-                setEditingForemanForJob(editingForemanForJob === assignmentKey ? null : assignmentKey);
-              }}
-            >
-              Foreman: {getResolvedForemanName(resolvedForemanId)}
-            </button>
-          </div>
-          {editingPMForJob === assignmentKey && (
-            <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-              <select
-                disabled={savingPM}
-                className="w-full text-[10px] border border-orange-400 rounded px-2 py-1 bg-white"
-                defaultValue={pmOverrides[assignmentKey] || pmOverrides[proj.jobKey] || "__project_default__"}
-                onChange={(e) => savePMAssignment(assignmentKey, proj.jobKey, e.target.value)}
-              >
-                <option value="__project_default__">Use Project Default ({defaultPMName})</option>
-                {pmEmployees.map((pm) => (
-                  <option key={pm.id} value={pm.id}>
-                    {pm.firstName} {pm.lastName}
-                  </option>
-                ))}
-              </select>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1 font-black text-gray-900 whitespace-normal break-words leading-tight">{projectName}</div>
+            <div className="shrink-0 text-right text-[8px] font-black text-orange-700 leading-none whitespace-nowrap">
+              <div>{proj.hours.toFixed(0)}H</div>
+              <div className="mt-0.5 text-[7px] text-orange-600/90">{getFteFromHours(proj.hours, granularity).toFixed(1)} MP</div>
             </div>
-          )}
-          {editingForemanForJob === assignmentKey && (
-            <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-              <select
-                disabled={savingForeman}
-                className="w-full text-[10px] border border-sky-400 rounded px-2 py-1 bg-white"
-                value={resolvedForemanId}
-                onChange={(e) => saveForemanAssignment(proj.jobKey, proj.scopeOfWork, e.target.value)}
-              >
-                <option value="__unassigned__">Unassigned</option>
-                {activeForemen.map((foreman) => (
-                  <option key={foreman.id} value={foreman.id}>
-                    {foreman.firstName} {foreman.lastName}
-                  </option>
-                ))}
-              </select>
-            </div>
+          </div>
+          {canRemoveFromDay && removingAssignmentKey === assignmentKey && (
+            <div className="mt-0.5 text-[8px] font-black text-red-700 leading-none">Updating...</div>
           )}
         </div>
       );
     });
   }
 
+  function getPMGroupAllocation(group: PMGroup, col: ColDef): WeekAllocation {
+    const allocation: WeekAllocation = { hours: 0, projects: [] };
+
+    group.foremanRows.forEach((row) => {
+      const source = col.type === "week"
+        ? row.weekAllocations[col.weekKey]
+        : row.dayAllocations[col.dateKey];
+
+      if (!source) return;
+
+      source.projects.forEach((project) => {
+        addProjectToAllocation(allocation, project.jobKey, project.scopeOfWork, project.hours);
+      });
+    });
+
+    return allocation;
+  }
+
   return (
-    <main className="min-h-screen bg-neutral-100 p-2 md:p-4 font-sans text-slate-900">
-      <div className="w-full flex flex-col min-h-[calc(100vh-2rem)] bg-white shadow-2xl rounded-3xl overflow-hidden border border-gray-200 p-4 md:p-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3 pb-3 border-b border-gray-100">
+    <main className="min-h-screen bg-neutral-100 p-1.5 md:p-2 font-sans text-slate-900">
+      <div className="w-full flex flex-col min-h-[calc(100vh-1rem)] bg-white shadow-2xl rounded-2xl overflow-hidden border border-gray-200 p-3 md:p-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-2 pb-2 border-b border-gray-100">
           <div>
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-gray-900 uppercase italic leading-none">
+            <h1 className="text-xl md:text-2xl font-black tracking-tight text-gray-900 uppercase italic leading-none">
               Long-Term <span className="text-orange-600">Schedule</span>
             </h1>
           </div>
@@ -1383,7 +1318,7 @@ export default function LongTermSchedulePage() {
         )}
 
         {removeSuccessMessage && (
-          <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+          <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-emerald-700">
             {removeSuccessMessage}
           </div>
         )}
@@ -1403,8 +1338,8 @@ export default function LongTermSchedulePage() {
                 <table className="w-full border-collapse">
                   <thead className="sticky top-0 z-30">
                     <tr className="bg-stone-800">
-                      <th className="sticky left-0 z-40 bg-stone-800 text-left py-5 px-5 text-base font-black text-white uppercase tracking-[0.12em] italic border-r border-stone-700 w-60 shadow-lg">
-                        PM / Foreman
+                      <th className="sticky left-0 z-40 bg-stone-800 text-left py-3 px-3 text-sm font-black text-white uppercase tracking-[0.12em] italic border-r border-stone-700 w-48 shadow-lg">
+                        Project Manager
                       </th>
                       {columnDefs.map((col) => {
                         const isWeekCol = col.type === "week";
@@ -1464,30 +1399,30 @@ export default function LongTermSchedulePage() {
                           return (
                             <th
                               key={col.weekKey}
-                              className="text-center py-4 px-3 text-base font-black text-white border-r border-stone-700 min-w-[170px] cursor-pointer hover:bg-stone-700/80 transition-colors"
+                              className="text-center py-2.5 px-2 text-sm font-black text-white border-r border-stone-700 min-w-[150px] cursor-pointer hover:bg-stone-700/80 transition-colors"
                               onClick={() => toggleWeek(col.weekKey)}
                             >
-                              <div className="text-xs text-orange-400 uppercase tracking-widest mb-1 flex items-center justify-center gap-1">
+                              <div className="text-[10px] text-orange-400 uppercase tracking-widest mb-0.5 flex items-center justify-center gap-1">
                                 Week Of
                                 <span
                                   aria-hidden="true"
                                   className={`inline-block h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-current text-orange-300 transition-transform ${isExpanded ? "rotate-90" : ""}`}
                                 />
                               </div>
-                              <div className="text-2xl italic tracking-tight text-white">{col.weekLabel}</div>
-                              <div className="mt-2 w-full rounded-md border border-white/10 bg-white/5 px-2 py-1">
-                                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest gap-2">
+                              <div className="text-lg italic tracking-tight text-white leading-none">{col.weekLabel}</div>
+                              <div className="mt-1 w-full rounded-md border border-white/10 bg-white/5 px-2 py-1">
+                                <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest gap-2 leading-none">
                                   <span className="text-stone-300">Headcount</span>
                                   <span className="text-orange-300">{Number.isInteger(activeHeadcount) ? activeHeadcount : activeHeadcount.toFixed(1)}</span>
                                   <span className="text-stone-500">|</span>
                                   <span className="text-orange-200">Man Power {allocatedFTE.toFixed(1)}</span>
                                 </div>
-                                <div className="mt-0.5 flex items-center justify-between text-xs font-black">
+                                <div className="mt-0.5 flex items-center justify-between text-[10px] font-black leading-none">
                                   <span className="text-orange-200">{allocatedHours.toFixed(0)}H</span>
                                   <span className="text-stone-400">/</span>
                                   <span className="text-stone-300">{capacityHours}H</span>
                                 </div>
-                                <div className="mt-0.5 text-[10px] font-black text-stone-300 uppercase tracking-wider text-left">
+                                <div className="mt-0.5 text-[9px] font-black text-stone-300 uppercase tracking-wider text-left leading-none">
                                   {uniqueJobs.size} Jobs
                                 </div>
                               </div>
@@ -1499,198 +1434,128 @@ export default function LongTermSchedulePage() {
                         return (
                           <th
                             key={`${col.weekKey}-${col.dateKey}`}
-                            className={`text-center py-3 px-2 text-base font-black text-white border-r border-stone-700 min-w-[110px] cursor-pointer hover:bg-stone-700/70 transition-colors ${
-                              isDayOff ? "bg-rose-900/60" : ""
+                            className={`text-center py-2 px-1.5 text-sm font-black text-white border-r border-stone-600 min-w-[96px] cursor-pointer hover:bg-indigo-900/70 transition-colors ${
+                              isDayOff ? "bg-rose-900/60" : "bg-indigo-950/80"
                             }`}
                             onClick={() => toggleWeek(col.weekKey)}
                             title="Click to collapse this week"
                           >
-                            <div className="text-xs uppercase tracking-wider text-orange-200">{col.dateLabel}</div>
-                            <div className="mt-1 w-full rounded-md border border-white/10 bg-white/5 px-2 py-1">
-                              <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest gap-2">
+                            <div className="text-[10px] uppercase tracking-wider text-orange-200 leading-none">{col.dateLabel}</div>
+                            <div className="mt-1 w-full rounded-md border border-white/10 bg-white/5 px-1.5 py-1">
+                              <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest gap-1.5 leading-none">
                                 <span className="text-stone-300">Headcount</span>
                                 <span className="text-orange-300">{Number.isInteger(activeHeadcount) ? activeHeadcount : activeHeadcount.toFixed(1)}</span>
                                 <span className="text-stone-500">|</span>
                                 <span className="text-orange-200">Man Power {allocatedFTE.toFixed(1)}</span>
                               </div>
-                              <div className="mt-0.5 flex items-center justify-between text-[10px] font-black">
+                              <div className="mt-0.5 flex items-center justify-between text-[9px] font-black leading-none">
                                 <span className="text-orange-200">{allocatedHours.toFixed(0)}H</span>
                                 <span className="text-stone-400">/</span>
                                 <span className="text-stone-300">{capacityHours}H</span>
                               </div>
-                              <div className="mt-0.5 text-[9px] font-black text-stone-300 uppercase tracking-wider text-left">
+                              <div className="mt-0.5 text-[8px] font-black text-stone-300 uppercase tracking-wider text-left leading-none">
                                 {uniqueJobs.size} Jobs
                               </div>
                             </div>
                             {isDayOff && (
-                              <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded bg-rose-500/20 border border-rose-300/40 text-xs text-rose-100 uppercase tracking-widest">
+                              <div className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-300/40 text-[9px] text-rose-100 uppercase tracking-widest leading-none">
                                 Day Off
                               </div>
                             )}
-                            <div className="mt-1 text-[10px] text-stone-300 uppercase tracking-widest">Collapse</div>
                           </th>
                         );
                       })}
-                      <th className="text-center py-5 px-5 text-base font-black text-white bg-stone-800 border-l border-stone-700 uppercase tracking-widest">
+                      <th className="text-center py-3 px-3 text-sm font-black text-white bg-stone-800 border-l border-stone-700 uppercase tracking-widest">
                         Total Sum
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {pmGroups.map((group) => (
-                      <Fragment key={`pm-group-${group.pmId}`}>
-                        {(() => {
-                          const isCollapsed = collapsedPMGroups.has(group.pmId);
-                          return (
-                        <tr key={`pm-header-${group.pmId}`} className="bg-stone-700 text-white border-b border-stone-600">
-                          <td className="sticky left-0 z-20 bg-stone-700 py-3 px-5 text-sm font-black uppercase tracking-[0.12em] border-r border-stone-600 shadow-md">
-                            <button
-                              type="button"
-                              onClick={() => togglePMGroup(group.pmId)}
-                              className="w-full flex items-center justify-between text-left"
-                              title={isCollapsed ? "Expand PM rows" : "Collapse PM rows"}
-                            >
-                              <span>PM: {group.pmName}</span>
-                              <span
-                                aria-hidden="true"
-                                className={`inline-block h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-current text-orange-300 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
-                              />
-                            </button>
-                          </td>
-                          {columnDefs.map((col) => {
-                            const uniqueJobs = new Set<string>();
-                            const columnHours = group.foremanRows.reduce((sum, row) => {
-                              if (col.type === "week") {
-                                const alloc = row.weekAllocations[col.weekKey];
-                                (alloc?.projects || []).forEach((p) => uniqueJobs.add(p.jobKey));
-                                return sum + (alloc?.hours || 0);
-                              }
-                              const alloc = row.dayAllocations[col.dateKey];
-                              (alloc?.projects || []).forEach((p) => uniqueJobs.add(p.jobKey));
-                              return sum + (alloc?.hours || 0);
-                            }, 0);
-
-                            return (
-                              <td
-                                key={`pm-${group.pmId}-${col.type === "week" ? col.weekKey : `${col.weekKey}-${col.dateKey}`}`}
-                                className="py-3 px-2 text-center text-xs font-black text-orange-100 border-r border-stone-600"
-                              >
-                                <div className="text-orange-50 tracking-tight text-sm">{getFteFromHours(columnHours, col.type === "week" ? "week" : "day").toFixed(1)} Man Power</div>
-                                <div className="text-[10px] text-orange-300">{columnHours.toFixed(0)}H</div>
-                                <div className="text-[10px] text-stone-300 uppercase tracking-wider">{uniqueJobs.size} Jobs</div>
-                              </td>
-                            );
-                          })}
-                          <td className="py-3 px-3 text-center text-xs font-black text-orange-100 border-l border-stone-600 bg-stone-800">
-                            <div className="text-sm">{group.totalHours.toFixed(0)}H</div>
-                            <div className="text-[10px] text-orange-300">{(group.totalHours / 50).toFixed(1)} Man Power</div>
-                            <div className="text-[10px] text-stone-300 uppercase tracking-wider">{
-                              new Set(
-                                group.foremanRows.flatMap((row) =>
-                                  Object.values(row.weekAllocations).flatMap((alloc) =>
-                                    (alloc?.projects || []).map((p) => p.jobKey)
-                                  )
-                                )
-                              ).size
-                            } Jobs</div>
-                          </td>
-                        </tr>
-                          );
-                        })()}
-
-                        {!collapsedPMGroups.has(group.pmId) && group.foremanRows.map((row, idx) => (
-                          <tr
-                            key={`${group.pmId}-${row.id}-${idx}`}
-                            className={`border-b border-gray-50 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                      <tr key={`pm-row-${group.pmId}`} className="border-t-[3px] border-orange-300 border-b border-stone-200 transition-colors bg-white">
+                        <td className="sticky left-0 z-20 bg-white py-2.5 px-3 text-xs font-black text-gray-900 uppercase tracking-wide italic border-r border-gray-100 border-l-[4px] border-l-orange-400 shadow-md">
+                          <button
+                            type="button"
+                            onClick={() => togglePMGroup(group.pmId)}
+                            className="w-full flex items-center justify-between text-left"
+                            title={collapsedPMGroups.has(group.pmId) ? "Expand PM projects" : "Collapse PM projects"}
                           >
-                            <td
-                              className="sticky left-0 z-20 bg-inherit py-4 px-5 text-sm font-black text-gray-900 uppercase tracking-wide italic border-r border-gray-100 shadow-md"
-                              onDragOver={handleDragOver}
-                              onDrop={(e) => handleDrop(e, row.id)}
-                            >
-                              {row.name}
-                            </td>
-                            {columnDefs.map((col) => {
-                              if (col.type === "week") {
-                                const allocation = row.weekAllocations[col.weekKey];
-                                const hours = allocation?.hours || 0;
-                                return (
-                                  <td
-                                    key={col.weekKey}
-                                    className={`text-center py-2 px-2 text-sm border-r border-gray-100 transition-all align-top ${
-                                      hours > 0 ? "bg-orange-50/30" : ""
-                                    }`}
-                                    onDragOver={handleDragOver}
-                                    onDrop={(e) => handleDrop(e, row.id)}
-                                  >
-                                    {hours > 0 && (
-                                      <div className="space-y-1.5">
-                                        <div className="font-black text-gray-900 text-base tracking-tight">
-                                          {getFteFromHours(hours, "week").toFixed(1)}
-                                          <span className="text-[10px] opacity-50 ml-0.5">Man Power</span>
-                                        </div>
-                                        <div className="text-[10px] text-gray-500 font-black">{hours.toFixed(1)}H</div>
-                                        {renderProjects(allocation.projects, false, "week", { sourceForemanId: row.id })}
-                                      </div>
-                                    )}
-                                  </td>
-                                );
-                              }
+                            <span>PM: {group.pmName}</span>
+                            <span
+                              aria-hidden="true"
+                              className={`inline-block h-0 w-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-current text-orange-500 transition-transform ${collapsedPMGroups.has(group.pmId) ? "" : "rotate-90"}`}
+                            />
+                          </button>
+                        </td>
+                        {columnDefs.map((col) => {
+                          const allocation = getPMGroupAllocation(group, col);
+                          const hours = allocation.hours || 0;
+                          const isDayOff = col.type === "day" && Boolean(col.holiday);
 
-                              const dayAllocation = row.dayAllocations[col.dateKey];
-                              const dayHours = dayAllocation?.hours || 0;
-                              const isDayOff = Boolean(col.holiday);
-                              return (
-                                <td
-                                  key={`${col.weekKey}-${col.dateKey}`}
-                                  className={`text-center py-2 px-1 text-sm border-r border-gray-100 transition-all align-top ${
-                                    dayHours > 0 ? "bg-orange-50/30" : ""
-                                  } ${isDayOff ? "bg-rose-50/50" : ""}`}
-                                  onDragOver={isDayOff ? undefined : handleDragOver}
-                                  onDrop={isDayOff ? undefined : (e) => handleDrop(e, row.id, col.dateKey)}
-                                >
-                                  {isDayOff && (
-                                    <div className="mb-1 text-[9px] font-black uppercase tracking-widest text-rose-600">
-                                      {col.holiday?.name || "Day Off"}
-                                    </div>
+                          return (
+                            <td
+                              key={`pm-${group.pmId}-${col.type === "week" ? col.weekKey : `${col.weekKey}-${col.dateKey}`}`}
+                              className={`text-center py-1.5 px-1.5 text-xs border-r transition-all align-top ${
+                                col.type === "day"
+                                  ? isDayOff
+                                    ? "bg-rose-50/50 border-indigo-100"
+                                    : hours > 0
+                                      ? "bg-indigo-50/60 border-indigo-100"
+                                      : "bg-slate-50/70 border-indigo-100"
+                                  : isDayOff
+                                    ? "bg-rose-50/50 border-gray-100"
+                                    : hours > 0
+                                      ? "bg-orange-50/30 border-gray-100"
+                                      : "border-gray-100"
+                              }`}
+                              onDragOver={isDayOff ? undefined : handleDragOver}
+                              onDrop={isDayOff ? undefined : (e) => handleDrop(e, draggedProject?.sourceForemanId || "__unassigned__", col.type === "day" ? col.dateKey : undefined)}
+                            >
+                              {isDayOff && (
+                                <div className="mb-0.5 text-[8px] font-black uppercase tracking-widest text-rose-600 leading-none">
+                                  {col.holiday?.name || "Day Off"}
+                                </div>
+                              )}
+                              {hours > 0 && (
+                                <div className="space-y-1">
+                                  <div className="font-black text-gray-900 text-sm tracking-tight leading-none">
+                                    {getFteFromHours(hours, col.type === "week" ? "week" : "day").toFixed(1)}
+                                    <span className="text-[9px] opacity-50 ml-0.5">Man Power</span>
+                                  </div>
+                                  <div className="text-[9px] text-gray-500 font-black leading-none">{hours.toFixed(1)}H</div>
+                                  {!collapsedPMGroups.has(group.pmId) && renderProjects(
+                                    allocation.projects,
+                                    col.type === "day",
+                                    col.type === "week" ? "week" : "day",
+                                    col.type === "day" ? { sourceDateKey: col.dateKey } : undefined
                                   )}
-                                  {dayHours > 0 && (
-                                    <div className="space-y-1.5">
-                                      <div className="font-black text-gray-900 text-base tracking-tight">
-                                        {getFteFromHours(dayHours, "day").toFixed(1)}
-                                        <span className="text-[10px] opacity-50 ml-0.5">Man Power</span>
-                                      </div>
-                                      <div className="text-[10px] text-gray-500 font-black">{dayHours.toFixed(1)}H</div>
-                                      {renderProjects(dayAllocation.projects, true, "day", { sourceDateKey: col.dateKey, sourceForemanId: row.id })}
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            <td className="text-center py-4 px-5 text-base font-black bg-stone-50 border-l border-gray-200">
-                              <div className="text-gray-900">{row.totalHours.toFixed(1)}H</div>
-                              <div className="text-[10px] font-black text-orange-700 uppercase">
-                                {(row.totalHours / 50).toFixed(1)} Total Man Power
-                              </div>
+                                </div>
+                              )}
                             </td>
-                          </tr>
-                        ))}
-                      </Fragment>
+                          );
+                        })}
+                        <td className="text-center py-2.5 px-3 text-sm font-black bg-stone-50 border-l border-gray-200">
+                          <div className="text-gray-900 leading-none">{group.totalHours.toFixed(1)}H</div>
+                          <div className="text-[9px] font-black text-orange-700 uppercase leading-none mt-0.5">
+                            {(group.totalHours / 50).toFixed(1)} Total Man Power
+                          </div>
+                        </td>
+                      </tr>
                     ))}
 
                     <tr className="bg-stone-800 text-white font-black uppercase tracking-widest italic">
-                      <td className="sticky left-0 z-20 bg-stone-800 py-6 px-6 text-xs border-r border-stone-700 shadow-lg">
+                      <td className="sticky left-0 z-20 bg-stone-800 py-3 px-3 text-[10px] border-r border-stone-700 shadow-lg">
                         Weekly Cumulative Load
                       </td>
                       {globalColumnTotals.map((total, idx) => (
-                        <td key={idx} className="text-center py-6 px-3 text-sm border-r border-stone-700">
-                          <div className="text-lg tracking-tight text-orange-300">{getFteFromHours(total, columnDefs[idx]?.type === "week" ? "week" : "day").toFixed(1)} Man Power</div>
-                          <div className="text-[10px] text-stone-300 opacity-80">{total.toFixed(0)}H</div>
+                        <td key={idx} className="text-center py-3 px-2 text-xs border-r border-stone-700">
+                          <div className="text-sm tracking-tight text-orange-300 leading-none">{getFteFromHours(total, columnDefs[idx]?.type === "week" ? "week" : "day").toFixed(1)} Man Power</div>
+                          <div className="text-[9px] text-stone-300 opacity-80 leading-none mt-0.5">{total.toFixed(0)}H</div>
                         </td>
                       ))}
-                      <td className="text-center py-6 px-5 text-sm bg-stone-800 border-l border-stone-700">
-                        <div className="text-xl text-orange-300">{grandTotal.toFixed(0)}H</div>
-                        <div className="text-[10px] text-stone-300 opacity-80">Total Lifecycle</div>
+                      <td className="text-center py-3 px-3 text-xs bg-stone-800 border-l border-stone-700">
+                        <div className="text-base text-orange-300 leading-none">{grandTotal.toFixed(0)}H</div>
+                        <div className="text-[9px] text-stone-300 opacity-80 leading-none mt-0.5">Total Lifecycle</div>
                       </td>
                     </tr>
                   </tbody>
@@ -1719,28 +1584,15 @@ export default function LongTermSchedulePage() {
                     </button>
                   </div>
 
-                  {!collapsedPMGroups.has(group.pmId) && group.foremanRows.map((row) => (
-                    <div
-                      key={`${group.pmId}-${row.id}`}
-                      className="bg-gray-50 rounded-2xl p-5 border border-gray-100 shadow-sm"
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, row.id)}
-                    >
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-black text-gray-900 text-base uppercase leading-tight italic truncate pr-4">{row.name}</h3>
-                        <div className="bg-orange-600 text-white px-3 py-1 rounded-xl text-xs font-black shadow-lg shadow-orange-600/20">
-                          {row.totalHours.toFixed(0)}h
-                        </div>
-                      </div>
-
+                  {!collapsedPMGroups.has(group.pmId) && (
+                    <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100 shadow-sm">
                       <div className="grid grid-cols-1 gap-3">
                         {weekColumns
-                          .filter((w) => (row.weekAllocations[w.weekStartDate.toISOString()]?.hours || 0) > 0)
-                          .slice(0, 4)
                           .map((week) => {
                             const weekKey = week.weekStartDate.toISOString();
-                            const allocation = row.weekAllocations[weekKey];
-                            const hours = allocation?.hours || 0;
+                            const allocation = getPMGroupAllocation(group, { type: "week", weekKey, weekLabel: week.weekLabel });
+                            const hours = allocation.hours || 0;
+                            if (hours <= 0) return null;
                             const expanded = expandedWeeks.has(weekKey);
 
                             return (
@@ -1763,15 +1615,21 @@ export default function LongTermSchedulePage() {
                                 </div>
 
                                 {!expanded ? (
-                                  renderProjects(allocation?.projects || [], true, "week", { sourceForemanId: row.id })
+                                  renderProjects(allocation.projects || [], true, "week")
                                 ) : (
                                   <div className="space-y-2">
                                     {Array.from({ length: 5 }).map((_, i) => {
                                       const day = new Date(week.weekStartDate);
                                       day.setDate(day.getDate() + i);
                                       const dayKey = formatDateKey(day);
-                                      const dayAllocation = row.dayAllocations[dayKey];
-                                      const dayHours = dayAllocation?.hours || 0;
+                                      const dayAllocation = getPMGroupAllocation(group, {
+                                        type: "day",
+                                        weekKey,
+                                        dateKey: dayKey,
+                                        dateLabel: day.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" }),
+                                        holiday: paidHolidayByDate[dayKey],
+                                      });
+                                      const dayHours = dayAllocation.hours || 0;
                                       const holiday = paidHolidayByDate[dayKey];
 
                                       return (
@@ -1779,7 +1637,7 @@ export default function LongTermSchedulePage() {
                                           key={dayKey}
                                           className={`rounded-lg border px-2 py-1 ${holiday ? "border-rose-200 bg-rose-50" : "border-gray-200 bg-gray-50"}`}
                                           onDragOver={holiday ? undefined : handleDragOver}
-                                          onDrop={holiday ? undefined : (e) => handleDrop(e, row.id, dayKey)}
+                                          onDrop={holiday ? undefined : (e) => handleDrop(e, draggedProject?.sourceForemanId || "__unassigned__", dayKey)}
                                         >
                                           <div className="text-[8px] font-black text-gray-500 uppercase tracking-wider">
                                             {day.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" })}
@@ -1793,7 +1651,7 @@ export default function LongTermSchedulePage() {
                                             <div className="space-y-1">
                                               <div className="text-[10px] font-black text-gray-800 mt-1">{getFteFromHours(dayHours, "day").toFixed(1)} Man Power</div>
                                               <div className="text-[9px] text-gray-500">{dayHours.toFixed(1)}h</div>
-                                              {renderProjects(dayAllocation?.projects || [], true, "day", { sourceDateKey: dayKey, sourceForemanId: row.id })}
+                                              {renderProjects(dayAllocation.projects || [], true, "day", { sourceDateKey: dayKey })}
                                             </div>
                                           )}
                                         </div>
@@ -1803,10 +1661,11 @@ export default function LongTermSchedulePage() {
                                 )}
                               </div>
                             );
-                          })}
+                          })
+                          .filter(Boolean)}
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               ))}
             </div>
@@ -1820,10 +1679,20 @@ export default function LongTermSchedulePage() {
           allScopes={scopesByJobKey}
           selectedScopeId={selectedModalScopeId}
           selectedScopeTitle={selectedModalScopeTitle}
+          selectedScheduleDate={selectedModalScheduleDate}
+          selectedScheduledHours={selectedModalScheduledHours}
+          selectedForemanId={selectedModalForemanId}
+          dayEditMode={Boolean(selectedModalScheduleDate)}
+          onLongTermAssignmentSaved={async () => {
+            await loadSchedules();
+          }}
           onClose={() => {
             setSelectedModalProject(null);
             setSelectedModalScopeId(null);
             setSelectedModalScopeTitle(null);
+            setSelectedModalScheduleDate(null);
+            setSelectedModalScheduledHours(null);
+            setSelectedModalForemanId(null);
           }}
           onScopesUpdated={(jobKey, updatedScopes) => {
             setScopesByJobKey((prev) => ({ ...prev, [jobKey]: updatedScopes }));

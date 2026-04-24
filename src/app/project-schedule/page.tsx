@@ -31,6 +31,8 @@ type ScopeRow = {
   tasks?: Array<string | ScheduleTask>;
   color?: string; // Hex color code for scope
   taskColors?: Record<string, string>; // Map of task names to color codes
+  schedulingMode?: "contiguous" | "specific-days";
+  selectedDays?: Array<{ date: string; hours: number; foreman?: string | null }>;
   scheduledHours: number;
   remainingHours: number;
 };
@@ -55,6 +57,13 @@ const asDate = (value: string | null) => {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const buildProjectJobKey = (project: Pick<ProjectRow, "customer" | "projectNumber" | "projectName">) =>
@@ -181,6 +190,18 @@ export default function ProjectSchedulePage() {
   const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null);
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
+  const [dayHoursEditor, setDayHoursEditor] = useState<{
+    projectId: string;
+    scopeId: string;
+    taskIndex: number | null;
+    scopeTitle: string;
+    dateKey: string;
+    dateLabel: string;
+    hours: number;
+    saving: boolean;
+    anchorX: number;
+    anchorY: number;
+  } | null>(null);
   const [viewMode, setViewMode] = useState<"day" | "week" | "month">("month");
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [expandedScopes, setExpandedScopes] = useState<Set<string>>(new Set());
@@ -486,6 +507,8 @@ export default function ProjectSchedulePage() {
         color?: string | null;
         taskColors?: Record<string, string> | null;
         tasks?: Array<string | ScheduleTask>;
+        schedulingMode?: 'contiguous' | 'specific-days' | null;
+        selectedDays?: Array<{ date: string; hours: number; foreman?: string | null }> | null;
       }> = Array.isArray(metadataJson?.data) ? metadataJson.data : [];
       const concreteOrders: ConcreteOrderSummary[] = Array.isArray(concreteOrdersJson?.data) ? concreteOrdersJson.data : [];
 
@@ -537,8 +560,30 @@ export default function ProjectSchedulePage() {
           const matchedHours = Number(matched?.hours);
           const matchedManpower = Number(matched?.manpower);
 
+          const scopeSchedulingMode: "contiguous" | "specific-days" =
+            scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
+          const scopeSelectedDays: Array<{ date: string; hours: number; foreman?: string | null }> =
+            Array.isArray(scope.selectedDays)
+              ? scope.selectedDays.map((entry: any) => ({
+                  date: String(entry?.date || ''),
+                  hours: Number(entry?.hours || 0),
+                  foreman: entry?.foreman || null,
+                }))
+              : [];
+
+          // IMPORTANT: If matched has an id (from ProjectScope table), use that for saving.
+          // The gantt_v2 scope ID is different from the ProjectScope ID.
+          const effectiveId = matched?.id || scope.id;
+          console.log('[loadProjects] Scope IDs:', { 
+            ganttId: scope.id, 
+            projectScopeId: matched?.id, 
+            using: effectiveId,
+            title: scope.title 
+          });
+
           return {
             ...scope,
+            id: effectiveId,  // Use ProjectScope ID if available, for save operations
             totalHours:
               Number.isFinite(matchedHours) && matchedHours >= 0
                 ? matchedHours
@@ -559,6 +604,8 @@ export default function ProjectSchedulePage() {
               matched?.taskColors && typeof matched.taskColors === "object"
                 ? matched.taskColors
                 : scope.taskColors,
+            schedulingMode: scopeSchedulingMode,
+            selectedDays: scopeSelectedDays,
             tasks: hydrateTaskYards(Array.isArray(matched?.tasks) ? matched!.tasks : (scope.tasks || []), yardsByDate),
           };
         });
@@ -592,6 +639,135 @@ export default function ProjectSchedulePage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [updateTableScrollWidth, timeline.length, viewMode, loading, projects.length]);
+
+  const openDayHoursEditor = useCallback((
+    event: React.MouseEvent<HTMLDivElement>,
+    project: ProjectRow,
+    scope: ScopeRow,
+    startIdx: number,
+    endIdx: number,
+    taskIndex: number | null = null,
+    label?: string,
+  ) => {
+    if (viewMode !== "day" || startIdx < 0 || endIdx < startIdx) return;
+
+    const coveredColumns = endIdx - startIdx + 1;
+    const barWidth = event.currentTarget.getBoundingClientRect().width;
+    const columnWidth = coveredColumns > 0 ? barWidth / coveredColumns : barWidth;
+    const clickedOffset = Math.max(0, Math.min(event.nativeEvent.offsetX, Math.max(barWidth - 1, 0)));
+    const relativeIdx = Math.min(coveredColumns - 1, Math.floor(clickedOffset / Math.max(columnWidth, 1)));
+    const timelineIdx = startIdx + relativeIdx;
+    const clickedDate = timeline[timelineIdx];
+    if (!clickedDate) return;
+
+    const dateKey = formatDateKey(clickedDate);
+    const dateLabel = clickedDate.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    console.log('[openDayHoursEditor] Opening editor for:', { projectId: project.id, scopeId: scope.id, scopeTitle: scope.title, dateKey });
+
+    let currentHours = 0;
+    const matchedSelectedDay = Array.isArray(scope.selectedDays)
+      ? scope.selectedDays.find((entry) => entry.date === dateKey)
+      : null;
+    if (matchedSelectedDay) {
+      currentHours = Number(matchedSelectedDay.hours || 0);
+    } else {
+      const scopeStart = asDate(scope.startDate);
+      const scopeEnd = asDate(scope.endDate);
+      const isWithinRange = scopeStart && scopeEnd && clickedDate >= scopeStart && clickedDate <= scopeEnd;
+      if (isWithinRange && scope.totalHours > 0) {
+        const durationDays = Math.max(1, Math.floor((scopeEnd.getTime() - scopeStart.getTime()) / 86400000) + 1);
+        currentHours = Math.round((scope.totalHours / durationDays) * 10) / 10;
+      }
+    }
+
+    setDayHoursEditor({
+      projectId: project.id,
+      scopeId: scope.id,
+      taskIndex,
+      scopeTitle: label || scope.title,
+      dateKey,
+      dateLabel,
+      hours: currentHours,
+      saving: false,
+      anchorX: Math.min(event.clientX, window.innerWidth - 240),
+      anchorY: Math.min(event.clientY + 12, window.innerHeight - 220),
+    });
+  }, [timeline, viewMode]);
+
+  const saveDayHoursEditor = useCallback(async () => {
+    if (!dayHoursEditor) return;
+
+    const project = projects.find((entry) => entry.id === dayHoursEditor.projectId);
+    const scope = project?.scopes?.find((entry) => entry.id === dayHoursEditor.scopeId);
+    if (!project || !scope) {
+      alert("Could not find the selected scope.");
+      return;
+    }
+
+    setDayHoursEditor((current) => (current ? { ...current, saving: true } : null));
+
+    try {
+      const existingSelectedDays = Array.isArray(scope.selectedDays)
+        ? [...scope.selectedDays]
+        : [];
+      const otherDays = existingSelectedDays.filter((entry) => entry.date !== dayHoursEditor.dateKey);
+      const nextSelectedDays = dayHoursEditor.hours > 0
+        ? [...otherDays, { date: dayHoursEditor.dateKey, hours: dayHoursEditor.hours }].sort((a, b) => a.date.localeCompare(b.date))
+        : otherDays;
+
+      const requestPayload = {
+        id: scope.id,
+        jobKey: buildProjectJobKey(project),
+        title: scope.title,
+        startDate: scope.startDate,
+        endDate: scope.endDate,
+        manpower: scope.crewSize,
+        description: scope.notes,
+        tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
+        hours: scope.totalHours,
+        schedulingMode: "specific-days",
+        selectedDays: nextSelectedDays,
+        allowWeekendSelectedDays: true,
+        syncToActiveSchedule: false,
+      };
+
+      console.log('[Client] Sending day hours save request:', requestPayload);
+
+      const response = await fetch("/api/project-scopes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestPayload),
+      });
+
+      const result = await response.json().catch((e) => {
+        console.error('[Client] Failed to parse JSON response:', e);
+        return {};
+      });
+
+      console.log('[Client] API Response:', { status: response.status, ok: response.ok, result });
+
+      if (!response.ok || !result?.success) {
+        const errorMsg = result?.error || `Failed to save day hours (HTTP ${response.status})`;
+        console.error('[Client] Save failed:', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      console.log('[Client] Save successful, reloading projects');
+      setDayHoursEditor(null);
+      await loadProjects();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[Client] Error in saveDayHoursEditor:', message);
+      alert(`Failed to save day hours:\n\n${message}\n\nCheck browser console for more details.`);
+      setDayHoursEditor((current) => (current ? { ...current, saving: false } : null));
+    }
+  }, [dayHoursEditor, loadProjects, projects]);
 
   const deleteProject = async (projectId: string, projectName: string) => {
     if (!window.confirm(`Delete project "${projectName}" and all its scopes? This cannot be undone.`)) return;
@@ -688,8 +864,8 @@ export default function ProjectSchedulePage() {
       hours: Number(scope.totalHours || 0),
       color: scope.color || undefined,
       taskColors: (scope.taskColors && typeof scope.taskColors === 'object' ? scope.taskColors as Record<string, string> : undefined),
-      schedulingMode: "contiguous",
-      selectedDays: [],
+      schedulingMode: scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous',
+      selectedDays: Array.isArray(scope.selectedDays) ? scope.selectedDays : [],
     }));
   }, [selectedProject]);
 
@@ -1035,7 +1211,13 @@ export default function ProjectSchedulePage() {
                                 {/* If scope has dates, show date-based bar */}
                                 {hasDates && hasBar && (
                                   <div
-                                    onClick={() => openProjectScopesModal(project, scope.id)}
+                                    onClick={(event) => {
+                                      if (viewMode === "day") {
+                                        openDayHoursEditor(event, project, scope, startIdx, endIdx);
+                                        return;
+                                      }
+                                      openProjectScopesModal(project, scope.id);
+                                    }}
                                     className="absolute top-1.5 h-6 rounded text-white text-xs font-semibold px-2 flex items-center cursor-pointer"
                                     style={{
                                       backgroundColor: SCOPE_LINE_COLOR,
@@ -1068,7 +1250,11 @@ export default function ProjectSchedulePage() {
                                     return (
                                       <div
                                         key={`${scope.id}-${alloc.period}`}
-                                        onClick={() => {
+                                        onClick={(event) => {
+                                          if (viewMode === "day") {
+                                            openDayHoursEditor(event, project, scope, allocIdx, allocIdx);
+                                            return;
+                                          }
                                           setSelectedScopeId(scope.id);
                                           setSelectedProject(project);
                                         }}
@@ -1153,7 +1339,13 @@ export default function ProjectSchedulePage() {
 
                                         {taskHasBar && taskStart && (
                                           <div
-                                            onClick={() => openProjectScopesModal(project, scope.id, taskIdx)}
+                                            onClick={(event) => {
+                                              if (viewMode === "day") {
+                                                openDayHoursEditor(event, project, scope, taskStartIdx, taskEndIdx, taskIdx, taskName);
+                                                return;
+                                              }
+                                              openProjectScopesModal(project, scope.id, taskIdx);
+                                            }}
                                             className="absolute top-1.5 h-5 rounded text-white text-[10px] font-semibold px-1.5 flex items-center cursor-pointer"
                                             style={{
                                               backgroundColor: TASK_LINE_COLOR,
@@ -1194,12 +1386,94 @@ export default function ProjectSchedulePage() {
         </div>
       </div>
 
+      {dayHoursEditor && (
+        <>
+          <div className="fixed inset-0 z-[150]" onClick={() => setDayHoursEditor(null)} />
+          <div
+            className="fixed z-[151] w-72 rounded-3xl border border-stone-200 bg-white/95 p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur-sm"
+            style={{ left: dayHoursEditor.anchorX, top: dayHoursEditor.anchorY }}
+          >
+            <div className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 truncate">
+              {dayHoursEditor.taskIndex === null ? "Scope Day Hours" : "Task Day Hours"}
+            </div>
+            <div className="mt-2 text-sm font-black text-slate-900 leading-tight break-words">{dayHoursEditor.scopeTitle}</div>
+            <div className="mt-1 text-xs font-medium text-slate-500">{dayHoursEditor.dateLabel}</div>
+
+            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50/80 p-3">
+              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Adjust Hours</div>
+              <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDayHoursEditor((current) => current ? { ...current, hours: Math.max(0, Math.round((current.hours - 0.5) * 10) / 10) } : null)}
+                className="h-11 w-11 rounded-xl border border-stone-200 bg-white text-2xl font-black leading-none text-slate-700 transition-colors hover:bg-stone-100"
+              >
+                -
+              </button>
+              <div className="flex-1 rounded-2xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={dayHoursEditor.hours}
+                  onChange={(event) => setDayHoursEditor((current) => current ? { ...current, hours: Math.max(0, parseFloat(event.target.value) || 0) } : null)}
+                  className="h-8 w-full bg-transparent text-center text-3xl font-black text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <div className="text-center text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Hours</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDayHoursEditor((current) => current ? { ...current, hours: Math.round((current.hours + 0.5) * 10) / 10 } : null)}
+                className="h-11 w-11 rounded-xl border border-stone-200 bg-white text-2xl font-black leading-none text-slate-700 transition-colors hover:bg-stone-100"
+              >
+                +
+              </button>
+            </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDayHoursEditor((current) => current ? { ...current, hours: Math.max(0, Math.round((current.hours - 2) * 10) / 10) } : null)}
+                  className="flex-1 rounded-xl border border-stone-200 bg-white px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 transition-colors hover:bg-stone-100"
+                >
+                  -2h
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDayHoursEditor((current) => current ? { ...current, hours: Math.round((current.hours + 2) * 10) / 10 } : null)}
+                  className="flex-1 rounded-xl border border-stone-200 bg-white px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 transition-colors hover:bg-stone-100"
+                >
+                  +2h
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDayHoursEditor(null)}
+                className="flex-1 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 transition-colors hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveDayHoursEditor}
+                disabled={dayHoursEditor.saving}
+                className="flex-1 rounded-xl bg-orange-600 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-orange-700 disabled:opacity-60"
+              >
+                {dayHoursEditor.saving ? "Saving" : "Save"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {selectedProject && selectedProjectInfo && (
         <ProjectScopesModal
           project={selectedProjectInfo}
           scopes={selectedProjectScopes}
           selectedScopeId={selectedScopeId}
           selectedTaskIndex={selectedTaskIndex}
+          allowLongTermAssignmentEditing
           onClose={() => {
             setSelectedProject(null);
             setSelectedScopeId(null);

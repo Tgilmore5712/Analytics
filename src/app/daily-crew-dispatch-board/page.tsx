@@ -86,6 +86,19 @@ const formatDateKey = (date: Date) => {
 const DISPATCH_TIME_ZONE = "America/New_York";
 const DISPATCH_ROLLOVER_HOUR = 12;
 
+function parseConfiguredEmails(raw: string | undefined): string[] {
+  if (!raw || !raw.trim()) {
+    return [];
+  }
+
+  return raw
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email.length > 0);
+}
+
+const ABSENCE_NOTIFICATION_EMAILS = parseConfiguredEmails(process.env.NEXT_PUBLIC_ABSENCE_NOTIFICATION_EMAILS);
+
 function normalizePersonToken(value: string): string {
   return String(value || "")
     .trim()
@@ -820,10 +833,7 @@ function DailyCrewDispatchBoardContent() {
 
     setSendingEmail(true);
     try {
-      // Find recipients: Management, PMs, Office, Foremen
-      
-      // FOR TESTING: Distro restricted to Todd only
-      const recipients = ["todd@pmcdecor.com"];
+      const recipients = [...ABSENCE_NOTIFICATION_EMAILS];
 
       const recipientPhones = Array.from(new Set(
         recipients
@@ -831,19 +841,6 @@ function DailyCrewDispatchBoardContent() {
           .filter((phone): phone is string => !!phone)
       ));
       
-      /* 
-      // Original dynamic distribution logic (Re-enable after testing)
-      const dynamicRecipients = allEmployees
-        .filter(e => {
-          const roleNormalized = (e.jobTitle || "").toLowerCase();
-          const hasRole = recipientRoles.some(r => r.toLowerCase() === roleNormalized);
-          const hasEmail = !!e.email && e.email.includes("@");
-          const isActive = e.isActive !== false;
-          return isActive && hasEmail && hasRole;
-        })
-        .map(e => e.email!);
-      */
-
       if (recipients.length === 0) {
         // Fallback: If no managers found, at least notify the current user if they have an email
         if (user?.email) {

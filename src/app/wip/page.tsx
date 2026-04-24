@@ -1673,6 +1673,7 @@ function WIPReportContent() {
           project={selectedGanttProject}
           scopes={scopesByJobKey[selectedGanttProject.jobKey] || []}
           selectedScopeId={null}
+          allowLongTermAssignmentEditing
           onClose={() => setSelectedGanttProject(null)}
           onScopesUpdated={async (jobKey, updatedScopes) => {
             const enriched = getEnrichedScopes(updatedScopes, projects);

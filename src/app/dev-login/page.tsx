@@ -1,5 +1,40 @@
 "use client";
 
+type DevLoginUser = {
+  email: string;
+  name: string;
+};
+
+function parseDevLoginUsers(): DevLoginUser[] {
+  const raw = process.env.NEXT_PUBLIC_DEV_LOGIN_USERS_JSON;
+  if (!raw || !raw.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter(
+        (item): item is DevLoginUser =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as { email?: unknown }).email === "string" &&
+          typeof (item as { name?: unknown }).name === "string"
+      )
+      .map((item) => ({
+        email: item.email.trim(),
+        name: item.name.trim(),
+      }))
+      .filter((item) => item.email.length > 0 && item.name.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Development Login Page
  * Makes it easy to test with different user accounts locally
@@ -10,22 +45,7 @@ export default function DevLoginPage() {
     return null;
   }
 
-  const testUsers = [
-    { email: 'todd@pmcdecor.com', name: 'Todd (Admin - Full Access)' },
-    { email: 'isaac@pmcdecor.com', name: 'Isaac (Full Access)' },
-    { email: 'mervin@pmcdecor.com', name: 'Mervin (PM)' },
-    { email: 'abner@pmcdecor.com', name: 'Abner (PM)' },
-    { email: 'john@pmcdecor.com', name: 'John (Operations)' },
-    { email: 'matt@pmcdecor.com', name: 'Matt (Field)' },
-    { email: 'matthew@pmcdecor.com', name: 'Matthew (Field)' },
-    { email: 'jason@pmcdecor.com', name: 'Jason (Field)' },
-    { email: 'levi@paradise-concrete.com', name: 'Levi PC (Full Access)' },
-    { email: 'rick@pmcdecor.com', name: 'Rick (Full Access)' },
-    { email: 'dave@pmcdecor.com', name: 'Dave (Admin - Full Access)' },
-    { email: 'david@pmcdecor.com', name: 'David (Admin - Full Access)' },
-    { email: 'levi@pmcdecor.com', name: 'Levi (KPI Only)' },
-    { email: 'shelly@pmcdecor.com', name: 'Shelly (KPI Only)' },
-  ];
+  const testUsers = parseDevLoginUsers();
 
   return (
     <div style={{ 
@@ -86,6 +106,12 @@ export default function DevLoginPage() {
                   <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>{user.email}</div>
                 </a>
               ))}
+
+              {testUsers.length === 0 && (
+                <div style={{ fontSize: 14, color: '#666', padding: '8px 0' }}>
+                  No preset users configured. Set NEXT_PUBLIC_DEV_LOGIN_USERS_JSON to populate quick-login accounts.
+                </div>
+              )}
             </div>
 
             <div style={{ 

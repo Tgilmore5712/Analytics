@@ -42,7 +42,17 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
   const [monthJobs, setMonthJobs] = useState<MonthJob[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedScopeId, setSelectedScopeId] = useState<string | null>(null);
-  
+  const [dayPopover, setDayPopover] = useState<{
+    anchorX: number;
+    anchorY: number;
+    date: string;
+    dateLabel: string;
+    hours: number;
+    scopeId: string;
+    scopeTitle: string;
+    saving: boolean;
+  } | null>(null);
+
   const [startFilter, setStartFilter] = useState(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -297,6 +307,80 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
 
   const unitWidth = viewMode === "day" ? 50 : viewMode === "week" ? 80 : 100;
 
+  const handleBarDayClick = useCallback((e: React.MouseEvent<HTMLDivElement>, task: GanttTask) => {
+    if (task.type !== 'scope' || !task.scopeId) return;
+    const uWidth = viewMode === 'day' ? 50 : 80;
+    const barStartIdx = units.findIndex(u => task.start <= u.date);
+    const actualS = barStartIdx === -1 ? 0 : barStartIdx;
+    const clickedUnitIdx = Math.min(actualS + Math.floor(e.nativeEvent.offsetX / uWidth), units.length - 1);
+    const clickedUnit = units[clickedUnitIdx];
+    if (!clickedUnit) return;
+
+    const dateStr = formatDateInput(clickedUnit.date);
+    const dateLabel = clickedUnit.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const scope = scopes.find(s => s.id === task.scopeId);
+
+    let currentHours = 0;
+    if (scope?.schedulingMode === 'specific-days' && scope.selectedDays) {
+      currentHours = scope.selectedDays.find(d => d.date === dateStr)?.hours || 0;
+    } else if (scope) {
+      const start = parseDateInput(scope.startDate || '') || task.start;
+      const end = parseDateInput(scope.endDate || '') || task.end;
+      const totalDays = Math.max(1, diffInDays(start, end) + 1);
+      const businessDays = Math.max(1, Math.round(totalDays * 5 / 7));
+      currentHours = Math.round(((scope.hours || 0) / businessDays) * 10) / 10;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDayPopover({
+      anchorX: Math.min(e.clientX, window.innerWidth - 230),
+      anchorY: rect.bottom + 6,
+      date: dateStr,
+      dateLabel,
+      hours: currentHours,
+      scopeId: task.scopeId,
+      scopeTitle: task.title || 'Scope',
+      saving: false,
+    });
+  }, [scopes, units, viewMode]);
+
+  const handleDayHoursSave = useCallback(async () => {
+    if (!dayPopover) return;
+    setDayPopover(prev => prev ? { ...prev, saving: true } : null);
+    try {
+      const scope = scopes.find(s => s.id === dayPopover.scopeId);
+      if (!scope) throw new Error('Scope not found');
+      const otherDays = (scope.selectedDays || []).filter(d => d.date !== dayPopover.date);
+      const newSelectedDays = dayPopover.hours > 0
+        ? [...otherDays, { date: dayPopover.date, hours: dayPopover.hours }].sort((a, b) => a.date.localeCompare(b.date))
+        : otherDays;
+      const res = await fetch('/api/project-scopes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: scope.id,
+          jobKey: project.jobKey,
+          title: scope.title,
+          startDate: scope.startDate,
+          endDate: scope.endDate,
+          schedulingMode: 'specific-days',
+          selectedDays: newSelectedDays,
+          syncToActiveSchedule: false,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.success) throw new Error(result?.error || 'Failed to save');
+      setScopes(prev => prev.map(s => s.id === dayPopover.scopeId
+        ? { ...s, schedulingMode: 'specific-days', selectedDays: newSelectedDays }
+        : s
+      ));
+      setDayPopover(null);
+    } catch (err) {
+      alert('Failed to save: ' + (err instanceof Error ? err.message : String(err)));
+      setDayPopover(prev => prev ? { ...prev, saving: false } : null);
+    }
+  }, [dayPopover, scopes, project.jobKey]);
+
   return (
     <div className="fixed inset-y-0 right-0 w-[90%] md:w-[70%] max-w-5xl bg-white/70 backdrop-blur-3xl shadow-2xl z-[120] flex flex-col border-l border-gray-200 animate-in slide-in-from-right duration-500">
       {/* Header */}
@@ -365,9 +449,12 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
                         )}
                       </div>
                       <div className="relative col-span-full py-3" style={{ gridColumn: `2 / span ${units.length}` }}>
-                        <div 
-                          onClick={() => {
-                            if (t.type === 'scope') {
+                        <div
+                          title={viewMode === 'day' && t.type === 'scope' ? 'Click to edit hours for that day' : undefined}
+                          onClick={(e) => {
+                            if (viewMode === 'day' && t.type === 'scope') {
+                              handleBarDayClick(e, t);
+                            } else if (t.type === 'scope') {
                               setSelectedScopeId(t.scopeId || null);
                               setIsModalOpen(true);
                             } else {
@@ -378,7 +465,9 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
                           className={`h-7 rounded-lg shadow-sm flex items-center px-3 cursor-pointer hover:brightness-110 transition-all text-white text-[9px] font-black uppercase tracking-widest overflow-hidden whitespace-nowrap ${t.type === 'project' ? 'bg-gray-900 border border-gray-800' : 'bg-teal-600'}`}
                           style={{ marginLeft: `${left}px`, width: `${width}px` }}
                         >
-                          {width > 40 && (t.type === 'project' ? 'PROJECT DURATION' : t.title)}
+                          {width > 40 && (viewMode === 'day' && t.type === 'scope'
+                            ? `${t.title} · tap day`
+                            : t.type === 'project' ? 'PROJECT DURATION' : t.title)}
                         </div>
                       </div>
                     </div>
@@ -386,6 +475,56 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
                 })}
               </div>
             </div>
+
+            {/* Day hours popover */}
+            {dayPopover && (
+              <>
+                <div className="fixed inset-0 z-[200]" onClick={() => setDayPopover(null)} />
+                <div
+                  className="fixed z-[201] bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 w-52"
+                  style={{ left: dayPopover.anchorX, top: dayPopover.anchorY }}
+                >
+                  <div className="text-[9px] font-black uppercase tracking-widest text-teal-600 mb-0.5 truncate">{dayPopover.scopeTitle}</div>
+                  <div className="text-[11px] font-bold text-gray-700 mb-3">{dayPopover.dateLabel}</div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setDayPopover(prev => prev ? { ...prev, hours: Math.max(0, Math.round((prev.hours - 0.5) * 10) / 10) } : null)}
+                      className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-lg flex items-center justify-center flex-shrink-0"
+                    >−</button>
+                    <div className="flex-1 text-center">
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={dayPopover.hours}
+                        onChange={e => setDayPopover(prev => prev ? { ...prev, hours: Math.max(0, parseFloat(e.target.value) || 0) } : null)}
+                        className="w-full text-center text-xl font-black text-gray-900 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      />
+                      <div className="text-[9px] text-gray-400 uppercase tracking-wider mt-0.5">hours</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDayPopover(prev => prev ? { ...prev, hours: Math.round((prev.hours + 0.5) * 10) / 10 } : null)}
+                      className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-lg flex items-center justify-center flex-shrink-0"
+                    >+</button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDayPopover(null)}
+                      className="flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
+                    >Cancel</button>
+                    <button
+                      type="button"
+                      disabled={dayPopover.saving}
+                      onClick={handleDayHoursSave}
+                      className="flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                    >{dayPopover.saving ? '…' : 'Save'}</button>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
@@ -431,6 +570,7 @@ export default function ProjectGanttDrawer({ project, onClose }: ProjectGanttDra
           }}
           scopes={scopes}
           selectedScopeId={selectedScopeId}
+          allowLongTermAssignmentEditing
           onClose={() => setIsModalOpen(false)}
           onScopesUpdated={(jk, updated) => {
             setScopes(updated);

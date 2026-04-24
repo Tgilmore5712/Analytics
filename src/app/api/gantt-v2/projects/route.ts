@@ -13,6 +13,35 @@ import { getErrorMessage, shouldFallbackToEmptyRead, withDatabaseRetry } from '@
 export const dynamic = 'force-dynamic';
 const GANTT_PROJECTS_MAINTENANCE_TTL_MS = 60_000;
 let lastGanttProjectsMaintenanceAt = 0;
+let ganttProjectsMaintenancePromise: Promise<void> | null = null;
+
+const maybeRunGanttProjectsMaintenanceInBackground = () => {
+  const now = Date.now();
+  if (now - lastGanttProjectsMaintenanceAt <= GANTT_PROJECTS_MAINTENANCE_TTL_MS) {
+    return;
+  }
+
+  if (ganttProjectsMaintenancePromise) {
+    return;
+  }
+
+  lastGanttProjectsMaintenanceAt = now;
+  ganttProjectsMaintenancePromise = (async () => {
+    try {
+      await withDatabaseRetry(async () => {
+        await syncGanttV2ProjectsFromCanonicalProjects();
+        await consolidateDuplicateGanttV2Projects();
+        await consolidateDuplicateGanttV2Scopes();
+      });
+    } catch (error) {
+      console.warn('[gantt-v2/projects] Background maintenance failed:', getErrorMessage(error));
+      // Allow a near-term retry after a failed pass.
+      lastGanttProjectsMaintenanceAt = 0;
+    } finally {
+      ganttProjectsMaintenancePromise = null;
+    }
+  })();
+};
 
 export async function GET() {
   try {
@@ -20,15 +49,10 @@ export async function GET() {
     const procoreAccessToken = String(cookieStore.get('procore_access_token')?.value || '').trim() || null;
     const procoreCompanyId = String(cookieStore.get('procore_company_id')?.value || '').trim() || null;
 
-    const projects = await withDatabaseRetry(async () => {
-      await ensureGanttV2Schema();
-      const now = Date.now();
-      if (now - lastGanttProjectsMaintenanceAt > GANTT_PROJECTS_MAINTENANCE_TTL_MS) {
-        await syncGanttV2ProjectsFromCanonicalProjects();
-        await consolidateDuplicateGanttV2Projects();
-        await consolidateDuplicateGanttV2Scopes();
-        lastGanttProjectsMaintenanceAt = now;
-      }
+    await withDatabaseRetry(() => ensureGanttV2Schema());
+    maybeRunGanttProjectsMaintenanceInBackground();
+
+    const projects = await withDatabaseRetry(() => {
       return getGanttV2ProjectsWithScopes({
         procoreAccessToken,
         procoreCompanyId,

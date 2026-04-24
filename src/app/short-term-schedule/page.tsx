@@ -1801,6 +1801,7 @@ function ShortTermScheduleContent() {
             selectedScheduledHours={selectedGanttHours}
             selectedForemanId={selectedGanttForemanId}
             dayEditMode={selectedGanttDayEditMode}
+            allowLongTermAssignmentEditing
             companyCapacity={companyCapacity}
             onClose={() => {
               setSelectedGanttProject(null);

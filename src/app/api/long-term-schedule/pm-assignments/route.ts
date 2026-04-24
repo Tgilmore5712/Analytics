@@ -12,6 +12,71 @@ type PMAssignment = {
   updatedAt: string;
 };
 
+type PMAssignmentRow = {
+  assignment_key: string;
+  job_key: string;
+  pm_id: string;
+  updated_at: Date;
+};
+
+const normalizeProjectAssignmentKey = (assignmentKey: string, jobKey: string) =>
+  (jobKey || assignmentKey || '').trim();
+
+async function deleteStaleScopeLevelAssignments(jobKey: string) {
+  const normalizedJobKey = String(jobKey || '').trim();
+  if (!normalizedJobKey) return;
+
+  await prisma.$executeRaw`
+    DELETE FROM long_term_pm_assignments
+    WHERE job_key = ${normalizedJobKey}
+      AND assignment_key <> ${normalizedJobKey}
+  `;
+}
+
+async function reconcileProjectLevelAssignments() {
+  const rows = await prisma.$queryRaw<PMAssignmentRow[]>`
+    SELECT assignment_key, job_key, pm_id, updated_at
+    FROM long_term_pm_assignments
+    ORDER BY updated_at DESC
+  `;
+
+  const groupedByJobKey = new Map<string, PMAssignmentRow[]>();
+  rows.forEach((row) => {
+    const normalizedJobKey = String(row.job_key || '').trim();
+    if (!normalizedJobKey) return;
+    if (!groupedByJobKey.has(normalizedJobKey)) {
+      groupedByJobKey.set(normalizedJobKey, []);
+    }
+    groupedByJobKey.get(normalizedJobKey)!.push(row);
+  });
+
+  for (const [jobKey, groupRows] of groupedByJobKey.entries()) {
+    if (groupRows.length === 0) continue;
+
+    const projectLevelRow = groupRows.find(
+      (row) => String(row.assignment_key || '').trim() === jobKey
+    );
+    const winningRow = projectLevelRow || groupRows[0];
+    if (!winningRow?.pm_id) continue;
+
+    await prisma.$executeRaw`
+      INSERT INTO long_term_pm_assignments (assignment_key, job_key, pm_id, updated_at)
+      VALUES (${jobKey}, ${jobKey}, ${winningRow.pm_id}, ${winningRow.updated_at})
+      ON CONFLICT (assignment_key)
+      DO UPDATE SET
+        job_key = EXCLUDED.job_key,
+        pm_id = EXCLUDED.pm_id,
+        updated_at = EXCLUDED.updated_at
+    `;
+
+    await prisma.$executeRaw`
+      DELETE FROM long_term_pm_assignments
+      WHERE job_key = ${jobKey}
+        AND assignment_key <> ${jobKey}
+    `;
+  }
+}
+
 async function backfillLegacyAssignmentsIfEmpty() {
   // One-time migration from legacy local JSON file if table is empty.
   const existingCountRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
@@ -58,15 +123,12 @@ async function backfillLegacyAssignmentsIfEmpty() {
 export async function GET() {
   try {
     await backfillLegacyAssignmentsIfEmpty();
+    await reconcileProjectLevelAssignments();
 
-    const rows = await prisma.$queryRaw<Array<{
-      assignment_key: string;
-      job_key: string;
-      pm_id: string;
-      updated_at: Date;
-    }>>`
+    const rows = await prisma.$queryRaw<PMAssignmentRow[]>`
       SELECT assignment_key, job_key, pm_id, updated_at
       FROM long_term_pm_assignments
+      WHERE assignment_key = job_key
       ORDER BY updated_at DESC
     `;
 
@@ -95,7 +157,8 @@ export async function POST(request: NextRequest) {
     const assignmentKey = (body?.assignmentKey || '').trim();
     const jobKey = (body?.jobKey || '').trim();
     const pmId = (body?.pmId || '').trim();
-    const resolvedKey = assignmentKey || jobKey;
+    const resolvedKey = normalizeProjectAssignmentKey(assignmentKey, jobKey);
+    const normalizedJobKey = jobKey || resolvedKey;
 
     if (!resolvedKey || !pmId) {
       return NextResponse.json(
@@ -105,9 +168,11 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
+    await deleteStaleScopeLevelAssignments(normalizedJobKey);
+
     await prisma.$executeRaw`
       INSERT INTO long_term_pm_assignments (assignment_key, job_key, pm_id, updated_at)
-      VALUES (${resolvedKey}, ${jobKey || resolvedKey}, ${pmId}, ${new Date(now)})
+      VALUES (${resolvedKey}, ${normalizedJobKey}, ${pmId}, ${new Date(now)})
       ON CONFLICT (assignment_key)
       DO UPDATE SET
         job_key = EXCLUDED.job_key,
@@ -117,7 +182,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: { assignmentKey: resolvedKey, jobKey: jobKey || resolvedKey, pmId, updatedAt: now },
+      data: { assignmentKey: resolvedKey, jobKey: normalizedJobKey, pmId, updatedAt: now },
     });
   } catch (error) {
     console.error('Failed to save PM assignment:', error);
@@ -135,7 +200,8 @@ export async function DELETE(request: NextRequest) {
     const body = await request.json();
     const assignmentKey = (body?.assignmentKey || '').trim();
     const jobKey = (body?.jobKey || '').trim();
-    const resolvedKey = assignmentKey || jobKey;
+    const resolvedKey = normalizeProjectAssignmentKey(assignmentKey, jobKey);
+    const normalizedJobKey = jobKey || resolvedKey;
 
     if (!resolvedKey) {
       return NextResponse.json(
@@ -143,6 +209,8 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    await deleteStaleScopeLevelAssignments(normalizedJobKey);
 
     await prisma.$executeRaw`
       DELETE FROM long_term_pm_assignments

@@ -5,6 +5,7 @@ export default function SeedKPICardsPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const seedDatabase = async () => {
     setLoading(true);
@@ -15,7 +16,11 @@ export default function SeedKPICardsPage() {
       const res = await fetch("/api/kpi-cards/seed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seedFromDefaults: true }),
+        body: JSON.stringify({
+          seedFromDefaults: true,
+          confirmSeed: true,
+          confirmPhrase: "SEED KPI CARDS",
+        }),
       });
 
       const json = await res.json();
@@ -29,6 +34,7 @@ export default function SeedKPICardsPage() {
       }
 
       setMessage(json.message || "Successfully seeded KPI cards!");
+      setShowConfirm(false);
     } catch (err) {
       setError(`Failed to seed data: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
@@ -103,23 +109,78 @@ export default function SeedKPICardsPage() {
         </div>
       )}
 
-      <button
-        onClick={seedDatabase}
-        disabled={loading}
-        style={{
-          width: "100%",
-          padding: "12px",
-          backgroundColor: loading ? "#ccc" : "#0066cc",
-          color: "white",
-          border: "none",
-          borderRadius: "4px",
-          fontSize: "16px",
-          fontWeight: 600,
-          cursor: loading ? "not-allowed" : "pointer",
-        }}
-      >
-        {loading ? "Seeding Database..." : "Seed Database"}
-      </button>
+      {showConfirm ? (
+        <div
+          style={{
+            backgroundColor: "#fff3cd",
+            border: "2px solid #ff9800",
+            borderRadius: "8px",
+            padding: "20px",
+            marginBottom: "20px",
+          }}
+        >
+          <p style={{ margin: "0 0 15px 0", fontWeight: 600, color: "#333" }}>
+            ⚠️ Are you sure you want to seed the KPI database?
+          </p>
+          <p style={{ margin: "0 0 15px 0", color: "#555", fontSize: "14px" }}>
+            This will populate default KPI card templates. <strong>Existing manually-entered data will be preserved.</strong>
+          </p>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button
+              onClick={seedDatabase}
+              disabled={loading}
+              style={{
+                flex: 1,
+                padding: "10px",
+                backgroundColor: "#ff9800",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? "Seeding..." : "Yes, Seed Database"}
+            </button>
+            <button
+              onClick={() => setShowConfirm(false)}
+              disabled={loading}
+              style={{
+                flex: 1,
+                padding: "10px",
+                backgroundColor: "#ccc",
+                color: "#333",
+                border: "none",
+                borderRadius: "4px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowConfirm(true)}
+          disabled={loading}
+          style={{
+            width: "100%",
+            padding: "12px",
+            backgroundColor: loading ? "#ccc" : "#0066cc",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            fontSize: "16px",
+            fontWeight: 600,
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+        >
+          {loading ? "Seeding Database..." : "Seed Database"}
+        </button>
+      )}
 
       <div style={{ marginTop: "20px", fontSize: "12px", color: "#999" }}>
         <p>After seeding, you can:</p>

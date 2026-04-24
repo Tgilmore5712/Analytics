@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { auth0 } from '@/lib/auth0';
+import { logAuditEvent } from '@/lib/auditLog';
 
 type KPICardRow = {
   kpi: string;
@@ -51,6 +53,24 @@ function parseStoredPayload(value: string): StoredCardPayload {
   }
 }
 
+function isSameOriginRequest(request: NextRequest): boolean {
+  const origin = request.headers.get('origin');
+  const host = request.headers.get('host');
+  if (!origin || !host) return process.env.NODE_ENV !== 'production';
+
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+function findRowValues(rows: KPICardRow[] | undefined, kpiName: string): string[] {
+  if (!Array.isArray(rows)) return [];
+  const match = rows.find((row) => (row?.kpi || '').trim().toLowerCase() === kpiName.trim().toLowerCase());
+  return Array.isArray(match?.values) ? match!.values : [];
+}
+
 export async function GET() {
   try {
     const rows = await prisma.estimatingConstant.findMany({
@@ -85,10 +105,20 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isSameOriginRequest(request)) {
+      return NextResponse.json(
+        { success: false, error: 'Cross-origin write blocked' },
+        { status: 403 }
+      );
+    }
+
+    const session = await auth0.getSession(request);
+    const actorEmail = session?.user?.email?.toString().trim() || 'unknown';
     const body = await request.json();
     const cardName = (body?.cardName || '').toString().trim();
     const rows = Array.isArray(body?.rows) ? body.rows : [];
-    const updatedBy = (body?.updatedBy || 'unknown').toString();
+    const clientUpdatedBy = (body?.updatedBy || '').toString().trim();
+    const updatedBy = actorEmail !== 'unknown' ? actorEmail : (clientUpdatedBy || 'unknown');
 
     if (!cardName) {
       return NextResponse.json(
@@ -96,6 +126,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const key = toCardKey(cardName);
+    const existing = await prisma.estimatingConstant.findUnique({
+      where: { name: key },
+      select: { id: true, value: true },
+    });
+
+    const previousPayload = existing?.value ? parseStoredPayload(existing.value) : {};
 
     const record = await prisma.estimatingConstant.upsert({
       where: { name: toCardKey(cardName) },
@@ -107,6 +145,39 @@ export async function POST(request: NextRequest) {
         name: toCardKey(cardName),
         category: KPI_CARD_CATEGORY,
         value: JSON.stringify({ cardName, rows, updatedBy }),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        action: existing ? 'UPDATE' : 'CREATE',
+        entity: 'EstimatingConstant',
+        entityId: record.id,
+        userEmail: actorEmail,
+        changes: {
+          category: KPI_CARD_CATEGORY,
+          name: key,
+          cardName,
+          actorEmail,
+          clientUpdatedBy: clientUpdatedBy || null,
+          previousUpdatedBy: previousPayload.updatedBy || null,
+          rowCountBefore: Array.isArray(previousPayload.rows) ? previousPayload.rows.length : 0,
+          rowCountAfter: rows.length,
+          revenueActualHoursBefore: findRowValues(previousPayload.rows, 'Revenue Actual Hours Worked'),
+          revenueActualHoursAfter: findRowValues(rows, 'Revenue Actual Hours Worked'),
+        },
+      },
+    });
+
+    await logAuditEvent(request, {
+      action: 'update',
+      resource: 'kpi-card',
+      target: key,
+      details: {
+        cardName,
+        actorEmail,
+        rowCount: rows.length,
+        operation: existing ? 'update' : 'create',
       },
     });
 

@@ -152,8 +152,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ? existingScope[0].end_date.toISOString().slice(0, 10)
       : null;
     const didDatesChange = previousStartDate !== startDate || previousEndDate !== endDate;
+    const didScheduleAffectingFieldsChange =
+      previousTitle !== title ||
+      previousStartDate !== startDate ||
+      previousEndDate !== endDate ||
+      Number(existingScope[0].total_hours || 0) !== (Number.isFinite(totalHours) ? totalHours : 0) ||
+      (existingScope[0].crew_size === null ? null : Number(existingScope[0].crew_size)) !== crewSize;
 
-    if (previousTitle && previousTitle !== title) {
+    if (didScheduleAffectingFieldsChange && previousTitle && previousTitle !== title) {
       const project = await prisma.$queryRawUnsafe<Array<{
         customer: string | null;
         project_number: string | null;
@@ -178,16 +184,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Sync to ActiveSchedule
-    await syncScopeToActiveSchedule(
-      scopeId,
-      projectId,
-      title,
-      startDate,
-      endDate,
-      Number.isFinite(totalHours) ? totalHours : 0,
-      crewSize
-    );
-    console.log('[PUT] Scope sync complete');
+    if (didScheduleAffectingFieldsChange) {
+      await syncScopeToActiveSchedule(
+        scopeId,
+        projectId,
+        title,
+        startDate,
+        endDate,
+        Number.isFinite(totalHours) ? totalHours : 0,
+        crewSize
+      );
+      console.log('[PUT] Scope sync complete');
+    }
 
     let cascadeUpdates: Array<{
       scopeId: string;

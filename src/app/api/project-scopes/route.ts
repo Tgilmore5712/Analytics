@@ -21,6 +21,7 @@ type ScopeTaskEntry = {
 };
 
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+let ensureProjectScopeColumnsPromise: Promise<void> | null = null;
 
 function toSelectedDayEntries(value: unknown): SelectedDayEntry[] | null | undefined {
   if (value === undefined) return undefined;
@@ -115,8 +116,14 @@ function normalizeScopeTasks(value: unknown): ScopeTaskEntry[] | null | undefine
     .filter((entry): entry is ScopeTaskEntry => Boolean(entry));
 }
 
-async function validateSpecificDays(entries: SelectedDayEntry[] | null, schedulingMode: 'contiguous' | 'specific-days') {
+async function validateSpecificDays(
+  entries: SelectedDayEntry[] | null,
+  schedulingMode: 'contiguous' | 'specific-days',
+  options?: { allowWeekendSelectedDays?: boolean }
+) {
   if (schedulingMode !== 'specific-days') return { valid: true as const };
+
+  const allowWeekendSelectedDays = options?.allowWeekendSelectedDays === true;
 
   const selected = Array.isArray(entries) ? entries : [];
   if (selected.length === 0) {
@@ -134,7 +141,7 @@ async function validateSpecificDays(entries: SelectedDayEntry[] | null, scheduli
     seen.add(entry.date);
 
     const day = getDateKeyWeekday(entry.date);
-    if (day === 0 || day === 6) {
+    if (!allowWeekendSelectedDays && (day === 0 || day === 6)) {
       return { valid: false as const, error: `Selected day is on a weekend: ${entry.date}` };
     }
   }
@@ -158,18 +165,24 @@ async function validateSpecificDays(entries: SelectedDayEntry[] | null, scheduli
 }
 
 async function ensureProjectScopeColumns() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "ProjectScope"
-        ADD COLUMN IF NOT EXISTS "schedulingMode" TEXT NOT NULL DEFAULT 'contiguous',
-        ADD COLUMN IF NOT EXISTS "selectedDays" JSONB,
-        ADD COLUMN IF NOT EXISTS "color" VARCHAR(7),
-        ADD COLUMN IF NOT EXISTS "taskColors" JSONB
-    `);
-  } catch (error) {
-    // Production DBs may disallow DDL from the app role. Continue with fallback selects.
-    console.warn('ensureProjectScopeColumns skipped:', error);
+  if (!ensureProjectScopeColumnsPromise) {
+    ensureProjectScopeColumnsPromise = (async () => {
+      try {
+        await prisma.$executeRawUnsafe(`
+          ALTER TABLE "ProjectScope"
+            ADD COLUMN IF NOT EXISTS "schedulingMode" TEXT NOT NULL DEFAULT 'contiguous',
+            ADD COLUMN IF NOT EXISTS "selectedDays" JSONB,
+            ADD COLUMN IF NOT EXISTS "color" VARCHAR(7),
+            ADD COLUMN IF NOT EXISTS "taskColors" JSONB
+        `);
+      } catch (error) {
+        // Production DBs may disallow DDL from the app role. Continue with fallback selects.
+        console.warn('ensureProjectScopeColumns skipped:', error);
+      }
+    })();
   }
+
+  await ensureProjectScopeColumnsPromise;
 }
 
 export async function GET(request: NextRequest) {
@@ -342,6 +355,7 @@ export async function POST(request: NextRequest) {
       schedulingMode,
       selectedDays,
       syncToActiveSchedule,
+      allowWeekendSelectedDays,
     } = body;
 
     const normalizedSchedulingMode =
@@ -357,7 +371,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const specificDaysValidation = await validateSpecificDays(normalizedSelectedDays, normalizedSchedulingMode);
+    const specificDaysValidation = await validateSpecificDays(normalizedSelectedDays, normalizedSchedulingMode, {
+      allowWeekendSelectedDays: allowWeekendSelectedDays === true,
+    });
     if (!specificDaysValidation.valid) {
       return NextResponse.json(
         { success: false, error: specificDaysValidation.error },
@@ -429,6 +445,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('[PUT] Request body:', JSON.stringify(body, null, 2));
     const {
       id,
       title,
@@ -443,7 +460,9 @@ export async function PUT(request: NextRequest) {
       schedulingMode,
       selectedDays,
       syncToActiveSchedule,
+      allowWeekendSelectedDays,
     } = body;
+    console.log('[PUT] Parsed fields:', { id, title, schedulingMode, selectedDays, allowWeekendSelectedDays });
 
     const normalizedSchedulingMode =
       schedulingMode === undefined
@@ -454,6 +473,7 @@ export async function PUT(request: NextRequest) {
       selectedDays === undefined
         ? undefined
         : (toSelectedDayEntries(selectedDays) ?? null);
+    console.log('[PUT] Normalized selectedDays:', normalizedSelectedDays);
     const normalizedTasks = normalizeScopeTasks(tasks);
 
     if (!id) {
@@ -467,34 +487,81 @@ export async function PUT(request: NextRequest) {
       prisma.projectScope.findUnique({
         where: { id },
         select: {
+          title: true,
+          startDate: true,
+          endDate: true,
+          manpower: true,
+          hours: true,
           schedulingMode: true,
           selectedDays: true,
         },
       })
     );
 
+    if (!existing) {
+      console.error('[PUT] Scope not found:', { id });
+      return NextResponse.json(
+        { success: false, error: `Scope not found with id: ${id}` },
+        { status: 404 }
+      );
+    }
+    console.log('[PUT] Found existing scope:', { id, title: existing.title });
+
     const effectiveSchedulingMode = normalizedSchedulingMode ?? (existing?.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous');
     const effectiveSelectedDays = normalizedSelectedDays === undefined
       ? (Array.isArray(existing?.selectedDays) ? (existing?.selectedDays as SelectedDayEntry[]) : null)
       : normalizedSelectedDays;
+    console.log('[PUT] Validation check:', { effectiveSchedulingMode, effectiveSelectedDays });
 
-    const specificDaysValidation = await validateSpecificDays(effectiveSelectedDays, effectiveSchedulingMode);
+    const specificDaysValidation = await validateSpecificDays(effectiveSelectedDays, effectiveSchedulingMode, {
+      allowWeekendSelectedDays: allowWeekendSelectedDays === true,
+    });
+    console.log('[PUT] Validation result:', specificDaysValidation);
     if (!specificDaysValidation.valid) {
+      console.error('[PUT] Validation failed:', specificDaysValidation.error);
       return NextResponse.json(
         { success: false, error: specificDaysValidation.error },
         { status: 400 }
       );
     }
 
+    const normalizedTitle = title !== undefined ? (title.trim() || 'Scope') : undefined;
+    const normalizedStartDate = startDate !== undefined ? (startDate || null) : undefined;
+    const normalizedEndDate = endDate !== undefined ? (endDate || null) : undefined;
+    const normalizedManpower = manpower !== undefined ? (manpower !== null ? manpower : null) : undefined;
+    const normalizedHours = hours !== undefined ? (hours && hours > 0 ? hours : null) : undefined;
+
+    const didScheduleAffectingFieldsChange =
+      (normalizedTitle !== undefined && normalizedTitle !== (existing?.title || '')) ||
+      (normalizedStartDate !== undefined && normalizedStartDate !== (existing?.startDate || null)) ||
+      (normalizedEndDate !== undefined && normalizedEndDate !== (existing?.endDate || null)) ||
+      (normalizedManpower !== undefined && normalizedManpower !== (existing?.manpower ?? null)) ||
+      (normalizedHours !== undefined && normalizedHours !== (existing?.hours ?? null)) ||
+      (normalizedSchedulingMode !== undefined && normalizedSchedulingMode !== (existing?.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous')) ||
+      (normalizedSelectedDays !== undefined && JSON.stringify(normalizedSelectedDays) !== JSON.stringify(Array.isArray(existing?.selectedDays) ? existing.selectedDays : null));
+
+    console.log('[PUT] About to update scope with:', {
+      id,
+      normalizedTitle,
+      normalizedStartDate,
+      normalizedEndDate,
+      normalizedManpower,
+      normalizedHours,
+      description,
+      tasks: normalizedTasks,
+      normalizedSchedulingMode,
+      normalizedSelectedDays,
+    });
+
     const scope = await withDatabaseRetry(() =>
       prisma.projectScope.update({
         where: { id },
         data: {
-          ...(title !== undefined && { title: title.trim() || 'Scope' }),
-          ...(startDate !== undefined && { startDate: startDate || null }),
-          ...(endDate !== undefined && { endDate: endDate || null }),
-          ...(manpower !== undefined && { manpower: manpower !== null ? manpower : null }),
-          ...(hours !== undefined && { hours: hours && hours > 0 ? hours : null }),
+          ...(normalizedTitle !== undefined && { title: normalizedTitle }),
+          ...(normalizedStartDate !== undefined && { startDate: normalizedStartDate }),
+          ...(normalizedEndDate !== undefined && { endDate: normalizedEndDate }),
+          ...(normalizedManpower !== undefined && { manpower: normalizedManpower }),
+          ...(normalizedHours !== undefined && { hours: normalizedHours }),
           ...(description !== undefined && { description: description || null }),
           ...(tasks !== undefined && { tasks: normalizedTasks ?? null }),
           ...(normalizedSchedulingMode !== undefined && { schedulingMode: normalizedSchedulingMode }),
@@ -502,6 +569,7 @@ export async function PUT(request: NextRequest) {
         } as any,
       })
     );
+    console.log('[PUT] Update successful, scope:', scope);
 
     // Update color and taskColors with raw SQL
     if (color !== undefined || taskColors !== undefined) {
@@ -541,7 +609,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const shouldSync = syncToActiveSchedule !== false;
-    if (shouldSync) {
+    if (shouldSync && didScheduleAffectingFieldsChange) {
       // Sync to ActiveSchedule so it appears on long-term schedule
       try {
         const syncResult = await syncProjectScopeToActiveSchedule(id);
@@ -557,6 +625,7 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to update scope:', error);
+    console.error('Error details:', error instanceof Error ? { message: error.message, stack: error.stack } : error);
     return NextResponse.json(
       { success: false, error: `Failed to update scope: ${getErrorMessage(error)}` },
       { status: 500 }

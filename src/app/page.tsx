@@ -129,6 +129,21 @@ type ManagerProjectDetail = {
 
 type Persona = "manager" | "pm" | "foreman" | "generic";
 
+function parseConfiguredEmails(raw: string | undefined): Set<string> {
+  if (!raw || !raw.trim()) {
+    return new Set();
+  }
+
+  return new Set(
+    raw
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0)
+  );
+}
+
+const MANAGER_SNAPSHOT_EMAILS = parseConfiguredEmails(process.env.NEXT_PUBLIC_MANAGER_SNAPSHOT_EMAILS);
+
 const SAFETY_TOPICS = [
   {
     month: "January",
@@ -613,7 +628,7 @@ function HomeContent() {
 
   const persona = useMemo<Persona>(() => {
     const userEmail = normalizeEmail(user?.email);
-    if (userEmail === "john@pmcdecor.com" || userEmail === "todd@pmcdecor.com" || userEmail === "todd.gilmore@hotmail.com") return "manager";
+    if (userEmail && MANAGER_SNAPSHOT_EMAILS.has(userEmail)) return "manager";
     if (isGeneralManagerTitle(me?.jobTitle)) return "manager";
     if (isForemanLikeTitle(me?.jobTitle)) return "foreman";
     if (isPmLikeTitle(me?.jobTitle)) return "pm";
@@ -622,7 +637,7 @@ function HomeContent() {
 
   const isJohnFullSnapshot = useMemo(() => {
     const userEmail = normalizeEmail(user?.email);
-    return userEmail === "john@pmcdecor.com" || userEmail === "todd@pmcdecor.com" || userEmail === "todd.gilmore@hotmail.com";
+    return Boolean(userEmail && MANAGER_SNAPSHOT_EMAILS.has(userEmail));
   }, [user?.email]);
 
   const offEntriesInWindow = useMemo(() => {

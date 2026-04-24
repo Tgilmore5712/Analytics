@@ -23,6 +23,7 @@ type GanttProjectResponse = {
 
 const NEW_SCOPE_ID = '__new_scope__';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PM_TITLES = ["Project Manager", "Lead Foreman / Project Manager", "Superintendent"];
 
 const isCanonicalScopeId = (value: string | null | undefined) =>
   Boolean(
@@ -32,6 +33,22 @@ const isCanonicalScopeId = (value: string | null | undefined) =>
     !value.startsWith('virtual-') &&
     !value.startsWith('generated-')
   );
+
+type AssignmentOption = {
+  id: string;
+  label: string;
+};
+
+type LongTermAssignmentContext = {
+  assignmentKey: string;
+  jobKey: string;
+  scopeOfWork: string;
+  pmSelectionId: string;
+  projectDefaultPMName?: string;
+  foremanSelectionId: string;
+  pmOptions: AssignmentOption[];
+  foremanOptions: AssignmentOption[];
+};
 
 interface ProjectScopesModalProps {
   project: ProjectInfo;
@@ -46,6 +63,9 @@ interface ProjectScopesModalProps {
   selectedScheduledHours?: number | null;
   selectedForemanId?: string | null;
   dayEditMode?: boolean;
+  allowLongTermAssignmentEditing?: boolean;
+  longTermAssignmentContext?: LongTermAssignmentContext;
+  onLongTermAssignmentSaved?: () => Promise<void> | void;
   onClose: () => void;
   onScopesUpdated: (jobKey: string, scopes: Scope[]) => void;
 }
@@ -124,6 +144,12 @@ const normalizeText = (value: string | null | undefined) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+
+const isForemanRole = (jobTitle?: string) =>
+  jobTitle === "Foreman" ||
+  jobTitle === "Lead foreman" ||
+  jobTitle === "Lead Foreman" ||
+  jobTitle === "Lead Foreman / Project Manager";
 
 const parseJobKeyParts = (jobKey: string | null | undefined): { customer: string; projectNumber: string; projectName: string } => {
   const [customer = "", projectNumber = "", projectName = ""] = String(jobKey || "").split("~");
@@ -349,6 +375,9 @@ export function ProjectScopesModal({
   selectedScheduledHours,
   selectedForemanId,
   dayEditMode = false,
+  allowLongTermAssignmentEditing = false,
+  longTermAssignmentContext,
+  onLongTermAssignmentSaved,
   onClose,
   onScopesUpdated,
 }: ProjectScopesModalProps) {
@@ -399,7 +428,6 @@ export function ProjectScopesModal({
   const [concreteYardsByDate, setConcreteYardsByDate] = useState<Record<string, number>>({});
   const [newSelectedDayDate, setNewSelectedDayDate] = useState("");
   const [newSelectedDayHours, setNewSelectedDayHours] = useState("10");
-  const [paidHolidaySet, setPaidHolidaySet] = useState<Set<string>>(new Set());
   const formSectionRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const taskRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -408,7 +436,24 @@ export function ProjectScopesModal({
   const lastNotifiedScopesSignatureRef = useRef<string>('');
   const suppressPopulateEffectRef = useRef(false);
   const lastCanonicalLoadRequestKeyRef = useRef<string>('');
+  const persistedScopesByJobKeyRef = useRef<Map<string, Scope[]>>(new Map());
+  const ganttProjectsCacheRef = useRef<{ expiresAt: number; data: GanttProjectResponse[] | null }>({
+    expiresAt: 0,
+    data: null,
+  });
+  const paidHolidayLoadedRef = useRef(false);
+  const paidHolidayLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const paidHolidaySetRef = useRef<Set<string>>(new Set());
   const [highlightedTaskIndex, setHighlightedTaskIndex] = useState<number | null>(null);
+  const [assignmentPmSelection, setAssignmentPmSelection] = useState<string>(
+    longTermAssignmentContext?.pmSelectionId || ''
+  );
+  const [assignmentForemanSelection, setAssignmentForemanSelection] = useState<string>(
+    longTermAssignmentContext?.foremanSelectionId || '__unassigned__'
+  );
+  const [savingAssignmentPm, setSavingAssignmentPm] = useState(false);
+  const [savingAssignmentForeman, setSavingAssignmentForeman] = useState(false);
+  const [autoLongTermAssignmentContext, setAutoLongTermAssignmentContext] = useState<LongTermAssignmentContext | null>(null);
 
   const emptyScopeDetail = useMemo<Partial<Scope>>(() => ({
     title: "",
@@ -422,6 +467,93 @@ export function ProjectScopesModal({
     schedulingMode: "contiguous",
     selectedDays: [],
   }), []);
+
+  useEffect(() => {
+    const assignmentContext = longTermAssignmentContext || autoLongTermAssignmentContext;
+    setAssignmentPmSelection(assignmentContext?.pmSelectionId || '');
+    setAssignmentForemanSelection(assignmentContext?.foremanSelectionId || '__unassigned__');
+  }, [autoLongTermAssignmentContext, longTermAssignmentContext]);
+
+  const handleLongTermPmChange = async (nextPmSelection: string) => {
+    const assignmentContext = longTermAssignmentContext || autoLongTermAssignmentContext;
+    if (!assignmentContext) return;
+    if (!nextPmSelection || nextPmSelection === '__project_default__') {
+      setAssignmentPmSelection('');
+      return;
+    }
+
+    try {
+      setSavingAssignmentPm(true);
+
+      const response = await fetch('/api/long-term-schedule/pm-assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentKey: assignmentContext.assignmentKey,
+          jobKey: assignmentContext.jobKey,
+          pmId: nextPmSelection,
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'Failed to save PM assignment');
+      }
+
+      setAssignmentPmSelection(nextPmSelection);
+      if (onLongTermAssignmentSaved) {
+        void Promise.resolve(onLongTermAssignmentSaved()).catch((refreshError) => {
+          console.error('Failed to refresh after long-term PM assignment save:', refreshError);
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save PM assignment';
+      console.error('Failed to save long-term PM assignment:', error);
+      alert(message);
+    } finally {
+      setSavingAssignmentPm(false);
+    }
+  };
+
+  const handleLongTermForemanChange = async (nextForemanSelection: string) => {
+    const assignmentContext = longTermAssignmentContext || autoLongTermAssignmentContext;
+    if (!assignmentContext) return;
+    if (!assignmentContext.scopeOfWork) {
+      return;
+    }
+
+    try {
+      setSavingAssignmentForeman(true);
+
+      const response = await fetch('/api/gantt-v2/long-term/assign', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobKey: assignmentContext.jobKey,
+          scopeOfWork: assignmentContext.scopeOfWork,
+          foreman: nextForemanSelection === '__unassigned__' ? null : nextForemanSelection,
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'Failed to save foreman assignment');
+      }
+
+      setAssignmentForemanSelection(nextForemanSelection);
+      if (onLongTermAssignmentSaved) {
+        void Promise.resolve(onLongTermAssignmentSaved()).catch((refreshError) => {
+          console.error('Failed to refresh after long-term foreman assignment save:', refreshError);
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save foreman assignment';
+      console.error('Failed to save long-term foreman assignment:', error);
+      alert(message);
+    } finally {
+      setSavingAssignmentForeman(false);
+    }
+  };
 
   const matchesProjectIdentity = useCallback((
     item: { customer?: string | null; projectNumber?: string | null; projectName?: string | null }
@@ -604,6 +736,138 @@ export function ProjectScopesModal({
     ];
   }, [effectiveScopes, isCreatingNewScope, project.jobKey, resolvedJobKey, scopeDetail]);
 
+  const activeScopeTitleForAssignment = useMemo(() => {
+    if (activeScopeId) {
+      const activeScope = effectiveScopes.find((scope) => scope.id === activeScopeId);
+      const title = String(activeScope?.title || '').trim();
+      if (title) return title;
+    }
+
+    const detailTitle = String(scopeDetail.title || '').trim();
+    if (detailTitle) return detailTitle;
+
+    return String(selectedScopeTitle || '').trim();
+  }, [activeScopeId, effectiveScopes, scopeDetail.title, selectedScopeTitle]);
+
+  const effectiveLongTermAssignmentContext = useMemo(
+    () => longTermAssignmentContext || autoLongTermAssignmentContext,
+    [autoLongTermAssignmentContext, longTermAssignmentContext]
+  );
+
+  useEffect(() => {
+    if (longTermAssignmentContext) {
+      setAutoLongTermAssignmentContext(null);
+      return;
+    }
+
+    const jobKey = String(resolvedJobKey || project.jobKey || '').trim();
+    const scopeOfWork = activeScopeTitleForAssignment;
+    if (!jobKey) {
+      setAutoLongTermAssignmentContext(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAssignmentContext = async () => {
+      try {
+        const [employeesRes, pmAssignmentsRes, projectsRes, activeScheduleRes] = await Promise.all([
+          fetch('/api/short-term-schedule?action=employees', { cache: 'no-store' }),
+          fetch('/api/long-term-schedule/pm-assignments', { cache: 'no-store' }),
+          fetch('/api/projects?page=1&pageSize=500', { cache: 'no-store' }),
+          fetch('/api/short-term-schedule?action=active-schedule', { cache: 'no-store' }),
+        ]);
+
+        const employeesJson = await employeesRes.json().catch(() => ({}));
+        const pmAssignmentsJson = await pmAssignmentsRes.json().catch(() => ({}));
+        const projectsJson = await projectsRes.json().catch(() => ({}));
+        const activeScheduleJson = await activeScheduleRes.json().catch(() => ({}));
+
+        const employees = Array.isArray(employeesJson?.data) ? employeesJson.data : [];
+        const pmAssignments = Array.isArray(pmAssignmentsJson?.data) ? pmAssignmentsJson.data : [];
+        const projects = Array.isArray(projectsJson?.data) ? projectsJson.data : [];
+        const activeSchedule = Array.isArray(activeScheduleJson?.data) ? activeScheduleJson.data : [];
+
+        const pmOptions: AssignmentOption[] = employees
+          .filter((employee) => employee?.isActive && PM_TITLES.includes(String(employee?.jobTitle || '')))
+          .map((employee) => ({
+            id: String(employee.id),
+            label: `${String(employee.firstName || '').trim()} ${String(employee.lastName || '').trim()}`.trim() || 'Unnamed PM',
+          }));
+
+        const foremanOptions: AssignmentOption[] = employees
+          .filter((employee) => employee?.isActive && isForemanRole(String(employee?.jobTitle || '')))
+          .map((employee) => ({
+            id: String(employee.id),
+            label: `${String(employee.firstName || '').trim()} ${String(employee.lastName || '').trim()}`.trim() || 'Unnamed Foreman',
+          }));
+
+        const projectPmAssignment = pmAssignments.find((entry) =>
+          String(entry?.assignmentKey || '').trim() === jobKey ||
+          String(entry?.jobKey || '').trim() === jobKey
+        );
+        const matchingProject = projects.find((row) => {
+          const rowJobKey = `${String(row?.customer || '')}~${String(row?.projectNumber || '')}~${String(row?.projectName || '')}`;
+          return rowJobKey === jobKey;
+        });
+        const projectDefaultPMName = String(matchingProject?.projectManager || '').trim() || 'Project Default';
+        const projectDefaultPmId = pmOptions.find(
+          (pm) => pm.label.trim().toLowerCase() === projectDefaultPMName.toLowerCase()
+        )?.id;
+
+        const pmSelectionId = projectPmAssignment?.pmId || projectDefaultPmId || '';
+
+        const matchingEntries = scopeOfWork
+          ? activeSchedule.filter((entry) =>
+              String(entry?.jobKey || '').trim() === jobKey &&
+              String(entry?.scopeOfWork || '').trim() === scopeOfWork &&
+              String(entry?.foreman || '').trim().length > 0
+            )
+          : [];
+
+        const foremanCounts = matchingEntries.reduce((acc: Record<string, number>, entry) => {
+          const foremanId = String(entry?.foreman || '').trim();
+          if (!foremanId) return acc;
+          acc[foremanId] = (acc[foremanId] || 0) + 1;
+          return acc;
+        }, {});
+
+        const foremanSelectionId =
+          (selectedForemanId && selectedForemanId !== '__unassigned__' ? selectedForemanId : null) ||
+          Object.entries(foremanCounts).sort((a, b) => Number(b[1]) - Number(a[1]))[0]?.[0] ||
+          '__unassigned__';
+
+        if (!cancelled) {
+          setAutoLongTermAssignmentContext({
+            assignmentKey: jobKey,
+            jobKey,
+            scopeOfWork: scopeOfWork || '',
+            pmSelectionId,
+            projectDefaultPMName,
+            foremanSelectionId,
+            pmOptions,
+            foremanOptions,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setAutoLongTermAssignmentContext(null);
+        }
+      }
+    };
+
+    void loadAssignmentContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeScopeTitleForAssignment,
+    longTermAssignmentContext,
+    project.jobKey,
+    resolvedJobKey,
+    selectedForemanId,
+  ]);
+
   const getEffectiveScopeHours = useCallback((scope: Partial<Scope>) => {
     const scopeHours = computeScopeHours(scope);
     if (scopeHours > 0) return scopeHours;
@@ -672,9 +936,15 @@ export function ProjectScopesModal({
     })), [project.jobKey, resolvedJobKey]);
 
   const loadPersistedProjectScopes = useCallback(async (): Promise<Scope[]> => {
-    if (!resolvedJobKey) return [];
+    const effectiveJobKey = (resolvedJobKey || '').trim();
+    if (!effectiveJobKey) return [];
 
-    const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(resolvedJobKey)}`);
+    const cached = persistedScopesByJobKeyRef.current.get(effectiveJobKey);
+    if (cached) {
+      return cached;
+    }
+
+    const projectScopesRes = await fetch(`/api/project-scopes?jobKey=${encodeURIComponent(effectiveJobKey)}`);
     if (!projectScopesRes.ok) return [];
 
     const projectScopesJson = await readJsonResponse<{ data?: Scope[]; scopes?: Scope[] }>(projectScopesRes, {
@@ -686,33 +956,9 @@ export function ProjectScopesModal({
       ? projectScopesJson.data
       : (Array.isArray(projectScopesJson?.scopes) ? projectScopesJson.scopes : []);
 
-    if (persistedScopes.length > 0) {
-      return persistedScopes;
-    }
-
-    const allScopesRes = await fetch('/api/project-scopes');
-    if (!allScopesRes.ok) return [];
-
-    const allScopesJson = await readJsonResponse<{ data?: Scope[]; scopes?: Scope[] }>(allScopesRes, {
-      label: "All project scopes",
-      fallback: { data: [], scopes: [] },
-    });
-    const allScopes: Scope[] = Array.isArray(allScopesJson?.data)
-      ? allScopesJson.data
-      : (Array.isArray(allScopesJson?.scopes) ? allScopesJson.scopes : []);
-
-    const normalizedCustomer = normalizeText(project.customer);
-    const normalizedProjectNumber = normalizeText(project.projectNumber);
-    const normalizedProjectName = normalizeText(project.projectName);
-
-    return allScopes.filter((scope) => {
-      const [scopeCustomer = '', scopeProjectNumber = '', scopeProjectName = ''] = String(scope.jobKey || '').split('~');
-      const customerMatch = normalizeText(scopeCustomer) === normalizedCustomer;
-      const projectNumberMatch = normalizeText(scopeProjectNumber) === normalizedProjectNumber;
-      const projectNameMatch = normalizeText(scopeProjectName) === normalizedProjectName;
-      return customerMatch && projectNumberMatch && projectNameMatch;
-    });
-  }, [project.customer, project.projectName, project.projectNumber, resolvedJobKey]);
+    persistedScopesByJobKeyRef.current.set(effectiveJobKey, persistedScopes);
+    return persistedScopes;
+  }, [resolvedJobKey]);
 
   const mergePersistedScopeMetadata = useCallback(async (scopes: Scope[]): Promise<Scope[]> => {
     try {
@@ -784,6 +1030,34 @@ export function ProjectScopesModal({
     return mergedScopes;
   }, [mapGanttScopes, mergePersistedScopeMetadata]);
 
+  const loadGanttProjectsList = useCallback(
+    async (forceRefresh = false): Promise<GanttProjectResponse[] | null> => {
+      const now = Date.now();
+      const cache = ganttProjectsCacheRef.current;
+      if (!forceRefresh && cache.data && cache.expiresAt > now) {
+        return cache.data;
+      }
+
+      const response = await fetch('/api/gantt-v2/projects');
+      const result = await readJsonResponse<{ success?: boolean; data?: GanttProjectResponse[] }>(response, {
+        label: 'Gantt V2 projects',
+        fallback: { success: false, data: [] },
+      });
+
+      if (!response.ok || !result?.success || !Array.isArray(result?.data)) {
+        return null;
+      }
+
+      const data = result.data as GanttProjectResponse[];
+      ganttProjectsCacheRef.current = {
+        data,
+        expiresAt: now + 10_000,
+      };
+      return data;
+    },
+    []
+  );
+
   const loadCanonicalScopes = useCallback(async (): Promise<Scope[] | null> => {
     const preferredProjectId = ganttProjectId || liveGanttProjectId;
 
@@ -794,18 +1068,14 @@ export function ProjectScopesModal({
       }
     }
 
-    const response = await fetch('/api/gantt-v2/projects');
-    const result = await readJsonResponse<{ success?: boolean; data?: GanttProjectResponse[] }>(response, {
-      label: "Gantt V2 projects",
-      fallback: { success: false, data: [] },
-    });
-    if (!response.ok || !result?.success || !Array.isArray(result?.data)) {
+    const projects = await loadGanttProjectsList();
+    if (!projects) {
       setGanttProjectId(null);
       setCanonicalScopes(null);
       return null;
     }
 
-    const match = (result.data as GanttProjectResponse[]).find((item) =>
+    const match = projects.find((item) =>
       matchesProjectIdentity({
         customer: item.customer,
         projectNumber: item.projectNumber,
@@ -823,21 +1093,29 @@ export function ProjectScopesModal({
     setGanttProjectId(match.id);
     setCanonicalScopes(mergedScopes);
     return mergedScopes;
-  }, [ganttProjectId, liveGanttProjectId, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
+  }, [ganttProjectId, liveGanttProjectId, loadGanttProjectsList, loadScopesForGanttProject, mapGanttScopes, matchesProjectIdentity, mergePersistedScopeMetadata]);
 
   const resolveWritableGanttProjectId = useCallback(async (): Promise<string | null> => {
-    const projectsRes = await fetch('/api/gantt-v2/projects');
-    const projectsResult = await readJsonResponse<{ success?: boolean; data?: GanttProjectResponse[] }>(projectsRes, {
-      label: 'Resolve writable Gantt project',
-      fallback: { success: false, data: [] },
-    });
+    const preferredCandidates = [ganttProjectId, liveGanttProjectId]
+      .map((id) => String(id || '').trim())
+      .filter((id): id is string => Boolean(id));
 
-    if (!projectsRes.ok || !projectsResult?.success || !Array.isArray(projectsResult?.data)) {
+    // Fast path: if we already have a UUID-like project id, use it directly.
+    const directCandidate = preferredCandidates.find((id) => UUID_REGEX.test(id));
+    if (directCandidate) {
+      if (ganttProjectId !== directCandidate) {
+        setGanttProjectId(directCandidate);
+      }
+      return directCandidate;
+    }
+
+    const projects = await loadGanttProjectsList();
+    if (!projects) {
       return null;
     }
 
-    const candidateIds = [ganttProjectId, liveGanttProjectId].filter((id): id is string => Boolean(id));
-    const existingProjectIds = new Set(projectsResult.data.map((item) => String(item.id || '').trim()).filter(Boolean));
+    const candidateIds = preferredCandidates;
+    const existingProjectIds = new Set(projects.map((item) => String(item.id || '').trim()).filter(Boolean));
 
     for (const candidateId of candidateIds) {
       if (!existingProjectIds.has(candidateId)) continue;
@@ -847,7 +1125,7 @@ export function ProjectScopesModal({
       return candidateId;
     }
 
-    const matchedProject = projectsResult.data.find((item) =>
+    const matchedProject = projects.find((item) =>
       matchesProjectIdentity({
         customer: item.customer,
         projectNumber: item.projectNumber,
@@ -877,13 +1155,14 @@ export function ProjectScopesModal({
       }
 
       const newProjectId = String(createResult.data.id).trim();
+      ganttProjectsCacheRef.current = { expiresAt: 0, data: null };
       setGanttProjectId(newProjectId);
       return newProjectId;
     }
 
     setGanttProjectId(matchedProject.id);
     return matchedProject.id;
-  }, [ganttProjectId, liveGanttProjectId, matchesProjectIdentity, project.customer, project.jobKey, project.projectName, project.projectNumber]);
+  }, [ganttProjectId, liveGanttProjectId, loadGanttProjectsList, matchesProjectIdentity, project.customer, project.jobKey, project.projectName, project.projectNumber]);
 
   const sanitizePredecessorScopeId = useCallback(
     async (projectId: string, predecessorId: string | null | undefined, currentScopeId?: string | null) => {
@@ -1180,6 +1459,11 @@ export function ProjectScopesModal({
       return;
     }
 
+    if (effectiveScopes.length > 0) {
+      setActiveScopeId(effectiveScopes[0].id);
+      return;
+    }
+
     setActiveScopeId(null);
   }, [
     activeScopeId,
@@ -1238,25 +1522,6 @@ export function ProjectScopesModal({
 
     void onScopesUpdatedRef.current(effectiveJobKey, canonicalScopes);
   }, [canonicalScopes, isLoadingScopes, resolvedJobKey, project.jobKey]);
-
-  useEffect(() => {
-    const loadPaidHolidays = async () => {
-      try {
-        const response = await fetch('/api/holidays?page=1&pageSize=500');
-        if (!response.ok) return;
-        const json = await response.json().catch(() => ({}));
-        const holidays: HolidayApiRow[] = Array.isArray(json?.data) ? json.data : [];
-        const paid = holidays
-          .filter((h) => Boolean(h?.isPaid) && typeof h?.date === 'string')
-          .map((h) => String(h.date));
-        setPaidHolidaySet(new Set(paid));
-      } catch (error) {
-        console.warn('Failed to load paid holidays for scope validation:', error);
-      }
-    };
-
-    loadPaidHolidays();
-  }, []);
 
   // Initialize blank form once when entering explicit create mode.
   useEffect(() => {
@@ -1586,6 +1851,37 @@ export function ProjectScopesModal({
     return weekday === 0 || weekday === 6;
   };
 
+  const ensurePaidHolidaySetLoaded = useCallback(async () => {
+    if (paidHolidayLoadedRef.current) return;
+
+    if (paidHolidayLoadPromiseRef.current) {
+      await paidHolidayLoadPromiseRef.current;
+      return;
+    }
+
+    paidHolidayLoadPromiseRef.current = (async () => {
+      try {
+        const response = await fetch('/api/holidays?page=1&pageSize=500');
+        if (!response.ok) return;
+        const json = await response.json().catch(() => ({}));
+        const holidays: HolidayApiRow[] = Array.isArray(json?.data) ? json.data : [];
+        const paid = holidays
+          .filter((h) => Boolean(h?.isPaid) && typeof h?.date === 'string')
+          .map((h) => String(h.date));
+
+        const nextPaidHolidaySet = new Set(paid);
+        paidHolidaySetRef.current = nextPaidHolidaySet;
+        paidHolidayLoadedRef.current = true;
+      } catch (error) {
+        console.warn('Failed to load paid holidays for scope validation:', error);
+      } finally {
+        paidHolidayLoadPromiseRef.current = null;
+      }
+    })();
+
+    await paidHolidayLoadPromiseRef.current;
+  }, []);
+
   const setSchedulingModeWithConfirm = (nextMode: 'contiguous' | 'specific-days') => {
     const currentMode = scopeDetail.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
     if (currentMode === nextMode) return;
@@ -1603,17 +1899,19 @@ export function ProjectScopesModal({
     setScopeDetail((prev) => ({ ...prev, schedulingMode: nextMode }));
   };
 
-  const addSelectedDay = () => {
+  const addSelectedDay = async () => {
     const date = newSelectedDayDate.trim();
     const hours = Number(newSelectedDayHours || 0);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(hours) || hours <= 0) return;
+
+    await ensurePaidHolidaySetLoaded();
 
     if (isWeekendDate(date)) {
       alert('Selected day is on a weekend. Please choose a weekday.');
       return;
     }
 
-    if (paidHolidaySet.has(date)) {
+    if (paidHolidaySetRef.current.has(date)) {
       alert('Selected day is a paid holiday. Please choose another date.');
       return;
     }
@@ -1663,13 +1961,42 @@ export function ProjectScopesModal({
     setIsSaving(true);
     suppressPopulateEffectRef.current = true;
     try {
-      // Refresh scope list before matching to prevent duplicates from stale data
-      const latestScopes = await loadCanonicalScopes();
-      const scopesToMatchAgainst = latestScopes && latestScopes.length > 0 ? latestScopes : effectiveScopes;
+      if (effectiveLongTermAssignmentContext && !assignmentPmSelection) {
+        throw new Error('Project Manager is required. Select a PM before saving.');
+      }
 
-      const activeScope = activeScopeId
+      const isNewScope = isCreatingNewScope || activeScopeId === NEW_SCOPE_ID;
+      const scopeUpdateJobKey = resolvedJobKey || project.jobKey || '';
+
+      const publishScopes = (nextScopes: Scope[]) => {
+        setCanonicalScopes(nextScopes);
+        onScopesUpdated(scopeUpdateJobKey, nextScopes);
+      };
+
+      const refreshScopesInBackground = () => {
+        void loadCanonicalScopes()
+          .then((refreshedScopes) => {
+            if (refreshedScopes && refreshedScopes.length > 0) {
+              onScopesUpdated(scopeUpdateJobKey, refreshedScopes);
+            }
+          })
+          .catch((refreshError) => {
+            console.error('Failed to refresh scopes after modal save:', refreshError);
+          });
+      };
+
+      let scopesToMatchAgainst = effectiveScopes;
+      let activeScope = activeScopeId
         ? (scopesToMatchAgainst.find((item) => item.id === activeScopeId) || null)
         : null;
+
+      if (activeScopeId && !activeScope && !isNewScope) {
+        const latestScopes = await loadCanonicalScopes();
+        if (latestScopes && latestScopes.length > 0) {
+          scopesToMatchAgainst = latestScopes;
+          activeScope = latestScopes.find((item) => item.id === activeScopeId) || null;
+        }
+      }
 
       const effectiveSchedulingMode: 'contiguous' | 'specific-days' =
         scopeDetail.schedulingMode === 'specific-days' && selectedDays.length > 0
@@ -1682,7 +2009,11 @@ export function ProjectScopesModal({
         console.warn('Specific Days mode selected with no days; falling back to Continuous Range for save.');
       }
 
-      const invalidSpecificDay = selectedDays.find((entry) => isWeekendDate(entry.date) || paidHolidaySet.has(entry.date));
+      if (effectiveSchedulingMode === 'specific-days') {
+        await ensurePaidHolidaySetLoaded();
+      }
+
+      const invalidSpecificDay = selectedDays.find((entry) => isWeekendDate(entry.date) || paidHolidaySetRef.current.has(entry.date));
       if (effectiveSchedulingMode === 'specific-days' && invalidSpecificDay) {
         throw new Error(`Specific day is invalid: ${invalidSpecificDay.date}. Weekends and paid holidays are blocked.`);
       }
@@ -1799,7 +2130,6 @@ export function ProjectScopesModal({
       };
 
       // For implicit predecessor based on list position
-      const isNewScope = isCreatingNewScope || activeScopeId === NEW_SCOPE_ID;
       if (isNewScope && visibleScopes.length > 0) {
         // New scopes get the last scope as their predecessor
         const nonNewScopes = visibleScopes.filter((s) => isCanonicalScopeId(s.id));
@@ -1886,11 +2216,20 @@ export function ProjectScopesModal({
       const targetGanttProjectId = await resolveWritableGanttProjectId();
       let savedScope;
       if (targetGanttProjectId) {
-        payload.predecessorScopeId = await sanitizePredecessorScopeId(
-          targetGanttProjectId,
-          payload.predecessorScopeId,
-          shouldCreateNewScope ? null : targetCanonicalScopeId
-        );
+        const predecessorCandidate = String(payload.predecessorScopeId || '').trim();
+        const currentScopeIdForValidation = shouldCreateNewScope ? null : targetCanonicalScopeId;
+        const predecessorIsLocalAndValid =
+          isCanonicalScopeId(predecessorCandidate) &&
+          predecessorCandidate !== currentScopeIdForValidation &&
+          canonicalScopeCandidates.some((scope) => scope.id === predecessorCandidate);
+
+        payload.predecessorScopeId = predecessorIsLocalAndValid
+          ? predecessorCandidate
+          : await sanitizePredecessorScopeId(
+              targetGanttProjectId,
+              predecessorCandidate,
+              currentScopeIdForValidation
+            );
 
         // Persist scheduling metadata first so gantt sync reads latest mode/selectedDays.
         await upsertProjectScopeMetadata(payload, { activeScope });
@@ -1961,14 +2300,49 @@ export function ProjectScopesModal({
         }
 
         suppressPopulateEffectRef.current = false;
-        const refreshedScopes = await loadCanonicalScopes();
-        onScopesUpdated(
-          resolvedJobKey || project.jobKey || '',
-          refreshedScopes && refreshedScopes.length > 0 ? refreshedScopes : effectiveScopes
-        );
+        const savedScopeId = String(savedScope?.id || targetCanonicalScopeId || '').trim();
+        const baseScope =
+          (savedScopeId
+            ? scopesToMatchAgainst.find((scope) => scope.id === savedScopeId) || null
+            : null) ||
+          (targetCanonicalScopeId
+            ? scopesToMatchAgainst.find((scope) => scope.id === targetCanonicalScopeId) || null
+            : null) ||
+          activeScope ||
+          null;
+
+        const nextScope: Scope = {
+          ...(baseScope || {}),
+          id: savedScopeId || baseScope?.id || activeScopeId || NEW_SCOPE_ID,
+          jobKey: resolvedJobKey || project.jobKey,
+          title: payload.title,
+          predecessorScopeId: payload.predecessorScopeId || null,
+          startDate: payload.startDate || '',
+          endDate: payload.endDate || '',
+          description: payload.description || '',
+          tasks: payload.tasks,
+          schedulingMode: payload.schedulingMode,
+          selectedDays: payload.selectedDays,
+          manpower: payload.manpower,
+          hours: computedHours > 0 ? computedHours : undefined,
+        } as Scope;
+
+        const updatedScopes = shouldCreateNewScope
+          ? [
+              ...scopesToMatchAgainst.filter((scope) => scope.id !== activeScopeId),
+              nextScope,
+            ]
+          : scopesToMatchAgainst.map((scope) =>
+              scope.id === targetCanonicalScopeId ? nextScope : scope
+            );
+
+        publishScopes(updatedScopes);
+        refreshScopesInBackground();
 
         if (!shouldCreateNewScope && targetCanonicalScopeId) {
           setActiveScopeId(targetCanonicalScopeId);
+        } else if (savedScopeId) {
+          setActiveScopeId(savedScopeId);
         }
       } else {
         if (!usesLegacyScopeMetadata) {
@@ -1992,7 +2366,7 @@ export function ProjectScopesModal({
             scope.id === targetCanonicalScopeId ? { ...scope, ...savedScope } : scope
           );
           suppressPopulateEffectRef.current = false;
-          onScopesUpdated(resolvedJobKey || project.jobKey || '', updatedScopes);
+          publishScopes(updatedScopes);
           setActiveScopeId(targetCanonicalScopeId);
         } else {
           const response = await fetch('/api/project-scopes', {
@@ -2014,7 +2388,7 @@ export function ProjectScopesModal({
             : scopesToMatchAgainst;
 
           suppressPopulateEffectRef.current = false;
-          onScopesUpdated(resolvedJobKey || project.jobKey || '', [...filteredScopes, newScope]);
+          publishScopes([...filteredScopes, newScope]);
           setIsCreatingNewScope(false);
           setActiveScopeId(savedScope.id);
         }
@@ -2362,6 +2736,59 @@ export function ProjectScopesModal({
                 </button>
               )}
             </div>
+            {effectiveLongTermAssignmentContext && (
+              <div className="mb-4 border border-blue-200 bg-blue-50/50 rounded-md p-3">
+                <label className="block text-sm font-semibold mb-1">Project Assignment</label>
+                <p className="text-[11px] text-gray-600 mb-3">
+                  The Project Manager applies to every scope and task in this project.
+                  {allowLongTermAssignmentEditing ? ' Foreman remains optional for the currently selected scope.' : ''}
+                </p>
+                <div className={`grid grid-cols-1 ${allowLongTermAssignmentEditing ? 'md:grid-cols-2' : ''} gap-3`}>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Project Manager</label>
+                    <select
+                      disabled={savingAssignmentPm}
+                      value={assignmentPmSelection}
+                      onChange={(e) => handleLongTermPmChange(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                    >
+                      <option value="">Select Project Manager</option>
+                      {effectiveLongTermAssignmentContext.pmOptions.map((pm) => (
+                        <option key={pm.id} value={pm.id}>
+                          {pm.label}
+                        </option>
+                      ))}
+                    </select>
+                    {!assignmentPmSelection && (
+                      <p className="mt-1 text-[11px] font-semibold text-red-600">Project Manager is required.</p>
+                    )}
+                  </div>
+                  {allowLongTermAssignmentEditing && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Foreman</label>
+                      <select
+                        disabled={savingAssignmentForeman || !effectiveLongTermAssignmentContext.scopeOfWork}
+                        value={assignmentForemanSelection}
+                        onChange={(e) => handleLongTermForemanChange(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md text-sm bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                      >
+                        <option value="__unassigned__">Unassigned</option>
+                        {effectiveLongTermAssignmentContext.foremanOptions.map((foreman) => (
+                          <option key={foreman.id} value={foreman.id}>
+                            {foreman.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-[11px] text-gray-600">
+                        {effectiveLongTermAssignmentContext.scopeOfWork
+                          ? `Optional for scope: ${effectiveLongTermAssignmentContext.scopeOfWork}`
+                          : 'Select a scope to edit its optional foreman assignment.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-1">Scope Title</label>
               <input ref={titleInputRef} type="text" value={scopeDetail.title || ""} onChange={(e) => setScopeDetail(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-orange-500" />
@@ -2401,7 +2828,6 @@ export function ProjectScopesModal({
                 })()}
               </div>
             )}
-
 
             <div className="mb-4">
               <label className="block text-sm font-semibold mb-2">Scheduling Mode</label>
@@ -2593,7 +3019,7 @@ export function ProjectScopesModal({
               <button
                 type="button"
                 onClick={() => handleSaveScope(false)}
-                disabled={isSaving}
+                disabled={isSaving || (effectiveLongTermAssignmentContext && !assignmentPmSelection)}
                 className="px-4 py-2 bg-orange-600 text-white rounded-md text-sm font-semibold hover:bg-orange-700 disabled:bg-gray-400"
               >
                 {isSaving ? "Saving..." : "Save Scope"}
@@ -2816,7 +3242,7 @@ export function ProjectScopesModal({
           </div>
 
           <div className="flex gap-2 pt-4 border-t">
-            <button type="button" onClick={() => handleSaveScope(true)} disabled={isSaving} className="flex-1 px-4 py-2 bg-orange-100 text-orange-800 rounded-md text-sm font-semibold hover:bg-orange-200 disabled:bg-gray-200 disabled:text-gray-500">
+            <button type="button" onClick={() => handleSaveScope(true)} disabled={isSaving || (effectiveLongTermAssignmentContext && !assignmentPmSelection)} className="flex-1 px-4 py-2 bg-orange-100 text-orange-800 rounded-md text-sm font-semibold hover:bg-orange-200 disabled:bg-gray-200 disabled:text-gray-500">
               Save & Close
             </button>
             {activeScopeId && activeScopeId !== NEW_SCOPE_ID && !activeScopeId.startsWith('fallback-') && !activeScopeId.startsWith('virtual-') && !activeScopeId.startsWith('generated-') && (
