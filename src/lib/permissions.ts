@@ -65,8 +65,27 @@ function parseUserPermissionsFromEnv(): Record<string, string[]> {
   return {};
 }
 
-// Map user emails to permission groups/pages from environment variables.
-export const USER_PERMISSIONS: Record<string, string[]> = parseUserPermissionsFromEnv();
+// Fallback hardcoded permissions if env var is not set
+const FALLBACK_PERMISSIONS: Record<string, string[]> = {
+  "todd@pmcdecor.com": ["OWNER", "employees", "onboarding"],
+  "todd.gilmore@hotmail.com": ["OWNER", "employees", "onboarding"],
+  "levi@paradise-concrete.com": ["ADMIN"],
+  "rick@pmcdecor.com": ["ADMIN"],
+  "shelly@pmcdecor.com": ["ADMIN"],
+  "dave@pmcdecor.com": ["ADMIN"],
+  "david@pmcdecor.com": ["ADMIN", "employees", "onboarding"],
+  "jane@pmcdecor.com": ["HR", "employees", "onboarding"],
+  "mervin@pmcdecor.com": ["PMs", "OPERATIONS"],
+  "abner@pmcdecor.com": ["PMs", "OPERATIONS"],
+  "john@pmcdecor.com": ["OPERATIONS"],
+  "isaac@pmcdecor.com": ["ESTIMATOR"],
+  "matt@pmcdecor.com": ["FIELD"],
+  "matthew@pmcdecor.com": ["FIELD"],
+  "jason@pmcdecor.com": ["FIELD"]
+};
+
+// Map user emails to permission groups/pages from environment variables, with fallback.
+export const USER_PERMISSIONS: Record<string, string[]> = parseUserPermissionsFromEnv() || FALLBACK_PERMISSIONS;
 
 export function hasPageAccess(userEmail: string | null, page: string): boolean {
   if (!userEmail) return false;
