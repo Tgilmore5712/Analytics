@@ -202,7 +202,7 @@ export default function ProjectSchedulePage() {
     anchorX: number;
     anchorY: number;
   } | null>(null);
-  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("month");
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("day");
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [expandedScopes, setExpandedScopes] = useState<Set<string>>(new Set());
 
