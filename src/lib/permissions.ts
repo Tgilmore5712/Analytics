@@ -90,6 +90,48 @@ export async function loadUserPermissionsFromDatabase(prisma: any): Promise<Reco
 // Map user emails to permission groups/pages from database or environment variables.
 export let USER_PERMISSIONS: Record<string, string[]> = parseUserPermissionsFromEnv();
 
+let permissionsLoadedFromDb = false;
+
+// Lazy-load permissions from database on first access (if not already loaded)
+export async function ensurePermissionsLoaded(prisma: any): Promise<void> {
+  if (permissionsLoadedFromDb || Object.keys(USER_PERMISSIONS).length > 0) {
+    return; // Already loaded
+  }
+
+  try {
+    const dbPerms = await loadUserPermissionsFromDatabase(prisma);
+    if (Object.keys(dbPerms).length > 0) {
+      Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
+      Object.assign(USER_PERMISSIONS, dbPerms);
+      permissionsLoadedFromDb = true;
+      console.log(`✓ Loaded ${Object.keys(dbPerms).length} users from database permissions`);
+    }
+  } catch (error) {
+    console.error("Failed to lazy-load permissions from database:", error);
+  }
+}
+
+// Initialize permissions from database (called from root layout)
+export async function initializePermissions(): Promise<void> {
+  if (permissionsLoadedFromDb || Object.keys(USER_PERMISSIONS).length > 0) {
+    return; // Already initialized
+  }
+
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const dbPerms = await loadUserPermissionsFromDatabase(prisma);
+    if (Object.keys(dbPerms).length > 0) {
+      Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
+      Object.assign(USER_PERMISSIONS, dbPerms);
+      permissionsLoadedFromDb = true;
+      console.log(`✓ Initialized ${Object.keys(dbPerms).length} users from database permissions`);
+    }
+  } catch (error) {
+    console.error("Failed to initialize permissions from database:", error);
+    // Will fall back to env var permissions if available
+  }
+}
+
 export function hasPageAccess(userEmail: string | null, page: string): boolean {
   if (!userEmail) return false;
   const permissions = getUserPermissions(userEmail);

@@ -121,21 +121,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const userEmail = session.user.email ?? null;
-  const requiredPermission = resolvePermissionForPath(pathname);
-
-  if (requiredPermission && !hasPageAccess(userEmail, requiredPermission)) {
-    if (isApiRoute) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden' },
-        { status: 403 }
-      );
-    }
-
-    const forbiddenUrl = new URL('/forbidden', request.url);
-    forbiddenUrl.searchParams.set('from', pathname);
-    return NextResponse.redirect(forbiddenUrl);
-  }
+  // NOTE: Permission checks are now done at the route handler level where Prisma is available.
+  // Middleware only ensures user is authenticated via Auth0.
+  // Remove the permission check from middleware since it can't access database on Edge Runtime.
 
   if (isApiRoute && apiRateLimit) {
     const response = NextResponse.next();
