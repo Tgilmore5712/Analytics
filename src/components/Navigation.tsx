@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { hasPageAccess } from "@/lib/permissions";
+import { hasPageAccess, USER_PERMISSIONS } from "@/lib/permissions";
 
 const AUTH_LOGOUT_SIGNAL_KEY = "analytics-auth-logout";
 const AUTH_LOGOUT_SIGNAL_CHANNEL = "analytics-auth-logout";
@@ -67,6 +67,35 @@ export default function Navigation({
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const isGlobalNavigationManaged = useContext(GlobalNavigationContext);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+
+  // Load permissions from database when user logs in
+  useEffect(() => {
+    if (!user?.email || permissionsLoaded) return;
+
+    const loadPermissions = async () => {
+      try {
+        const res = await fetch('/api/admin/permissions-sync', { method: 'GET' });
+        if (res.ok) {
+          const data = await res.json();
+          // Populate USER_PERMISSIONS with fetched data
+          if (data.data && Array.isArray(data.data)) {
+            Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
+            for (const user of data.data) {
+              if (user.email && Array.isArray(user.permissions)) {
+                USER_PERMISSIONS[user.email.toLowerCase()] = user.permissions;
+              }
+            }
+          }
+          setPermissionsLoaded(true);
+        }
+      } catch (error) {
+        console.error('Failed to load permissions:', error);
+      }
+    };
+
+    loadPermissions();
+  }, [user?.email, permissionsLoaded]);
 
   useEffect(() => {
     const redirectToSignedOutPage = () => {
@@ -102,7 +131,7 @@ export default function Navigation({
   }
   
   // Show navigation even without authentication for static export
-  if (loading) {
+  if (loading || (user?.email && !permissionsLoaded)) {
     return null;
   }
 
