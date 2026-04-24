@@ -65,27 +65,30 @@ function parseUserPermissionsFromEnv(): Record<string, string[]> {
   return {};
 }
 
-// Fallback hardcoded permissions if env var is not set
-const FALLBACK_PERMISSIONS: Record<string, string[]> = {
-  "todd@pmcdecor.com": ["OWNER", "employees", "onboarding"],
-  "todd.gilmore@hotmail.com": ["OWNER", "employees", "onboarding"],
-  "levi@paradise-concrete.com": ["ADMIN"],
-  "rick@pmcdecor.com": ["ADMIN"],
-  "shelly@pmcdecor.com": ["ADMIN"],
-  "dave@pmcdecor.com": ["ADMIN"],
-  "david@pmcdecor.com": ["ADMIN", "employees", "onboarding"],
-  "jane@pmcdecor.com": ["HR", "employees", "onboarding"],
-  "mervin@pmcdecor.com": ["PMs", "OPERATIONS"],
-  "abner@pmcdecor.com": ["PMs", "OPERATIONS"],
-  "john@pmcdecor.com": ["OPERATIONS"],
-  "isaac@pmcdecor.com": ["ESTIMATOR"],
-  "matt@pmcdecor.com": ["FIELD"],
-  "matthew@pmcdecor.com": ["FIELD"],
-  "jason@pmcdecor.com": ["FIELD"]
-};
+// Load permissions from database (called on middleware initialization)
+export async function loadUserPermissionsFromDatabase(prisma: any): Promise<Record<string, string[]>> {
+  try {
+    const users = await prisma.user.findMany({
+      where: { isActive: true },
+      select: { email: true, permissions: true },
+    });
+    
+    const perms: Record<string, string[]> = {};
+    for (const user of users) {
+      if (user.email && Array.isArray(user.permissions) && user.permissions.length > 0) {
+        perms[user.email.toLowerCase()] = user.permissions;
+      }
+    }
+    
+    return perms;
+  } catch (error) {
+    console.error("Failed to load permissions from database:", error);
+    return {};
+  }
+}
 
-// Map user emails to permission groups/pages from environment variables, with fallback.
-export const USER_PERMISSIONS: Record<string, string[]> = parseUserPermissionsFromEnv() || FALLBACK_PERMISSIONS;
+// Map user emails to permission groups/pages from database or environment variables.
+export let USER_PERMISSIONS: Record<string, string[]> = parseUserPermissionsFromEnv();
 
 export function hasPageAccess(userEmail: string | null, page: string): boolean {
   if (!userEmail) return false;

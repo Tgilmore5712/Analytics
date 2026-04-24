@@ -582,6 +582,18 @@ model AuditLog {
   @@index([createdAt])
 }
 
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique @db.VarChar(255)
+  permissions String[] @default([])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([email])
+  @@index([isActive])
+}
+
 model Employee {
   id             String          @id @default(cuid())
   firstName      String
