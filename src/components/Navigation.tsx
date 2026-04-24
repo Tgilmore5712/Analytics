@@ -68,34 +68,50 @@ export default function Navigation({
   const pathname = usePathname();
   const isGlobalNavigationManaged = useContext(GlobalNavigationContext);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [permissionsFailed, setPermissionsFailed] = useState(false);
 
   // Load permissions from database when user logs in
   useEffect(() => {
-    if (!user?.email || permissionsLoaded) return;
+    if (!user?.email) return;
 
     const loadPermissions = async () => {
       try {
-        const res = await fetch('/api/admin/permissions-sync', { method: 'GET' });
-        if (res.ok) {
-          const data = await res.json();
-          // Populate USER_PERMISSIONS with fetched data
-          if (data.data && Array.isArray(data.data)) {
-            Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
-            for (const user of data.data) {
-              if (user.email && Array.isArray(user.permissions)) {
-                USER_PERMISSIONS[user.email.toLowerCase()] = user.permissions;
-              }
+        console.log('Loading permissions for:', user.email);
+        const res = await fetch('/api/admin/permissions-sync', { 
+          method: 'GET',
+          credentials: 'include'
+        });
+        
+        if (!res.ok) {
+          console.error('Permissions fetch failed:', res.status, res.statusText);
+          setPermissionsFailed(true);
+          setPermissionsLoaded(true);
+          return;
+        }
+
+        const data = await res.json();
+        console.log('Permissions fetched:', data);
+        
+        // Populate USER_PERMISSIONS with fetched data
+        if (data.data && Array.isArray(data.data)) {
+          Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
+          for (const u of data.data) {
+            if (u.email && Array.isArray(u.permissions)) {
+              USER_PERMISSIONS[u.email.toLowerCase()] = u.permissions;
             }
           }
-          setPermissionsLoaded(true);
+          console.log('USER_PERMISSIONS updated:', USER_PERMISSIONS);
         }
+        setPermissionsLoaded(true);
       } catch (error) {
         console.error('Failed to load permissions:', error);
+        setPermissionsFailed(true);
+        setPermissionsLoaded(true);
       }
     };
 
     loadPermissions();
-  }, [user?.email, permissionsLoaded]);
+  }, [user?.email]);
 
   useEffect(() => {
     const redirectToSignedOutPage = () => {
@@ -130,9 +146,18 @@ export default function Navigation({
     return null;
   }
   
-  // Show navigation even without authentication for static export
-  if (loading || (user?.email && !permissionsLoaded)) {
+  // Show loading state only while authentication is loading
+  if (loading) {
     return null;
+  }
+
+  // If user is logged in but we haven't checked permissions yet, show loading
+  if (user?.email && !permissionsLoaded) {
+    return (
+      <nav className="flex items-center justify-end gap-2 px-2 py-1">
+        <span className="text-[11px] text-gray-500">Loading navigation...</span>
+      </nav>
+    );
   }
 
   const canAccessLink = (link: NavLink) => {
