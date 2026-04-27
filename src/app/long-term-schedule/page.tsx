@@ -87,6 +87,13 @@ type ProjectSummariesResponse = {
   hasNextPage?: boolean;
 };
 
+type AllocationProject = { jobKey: string; scopeOfWork: string; hours: number };
+
+type DisplayProject = AllocationProject & {
+  scopeCount: number;
+  scopeTitles: string[];
+};
+
 interface TimeOffRequest {
   id: string;
   employeeId: string;
@@ -570,6 +577,39 @@ function addProjectToAllocation(
 
 function getAssignmentKey(jobKey: string, scopeOfWork: string): string {
   return `${jobKey}||${scopeOfWork || "Unnamed Scope"}`;
+}
+
+function getProjectNameFromJobKey(jobKey: string): string {
+  const parts = jobKey.split("~");
+  return parts.slice(2).join("~").trim() || jobKey;
+}
+
+function getDisplayProjects(projects: AllocationProject[]): DisplayProject[] {
+  const grouped = new Map<string, DisplayProject>();
+
+  projects.forEach((project) => {
+    const key = normalizeJobKey(project.jobKey) || project.jobKey;
+    const scopeTitle = String(project.scopeOfWork || "Unnamed Scope").trim() || "Unnamed Scope";
+    const existing = grouped.get(key);
+
+    if (!existing) {
+      grouped.set(key, {
+        ...project,
+        scopeOfWork: scopeTitle,
+        scopeCount: 1,
+        scopeTitles: [scopeTitle],
+      });
+      return;
+    }
+
+    existing.hours += project.hours;
+    if (!existing.scopeTitles.includes(scopeTitle)) {
+      existing.scopeTitles.push(scopeTitle);
+      existing.scopeCount = existing.scopeTitles.length;
+    }
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => getProjectNameFromJobKey(a.jobKey).localeCompare(getProjectNameFromJobKey(b.jobKey)));
 }
 
 export default function LongTermSchedulePage() {
@@ -1391,17 +1431,22 @@ export default function LongTermSchedulePage() {
   }
 
   function renderProjects(
-    projects: Array<{ jobKey: string; scopeOfWork: string; hours: number }>,
+    projects: AllocationProject[],
     isCompact = false,
     granularity: "day" | "week" = "week",
     dragContext?: { sourceDateKey?: string; sourceForemanId?: string }
   ) {
-    return projects.map((proj, idx) => {
+    return getDisplayProjects(projects).map((proj, idx) => {
+      const hasSingleScope = proj.scopeCount === 1;
+      const scopeTitle = hasSingleScope ? proj.scopeOfWork : "";
       const assignmentKey = getAssignmentKey(proj.jobKey, proj.scopeOfWork);
       const resolvedForemanId = dragContext?.sourceForemanId || "__unassigned__";
-      const canDrag = Boolean(dragContext?.sourceDateKey);
-      const canRemoveFromDay = Boolean(dragContext?.sourceDateKey);
-      const projectName = proj.jobKey.split("~")[2] || proj.jobKey;
+      const canDrag = Boolean(dragContext?.sourceDateKey) && hasSingleScope;
+      const canRemoveFromDay = Boolean(dragContext?.sourceDateKey) && hasSingleScope;
+      const projectName = getProjectNameFromJobKey(proj.jobKey);
+      const title = hasSingleScope
+        ? `${projectName} - ${proj.scopeOfWork}`
+        : `${projectName} - ${proj.scopeCount} scopes combined: ${proj.scopeTitles.join(", ")}`;
 
       return (
         <div
@@ -1421,16 +1466,21 @@ export default function LongTermSchedulePage() {
           onClick={() => {
             openScopeModal(
               proj.jobKey,
-              proj.scopeOfWork,
+              scopeTitle,
               dragContext?.sourceDateKey,
               proj.hours,
               resolvedForemanId
             );
           }}
-          title={projectName}
+          title={title}
         >
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1 font-black text-gray-900 whitespace-normal break-words leading-tight">{projectName}</div>
+            <div className="min-w-0 flex-1 font-black text-gray-900 whitespace-normal break-words leading-tight">
+              {projectName}
+              {!hasSingleScope && (
+                <span className="ml-1 text-[7px] font-black text-gray-500 uppercase whitespace-nowrap">{proj.scopeCount} scopes</span>
+              )}
+            </div>
             <div className="shrink-0 text-right text-[8px] font-black text-orange-700 leading-none whitespace-nowrap">
               <div>{proj.hours.toFixed(0)}H</div>
               <div className="mt-0.5 text-[7px] text-orange-600/90">{getFteFromHours(proj.hours, granularity).toFixed(1)} MP</div>
