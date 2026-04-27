@@ -1,15 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getRequestUserEmail } from '@/lib/requestUser';
+import { loadUserAssignedPermissionsFromDatabase } from '@/lib/permissions';
 
-// GET - Get all current permissions (accessible to authenticated users)
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function isAdminPermission(permissions: string[]) {
+  return permissions.includes('OWNER') || permissions.includes('ADMIN');
+}
+
+// GET - Get all current permissions (admin only)
 export async function GET(request: NextRequest) {
   try {
+    const email = await getRequestUserEmail(request);
+    if (!email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const currentUserPermissions = await loadUserAssignedPermissionsFromDatabase(prisma, email);
+    if (!isAdminPermission(currentUserPermissions)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // Use raw SQL since the user table was created directly (no Prisma migration)
     const users = await prisma.$queryRaw<{ email: string; permissions: string[] }[]>`
-      SELECT email, permissions
+      SELECT "email", "permissions"
       FROM "user"
       WHERE "isActive" = true
-      ORDER BY email ASC
+      ORDER BY "email" ASC
     `;
 
     return NextResponse.json({ 

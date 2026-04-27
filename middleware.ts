@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth0 } from '@/lib/auth0';
-import { hasPageAccess, resolvePermissionForPath } from '@/lib/permissions';
+import { resolvePermissionForPath } from '@/lib/permissions';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimit';
 import {
   DIAGNOSTICS_OR_TEST_API_ROUTES,
@@ -11,6 +11,29 @@ import {
 
 const API_RATE_LIMIT = 300;
 const API_RATE_WINDOW_MS = 60 * 1000;
+const INTERNAL_PERMISSION_CHECK_ROUTE = '/api/internal/permission-check';
+
+async function checkDatabasePermission(request: NextRequest, permission: string): Promise<boolean> {
+  try {
+    const cookie = request.headers.get('cookie');
+    const response = await fetch(new URL(INTERNAL_PERMISSION_CHECK_ROUTE, request.url), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: JSON.stringify({ permission }),
+      cache: 'no-store',
+    });
+
+    if (!response.ok) return false;
+    const data = await response.json().catch(() => null) as { allowed?: unknown } | null;
+    return data?.allowed === true;
+  } catch (error) {
+    console.error('Failed to check route permission:', error);
+    return false;
+  }
+}
 
 export async function middleware(request: NextRequest) {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -27,6 +50,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRoute = pathname.startsWith('/api/');
   const isAuthApiRoute = pathname.startsWith('/api/auth/');
+  const isInternalPermissionCheckRoute = pathname === INTERNAL_PERMISSION_CHECK_ROUTE;
   const isPublicVersionRoute = pathname === '/api/public/version';
   const isDiagnosticsOrTestApiRoute = matchesDiagnosticsOrTestRoute(
     pathname,
@@ -55,6 +79,10 @@ export async function middleware(request: NextRequest) {
 
   // In production or if Auth0 is configured, enforce auth
   if (isPublicVersionRoute) {
+    return NextResponse.next();
+  }
+
+  if (isInternalPermissionCheckRoute) {
     return NextResponse.next();
   }
 
@@ -121,9 +149,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // NOTE: Permission checks are now done at the route handler level where Prisma is available.
-  // Middleware only ensures user is authenticated via Auth0.
-  // Remove the permission check from middleware since it can't access database on Edge Runtime.
+  const requiredPermission = resolvePermissionForPath(pathname);
+  if (requiredPermission) {
+    const allowed = await checkDatabasePermission(request, requiredPermission);
+    if (!allowed) {
+      if (isApiRoute) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden' },
+          { status: 403 }
+        );
+      }
+
+      const forbiddenUrl = new URL('/forbidden', request.url);
+      forbiddenUrl.searchParams.set('from', `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(forbiddenUrl);
+    }
+  }
 
   if (isApiRoute && apiRateLimit) {
     const response = NextResponse.next();

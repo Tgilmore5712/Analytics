@@ -1,45 +1,75 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { auth0 } from '@/lib/auth0';
 import { prisma } from '@/lib/prisma';
+import { getRequestUserEmail } from '@/lib/requestUser';
+import { loadUserAssignedPermissionsFromDatabase } from '@/lib/permissions';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type UserPermissionRecord = {
+  id: string;
+  email: string;
+  permissions: string[];
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function isAdminPermission(permissions: string[]) {
+  return permissions.includes('OWNER') || permissions.includes('ADMIN');
+}
+
+async function requireAdmin(request: NextRequest) {
+  const email = await getRequestUserEmail(request);
+  if (!email) {
+    return { authorized: false as const, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  const permissions = await loadUserAssignedPermissionsFromDatabase(prisma, email);
+  if (!isAdminPermission(permissions)) {
+    return { authorized: false as const, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  }
+
+  return { authorized: true as const, email };
+}
+
+function normalizePermissions(permissions: unknown): string[] {
+  if (!Array.isArray(permissions)) return [];
+  return permissions.filter((permission): permission is string => {
+    return typeof permission === 'string' && permission.trim().length > 0;
+  });
+}
 
 // POST - Add or update a user's permissions
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth0.getSession(request);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Verify user is admin
-    const currentUser = await prisma.user.findUnique({
-      where: { email: session.user.email.toLowerCase() },
-      select: { permissions: true },
-    });
-
-    if (!currentUser || (!currentUser.permissions.includes('OWNER') && !currentUser.permissions.includes('ADMIN'))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.authorized) return admin.response;
 
     const { email, permissions } = await request.json();
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const normalizedPermissions = normalizePermissions(permissions);
     
-    if (!email || !Array.isArray(permissions)) {
+    if (!normalizedEmail || !Array.isArray(permissions)) {
       return NextResponse.json(
         { error: 'Invalid request: email and permissions array required' },
         { status: 400 }
       );
     }
 
-    const user = await prisma.user.upsert({
-      where: { email: email.toLowerCase() },
-      update: { permissions, updatedAt: new Date() },
-      create: {
-        email: email.toLowerCase(),
-        permissions,
-        isActive: true,
-      },
-    });
+    const rows = await prisma.$queryRaw<UserPermissionRecord[]>`
+      INSERT INTO "user" ("id", "email", "permissions", "isActive", "createdAt", "updatedAt")
+      VALUES (${randomUUID()}, ${normalizedEmail}, ${normalizedPermissions}, true, NOW(), NOW())
+      ON CONFLICT ("email")
+      DO UPDATE SET
+        "permissions" = EXCLUDED."permissions",
+        "isActive" = true,
+        "updatedAt" = NOW()
+      RETURNING "id", "email", "permissions", "isActive", "createdAt", "updatedAt"
+    `;
 
-    return NextResponse.json({ success: true, data: user });
+    return NextResponse.json({ success: true, data: rows[0] });
   } catch (error) {
     console.error('Error updating user permissions:', error);
     return NextResponse.json(
@@ -52,13 +82,11 @@ export async function POST(request: NextRequest) {
 // GET - Get a specific user's permissions
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth0.getSession(request);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.authorized) return admin.response;
 
     const { searchParams } = new URL(request.url);
-    const email = searchParams.get('email');
+    const email = searchParams.get('email')?.trim().toLowerCase();
 
     if (!email) {
       return NextResponse.json(
@@ -67,16 +95,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-      select: { email: true, permissions: true, isActive: true },
-    });
+    const rows = await prisma.$queryRaw<Pick<UserPermissionRecord, 'email' | 'permissions' | 'isActive'>[]>`
+      SELECT "email", "permissions", "isActive"
+      FROM "user"
+      WHERE lower("email") = ${email}
+      LIMIT 1
+    `;
 
-    if (!user) {
+    if (!rows[0]) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ data: user });
+    return NextResponse.json({ data: rows[0] });
   } catch (error) {
     console.error('Error fetching user permissions:', error);
     return NextResponse.json(
@@ -89,23 +119,11 @@ export async function GET(request: NextRequest) {
 // DELETE - Deactivate a user (set isActive to false)
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await auth0.getSession(request);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Verify user is admin
-    const currentUser = await prisma.user.findUnique({
-      where: { email: session.user.email.toLowerCase() },
-      select: { permissions: true },
-    });
-
-    if (!currentUser || (!currentUser.permissions.includes('OWNER') && !currentUser.permissions.includes('ADMIN'))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.authorized) return admin.response;
 
     const { searchParams } = new URL(request.url);
-    const email = searchParams.get('email');
+    const email = searchParams.get('email')?.trim().toLowerCase();
 
     if (!email) {
       return NextResponse.json(
@@ -114,12 +132,19 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const user = await prisma.user.update({
-      where: { email: email.toLowerCase() },
-      data: { isActive: false, updatedAt: new Date() },
-    });
+    const rows = await prisma.$queryRaw<UserPermissionRecord[]>`
+      UPDATE "user"
+      SET "isActive" = false,
+          "updatedAt" = NOW()
+      WHERE lower("email") = ${email}
+      RETURNING "id", "email", "permissions", "isActive", "createdAt", "updatedAt"
+    `;
 
-    return NextResponse.json({ success: true, data: user });
+    if (!rows[0]) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: rows[0] });
   } catch (error) {
     console.error('Error deactivating user:', error);
     return NextResponse.json(

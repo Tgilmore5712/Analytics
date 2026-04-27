@@ -34,6 +34,30 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
  
 };
 
+type UserPermissionRow = {
+  email: string | null;
+  permissions: string[] | null;
+};
+
+function normalizeAssignedPermissions(permissions: unknown): string[] {
+  if (!Array.isArray(permissions)) return [];
+  return permissions.filter((perm): perm is string => typeof perm === "string" && perm.trim().length > 0);
+}
+
+export function expandAssignedPermissions(permissions: string[]): string[] {
+  const allPages = new Set<string>();
+
+  permissions.forEach(perm => {
+    if (PERMISSION_GROUPS[perm]) {
+      PERMISSION_GROUPS[perm].forEach(page => allPages.add(page));
+    } else {
+      allPages.add(perm);
+    }
+  });
+
+  return Array.from(allPages);
+}
+
 function parseUserPermissionsFromEnv(): Record<string, string[]> {
   const sources = [
     process.env.USER_PERMISSIONS_JSON,
@@ -68,15 +92,18 @@ function parseUserPermissionsFromEnv(): Record<string, string[]> {
 // Load permissions from database (called on middleware initialization)
 export async function loadUserPermissionsFromDatabase(prisma: any): Promise<Record<string, string[]>> {
   try {
-    const users = await prisma.user.findMany({
-      where: { isActive: true },
-      select: { email: true, permissions: true },
-    });
+    const users = await prisma.$queryRaw<UserPermissionRow[]>`
+      SELECT "email", "permissions"
+      FROM "user"
+      WHERE "isActive" = true
+      ORDER BY "email" ASC
+    `;
     
     const perms: Record<string, string[]> = {};
     for (const user of users) {
-      if (user.email && Array.isArray(user.permissions) && user.permissions.length > 0) {
-        perms[user.email.toLowerCase()] = user.permissions;
+      const permissions = normalizeAssignedPermissions(user.permissions);
+      if (user.email && permissions.length > 0) {
+        perms[user.email.toLowerCase()] = permissions;
       }
     }
     
@@ -85,6 +112,38 @@ export async function loadUserPermissionsFromDatabase(prisma: any): Promise<Reco
     console.error("Failed to load permissions from database:", error);
     return {};
   }
+}
+
+export async function loadUserAssignedPermissionsFromDatabase(
+  prisma: any,
+  userEmail: string | null
+): Promise<string[]> {
+  if (!userEmail) return [];
+
+  try {
+    const users = await prisma.$queryRaw<UserPermissionRow[]>`
+      SELECT "email", "permissions"
+      FROM "user"
+      WHERE lower("email") = ${userEmail.toLowerCase()}
+        AND "isActive" = true
+      LIMIT 1
+    `;
+
+    return normalizeAssignedPermissions(users[0]?.permissions);
+  } catch (error) {
+    console.error("Failed to load user permissions from database:", error);
+    return [];
+  }
+}
+
+export async function hasDatabasePageAccess(
+  prisma: any,
+  userEmail: string | null,
+  page: string
+): Promise<boolean> {
+  if (!userEmail) return false;
+  const permissions = await loadUserAssignedPermissionsFromDatabase(prisma, userEmail);
+  return expandAssignedPermissions(permissions).some(p => p.toLowerCase() === page.toLowerCase());
 }
 
 // Map user emails to permission groups/pages from database or environment variables.
@@ -143,20 +202,7 @@ export function getUserPermissions(userEmail: string | null): string[] {
   
   const userPerms = USER_PERMISSIONS[userEmail.toLowerCase()];
   if (!userPerms) return [];
-
-  const allPages = new Set<string>();
-  
-  userPerms.forEach(perm => {
-    if (PERMISSION_GROUPS[perm]) {
-      // It's a group, add all pages from it
-      PERMISSION_GROUPS[perm].forEach(page => allPages.add(page));
-    } else {
-      // It's a specific page
-      allPages.add(perm);
-    }
-  });
-
-  return Array.from(allPages);
+  return expandAssignedPermissions(userPerms);
 }
 
 export function getUserAssignedPermissions(userEmail: string | null): string[] {

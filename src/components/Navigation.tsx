@@ -77,7 +77,7 @@ export default function Navigation({
     const loadPermissions = async () => {
       try {
         console.log('Loading permissions for:', user.email);
-        const res = await fetch('/api/admin/permissions-sync', { 
+        const res = await fetch('/api/permissions/me', { 
           method: 'GET',
           credentials: 'include'
         });
@@ -92,14 +92,10 @@ export default function Navigation({
         const data = await res.json();
         console.log('Permissions fetched:', data);
         
-        // Populate USER_PERMISSIONS with fetched data
-        if (data.data && Array.isArray(data.data)) {
+        // Populate USER_PERMISSIONS with the current user's assigned permissions.
+        if (data.data?.email && Array.isArray(data.data.permissions)) {
           Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
-          for (const u of data.data) {
-            if (u.email && Array.isArray(u.permissions)) {
-              USER_PERMISSIONS[u.email.toLowerCase()] = u.permissions;
-            }
-          }
+          USER_PERMISSIONS[data.data.email.toLowerCase()] = data.data.permissions;
           console.log('USER_PERMISSIONS updated:', USER_PERMISSIONS);
         }
         setPermissionsLoaded(true);
