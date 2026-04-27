@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth0 } from '@/lib/auth0';
 import { resolvePermissionForPath } from '@/lib/permissions';
+import {
+  getPermissionCookieOptions,
+  PERMISSION_COOKIE_NAME,
+  verifyPermissionCookieValue,
+} from '@/lib/permissionCookie';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rateLimit';
 import {
   DIAGNOSTICS_OR_TEST_API_ROUTES,
@@ -13,7 +18,20 @@ const API_RATE_LIMIT = 300;
 const API_RATE_WINDOW_MS = 60 * 1000;
 const INTERNAL_PERMISSION_CHECK_ROUTE = '/api/internal/permission-check';
 
-async function checkDatabasePermission(request: NextRequest, permission: string): Promise<boolean> {
+type PermissionCheckResult = {
+  allowed: boolean;
+  permissionsCookie?: string | null;
+};
+
+function applyPermissionCookie(response: NextResponse, cookieValue: string | null) {
+  if (cookieValue) {
+    response.cookies.set(PERMISSION_COOKIE_NAME, cookieValue, getPermissionCookieOptions());
+  }
+
+  return response;
+}
+
+async function checkDatabasePermission(request: NextRequest, permission: string): Promise<PermissionCheckResult> {
   try {
     const cookie = request.headers.get('cookie');
     const response = await fetch(new URL(INTERNAL_PERMISSION_CHECK_ROUTE, request.url), {
@@ -26,12 +44,19 @@ async function checkDatabasePermission(request: NextRequest, permission: string)
       cache: 'no-store',
     });
 
-    if (!response.ok) return false;
-    const data = await response.json().catch(() => null) as { allowed?: unknown } | null;
-    return data?.allowed === true;
+    if (!response.ok) return { allowed: false };
+    const data = await response.json().catch(() => null) as {
+      allowed?: unknown;
+      permissionsCookie?: unknown;
+    } | null;
+
+    return {
+      allowed: data?.allowed === true,
+      permissionsCookie: typeof data?.permissionsCookie === 'string' ? data.permissionsCookie : null,
+    };
   } catch (error) {
     console.error('Failed to check route permission:', error);
-    return false;
+    return { allowed: false };
   }
 }
 
@@ -149,9 +174,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  let permissionCookieToSet: string | null = null;
   const requiredPermission = resolvePermissionForPath(pathname);
   if (requiredPermission) {
-    const allowed = await checkDatabasePermission(request, requiredPermission);
+    const sessionEmail = session.user?.email?.trim().toLowerCase() || null;
+    const cachedPermissions = await verifyPermissionCookieValue(
+      request.cookies.get(PERMISSION_COOKIE_NAME)?.value,
+      sessionEmail
+    );
+    const cachedAllowed = cachedPermissions?.permissions.some(
+      (permission) => permission.toLowerCase() === requiredPermission.toLowerCase()
+    ) === true;
+    const permissionCheck = cachedAllowed
+      ? { allowed: true, permissionsCookie: null }
+      : await checkDatabasePermission(request, requiredPermission);
+    const allowed = permissionCheck.allowed;
+    permissionCookieToSet = permissionCheck.permissionsCookie || null;
+
     if (!allowed) {
       if (isApiRoute) {
         return NextResponse.json(
@@ -171,10 +210,10 @@ export async function middleware(request: NextRequest) {
     response.headers.set('X-RateLimit-Limit', String(apiRateLimit.limit));
     response.headers.set('X-RateLimit-Remaining', String(apiRateLimit.remaining));
     response.headers.set('X-RateLimit-Reset', String(Math.floor(apiRateLimit.resetAt / 1000)));
-    return response;
+    return applyPermissionCookie(response, permissionCookieToSet);
   }
 
-  return await auth0.middleware(request);
+  return applyPermissionCookie(await auth0.middleware(request), permissionCookieToSet);
 }
 
 export const config = {

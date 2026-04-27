@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getRequestUserEmail } from '@/lib/requestUser';
-import { loadUserAssignedPermissionsFromDatabase } from '@/lib/permissions';
+import { expandAssignedPermissions, loadUserAssignedPermissionsFromDatabase } from '@/lib/permissions';
+import { createPermissionCookieValue, getPermissionCookieOptions, PERMISSION_COOKIE_NAME } from '@/lib/permissionCookie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,14 @@ export async function GET(request: NextRequest) {
     }
 
     const permissions = await loadUserAssignedPermissionsFromDatabase(prisma, email);
-    return NextResponse.json({ success: true, data: { email, permissions } });
+    const response = NextResponse.json({ success: true, data: { email, permissions } });
+    const cookieValue = await createPermissionCookieValue(email, expandAssignedPermissions(permissions));
+
+    if (cookieValue) {
+      response.cookies.set(PERMISSION_COOKIE_NAME, cookieValue, getPermissionCookieOptions());
+    }
+
+    return response;
   } catch (error) {
     console.error('Error fetching current user permissions:', error);
     return NextResponse.json(

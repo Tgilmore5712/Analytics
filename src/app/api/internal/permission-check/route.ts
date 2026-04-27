@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getRequestUserEmail } from '@/lib/requestUser';
-import { hasDatabasePageAccess } from '@/lib/permissions';
+import { expandAssignedPermissions, loadUserAssignedPermissionsFromDatabase } from '@/lib/permissions';
+import { createPermissionCookieValue, getPermissionCookieOptions, PERMISSION_COOKIE_NAME } from '@/lib/permissionCookie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,8 +20,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ allowed: false, error: 'Permission required' }, { status: 400 });
     }
 
-    const allowed = await hasDatabasePageAccess(prisma, email, permission);
-    return NextResponse.json({ allowed, email, permission });
+    const assignedPermissions = await loadUserAssignedPermissionsFromDatabase(prisma, email);
+    const permissions = expandAssignedPermissions(assignedPermissions);
+    const allowed = permissions.some((userPermission) => userPermission.toLowerCase() === permission.toLowerCase());
+    const cookieValue = await createPermissionCookieValue(email, permissions);
+    const response = NextResponse.json({ allowed, email, permission, permissionsCookie: cookieValue });
+
+    if (cookieValue) {
+      response.cookies.set(PERMISSION_COOKIE_NAME, cookieValue, getPermissionCookieOptions());
+    }
+
+    return response;
   } catch (error) {
     console.error('Error checking permissions:', error);
     return NextResponse.json(
