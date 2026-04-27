@@ -29,12 +29,13 @@ interface Employee {
 }
 
 interface WeatherData {
-  temp: number;
+  temp: number | null;
   condition: string;
   icon: string;
   location: string;
-  hourly: { time: string; temp: number; icon: string }[];
-  daily: { date: string; low: number; high: number; icon: string }[];
+  hourly: { time: string; temp: number | null; icon: string }[];
+  daily: { date: string; low: number | null; high: number | null; icon: string }[];
+  unavailable?: boolean;
 }
 
 type ScopeWithTasks = {
@@ -434,65 +435,12 @@ function HomeContent() {
   useEffect(() => {
     async function fetchWeather() {
       try {
-        const lat = 40.06;
-        const lon = -76.2;
-        const weatherRes = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto`
-        );
-        const weatherData = await weatherRes.json();
-        if (!weatherData.current_weather) return;
+        const weatherRes = await fetch('/api/weather', { cache: 'no-store', credentials: 'include' });
+        if (!weatherRes.ok) {
+          throw new Error(`Weather API returned ${weatherRes.status}`);
+        }
 
-        const tempF = Math.round((weatherData.current_weather.temperature * 9) / 5 + 32);
-        const code = weatherData.current_weather.weathercode;
-
-        const getIcon = (c: number) => {
-          if (c === 0) return "☀";
-          if (c >= 1 && c <= 3) return "⛅";
-          if (c >= 45 && c <= 48) return "🌫";
-          if (c >= 51 && c <= 67) return "🌧";
-          if (c >= 71 && c <= 77) return "❄";
-          if (c >= 80 && c <= 82) return "🌦";
-          if (c >= 95) return "⛈";
-          return "☁";
-        };
-
-        const getCondition = (c: number) => {
-          if (c === 0) return "Clear";
-          if (c >= 1 && c <= 3) return "Partly Cloudy";
-          if (c >= 45 && c <= 48) return "Foggy";
-          if (c >= 51 && c <= 67) return "Raining";
-          if (c >= 71 && c <= 77) return "Snowing";
-          if (c >= 80 && c <= 82) return "Showers";
-          if (c >= 95) return "Stormy";
-          return "Cloudy";
-        };
-
-        const now = new Date();
-        now.setMinutes(0, 0, 0);
-        let startIndex = weatherData.hourly.time.findIndex((t: string) => new Date(t) >= now);
-        if (startIndex === -1) startIndex = new Date().getHours();
-
-        const hourly = weatherData.hourly.time.slice(startIndex, startIndex + 8).map((t: string, i: number) => ({
-          time: new Date(t).toLocaleTimeString([], { hour: "numeric" }),
-          temp: Math.round((weatherData.hourly.temperature_2m[startIndex + i] * 9) / 5 + 32),
-          icon: getIcon(weatherData.hourly.weathercode[startIndex + i]),
-        }));
-
-        const daily = weatherData.daily.time.map((t: string, i: number) => ({
-          date: new Date(t).toLocaleDateString([], { weekday: "short" }),
-          high: Math.round((weatherData.daily.temperature_2m_max[i] * 9) / 5 + 32),
-          low: Math.round((weatherData.daily.temperature_2m_min[i] * 9) / 5 + 32),
-          icon: getIcon(weatherData.daily.weathercode[i]),
-        }));
-
-        setWeather({
-          temp: tempF,
-          condition: getCondition(code),
-          icon: getIcon(code),
-          location: "Quarryville, PA",
-          hourly,
-          daily,
-        });
+        setWeather(await weatherRes.json());
       } catch (error) {
         console.error("Weather fetch failed:", error);
       }
@@ -1693,6 +1641,11 @@ function HomeContent() {
                   <p className="text-white/70 text-[10px] md:text-xs font-bold uppercase tracking-widest leading-none mt-2">
                     {weather?.location ?? "Local Site"}
                   </p>
+                  {weather?.unavailable && (
+                    <p className="mt-2 text-[10px] md:text-xs font-bold uppercase tracking-widest text-white/60">
+                      Live forecast unavailable
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1709,7 +1662,7 @@ function HomeContent() {
                     >
                       <span className="text-[10px] font-black uppercase text-white/60 mb-1">{h.time}</span>
                       <span className="text-2xl mb-1">{h.icon}</span>
-                      <span className="text-sm md:text-base font-black">{h.temp}°</span>
+                      <span className="text-sm md:text-base font-black">{h.temp ?? "--"}°</span>
                     </div>
                   ))}
                 </div>
@@ -1726,8 +1679,8 @@ function HomeContent() {
                       <span className="w-10 font-black uppercase text-white/60">{d.date}</span>
                       <span className="text-xl">{d.icon}</span>
                       <div className="flex gap-3 w-20 justify-end">
-                        <span className="font-black text-white">{d.high}°</span>
-                        <span className="font-bold text-white/40">{d.low}°</span>
+                        <span className="font-black text-white">{d.high ?? "--"}°</span>
+                        <span className="font-bold text-white/40">{d.low ?? "--"}°</span>
                       </div>
                     </div>
                   ))}
