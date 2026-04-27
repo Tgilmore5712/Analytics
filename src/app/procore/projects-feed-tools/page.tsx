@@ -37,8 +37,8 @@ export default function ProcoreProjectsFeedToolsPage() {
   const [lineItemGroupsBidBoardProjectId, setLineItemGroupsBidBoardProjectId] = useState<string>("562949955352714");
   const [lineItemGroupsProposalId, setLineItemGroupsProposalId] = useState<string>("3206336");
 
-  // Preserve Procore page location on refresh
-  useProcoreAuthAfterRefresh();
+  // Preserve location, but let the explicit Connect button start OAuth.
+  useProcoreAuthAfterRefresh({ autoRedirect: false });
 
   const endpointExamples = useMemo(
     () => ({
