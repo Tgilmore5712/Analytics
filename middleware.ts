@@ -27,6 +27,11 @@ function resolvePermissionsForRequest(request: NextRequest): string[] {
   const { pathname, searchParams } = request.nextUrl;
   const method = request.method.toUpperCase();
   const permissions = new Set<string>();
+
+  if (pathname === '/') {
+    return [];
+  }
+
   const defaultPermission = resolvePermissionForPath(pathname);
 
   if (defaultPermission) {
