@@ -475,8 +475,8 @@ export default function ProcoreProductivityFeedPage() {
   const [qtyPatchError, setQtyPatchError] = useState<string | null>(null);
   const [qtyPatchResponse, setQtyPatchResponse] = useState<BidFormPatchTestResponse | null>(null);
 
-  // Preserve Procore page location on refresh
-  useProcoreAuthAfterRefresh();
+  // Preserve location, but let the explicit Connect button start OAuth.
+  useProcoreAuthAfterRefresh({ autoRedirect: false });
 
   useEffect(() => {
     let cancelled = false;

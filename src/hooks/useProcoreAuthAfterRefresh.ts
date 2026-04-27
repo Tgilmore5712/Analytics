@@ -5,8 +5,13 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 
-export function useProcoreAuthAfterRefresh() {
+type ProcoreAuthAfterRefreshOptions = {
+  autoRedirect?: boolean;
+};
+
+export function useProcoreAuthAfterRefresh(options: ProcoreAuthAfterRefreshOptions = {}) {
   const pathname = usePathname();
+  const autoRedirect = options.autoRedirect ?? true;
   const REDIRECT_COOLDOWN_MS = 30_000;
   const REDIRECT_TS_KEY = 'procore_auth_redirect_ts';
 
@@ -24,6 +29,8 @@ export function useProcoreAuthAfterRefresh() {
   useEffect(() => {
     // If we're on a Procore page and auth check fails, redirect to login with returnTo
     const checkProcoreAuth = async () => {
+      if (!autoRedirect) return;
+
       try {
         const response = await fetch('/api/procore/me', { credentials: 'include', cache: 'no-store' });
 
@@ -56,7 +63,7 @@ export function useProcoreAuthAfterRefresh() {
       // Check on mount in case auth was lost
       checkProcoreAuth();
     }
-  }, [pathname]);
+  }, [autoRedirect, pathname]);
 }
 
 export function getLastProcorePage(): string | null {
