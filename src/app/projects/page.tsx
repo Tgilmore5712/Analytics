@@ -201,37 +201,17 @@ export default function ProjectsPage() {
       estimatesBidsUrl.searchParams.set("companyId", DEFAULT_PROCORE_COMPANY_ID);
       estimatesBidsUrl.searchParams.set("_ts", String(Date.now()));
 
-      const [projectsResponse, bidBoardResponse, budgetResponse, changeOrdersResponse, estimatesBidsResponse, proposalsBulkResponse] = await Promise.all([
+      const bidBoardUrl = new URL("/api/bid-board-live", window.location.origin);
+      bidBoardUrl.searchParams.set("page", "1");
+      bidBoardUrl.searchParams.set("pageSize", "2000");
+      bidBoardUrl.searchParams.set("_ts", String(Date.now()));
+
+      const [projectsResponse, bidBoardResponse, budgetResponse, changeOrdersResponse, estimatesBidsResponse] = await Promise.all([
         fetch(projectsUrl.toString(), { cache: "no-store" }),
-        fetch("/api/procore/estimating/bid-board-projects", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
-          body: JSON.stringify({
-            fetchAll: true,
-            "filters[by_status]": "All",
-          }),
-        }),
+        fetch(bidBoardUrl.toString(), { cache: "no-store" }),
         fetch(budgetUrl.toString(), { cache: "no-store" }),
         fetch(changeOrdersUrl.toString(), { cache: "no-store" }),
         fetch(estimatesBidsUrl.toString(), { cache: "no-store" }),
-        fetch("/api/procore/estimating/proposals-bulk", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
-          body: JSON.stringify({
-            companyId: DEFAULT_PROCORE_COMPANY_ID,
-            fetchAll: true,
-            perPage: 100,
-            "filters[by_status]": "All",
-            maxBidBoardProjects: 1000,
-            maxProposalsPerProject: 200,
-          }),
-        }),
       ]);
 
       if (!projectsResponse.ok) {
@@ -248,21 +228,10 @@ export default function ProjectsPage() {
       const estimatesBidsPayload = estimatesBidsResponse.ok
         ? ((await estimatesBidsResponse.json()) as EstimateBidApiResponse)
         : { data: [] };
-      const proposalsBulkPayload = proposalsBulkResponse.ok
-        ? ((await proposalsBulkResponse.json()) as ProposalsBulkApiResponse)
-        : { bidBoardProjects: [], proposals: [] };
+      const proposalsBulkPayload: ProposalsBulkApiResponse = { bidBoardProjects: [], proposals: [] };
 
-      if (!bidBoardResponse.ok || !Array.isArray(bidPayload.projects)) {
-        const bidBoardUrl = new URL("/api/bid-board-live", window.location.origin);
-        bidBoardUrl.searchParams.set("page", "1");
-        bidBoardUrl.searchParams.set("pageSize", "2000");
-        bidBoardUrl.searchParams.set("_ts", String(Date.now()));
-
-        const fallbackResponse = await fetch(bidBoardUrl.toString(), { cache: "no-store" });
-        if (!fallbackResponse.ok) {
-          throw new Error(`Bid Board request failed with ${fallbackResponse.status}`);
-        }
-        bidPayload = (await fallbackResponse.json()) as BidBoardApiResponse;
+      if (!bidBoardResponse.ok) {
+        bidPayload = { data: [] };
       }
 
       const budgetByProjectId = new Map<string, ProjectBudgetRow>();

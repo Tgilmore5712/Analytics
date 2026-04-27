@@ -16,7 +16,17 @@ import {
 
 const API_RATE_LIMIT = 300;
 const API_RATE_WINDOW_MS = 60 * 1000;
+const HEAVY_API_RATE_LIMIT = 6;
+const HEAVY_API_RATE_WINDOW_MS = 10 * 60 * 1000;
 const INTERNAL_PERMISSION_CHECK_ROUTE = '/api/internal/permission-check';
+
+const HEAVY_API_ROUTE_PREFIXES = [
+  '/api/procore/sync',
+  '/api/procore/estimating/bid-board-projects',
+  '/api/procore/estimating/proposals-bulk',
+  '/api/procore/estimating/proposal-line-items-bulk',
+  '/api/procore/sync/project-commercial-data',
+];
 
 type PermissionCheckResult = {
   allowed: boolean;
@@ -65,6 +75,26 @@ function applyPermissionCookie(response: NextResponse, cookieValue: string | nul
   }
 
   return response;
+}
+
+function getApiRatePolicy(pathname: string) {
+  const isHeavyRoute = HEAVY_API_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+
+  if (isHeavyRoute) {
+    return {
+      keyPrefix: 'heavy',
+      limit: HEAVY_API_RATE_LIMIT,
+      windowMs: HEAVY_API_RATE_WINDOW_MS,
+    };
+  }
+
+  return {
+    keyPrefix: 'api',
+    limit: API_RATE_LIMIT,
+    windowMs: API_RATE_WINDOW_MS,
+  };
 }
 
 async function checkDatabasePermission(request: NextRequest, permissions: string[]): Promise<PermissionCheckResult> {
@@ -159,10 +189,11 @@ export async function middleware(request: NextRequest) {
 
   if (isApiRoute) {
     const clientId = getClientIdentifier(request.headers);
+    const ratePolicy = getApiRatePolicy(pathname);
     apiRateLimit = checkRateLimit({
-      key: `${clientId}:${pathname}`,
-      limit: API_RATE_LIMIT,
-      windowMs: API_RATE_WINDOW_MS,
+      key: `${ratePolicy.keyPrefix}:${clientId}:${pathname}`,
+      limit: ratePolicy.limit,
+      windowMs: ratePolicy.windowMs,
     });
 
     if (apiRateLimit.limited) {
