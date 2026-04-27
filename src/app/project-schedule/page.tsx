@@ -33,6 +33,7 @@ type ScopeRow = {
   taskColors?: Record<string, string>; // Map of task names to color codes
   schedulingMode?: "contiguous" | "specific-days";
   selectedDays?: Array<{ date: string; hours: number; foreman?: string | null }>;
+  metadataBacked?: boolean;
   scheduledHours: number;
   remainingHours: number;
 };
@@ -517,6 +518,8 @@ export default function ProjectSchedulePage() {
           .toLowerCase()
           .replace(/\s+/g, " ")
           .trim();
+      const isGeneratedMappedMetadata = (value: unknown) =>
+        String(value || "").trim().toLowerCase().startsWith("mapped from:");
 
       const metadataByJobKey = new Map<string, typeof metadataScopes>();
       metadataScopes.forEach((scope) => {
@@ -557,22 +560,28 @@ export default function ProjectSchedulePage() {
 
           const fallback = metadataForProject.find((meta) => normalized(meta.title) === titleKey);
           const matched = exact || fallback;
-          const matchedHours = Number(matched?.hours);
-          const matchedManpower = Number(matched?.manpower);
+          const matchedSelectedDays = Array.isArray(matched?.selectedDays)
+            ? matched.selectedDays.map((entry: any) => ({
+                date: String(entry?.date || ''),
+                hours: Number(entry?.hours || 0),
+                foreman: entry?.foreman || null,
+              }))
+            : [];
+          const matchedIsGeneratedRollup = isGeneratedMappedMetadata(matched?.description);
+          const shouldUseMatchedMetadata = Boolean(matched) && (!matchedIsGeneratedRollup || matchedSelectedDays.length > 0);
+          const shouldUseMatchedTotals = Boolean(matched) && !matchedIsGeneratedRollup;
+          const matchedHours = shouldUseMatchedTotals ? Number(matched?.hours) : Number.NaN;
+          const matchedManpower = shouldUseMatchedTotals ? Number(matched?.manpower) : Number.NaN;
 
           const scopeSchedulingMode: "contiguous" | "specific-days" =
-            matched?.schedulingMode === 'specific-days'
+            shouldUseMatchedMetadata && matched?.schedulingMode === 'specific-days'
               ? 'specific-days'
               : scope.schedulingMode === 'specific-days'
                 ? 'specific-days'
                 : 'contiguous';
           const scopeSelectedDays: Array<{ date: string; hours: number; foreman?: string | null }> =
-            Array.isArray(matched?.selectedDays)
-              ? matched.selectedDays.map((entry: any) => ({
-                  date: String(entry?.date || ''),
-                  hours: Number(entry?.hours || 0),
-                  foreman: entry?.foreman || null,
-                }))
+            shouldUseMatchedMetadata && matchedSelectedDays.length > 0
+              ? matchedSelectedDays
               : Array.isArray(scope.selectedDays)
                 ? scope.selectedDays.map((entry: any) => ({
                   date: String(entry?.date || ''),
@@ -583,7 +592,7 @@ export default function ProjectSchedulePage() {
 
           // IMPORTANT: If matched has an id (from ProjectScope table), use that for saving.
           // The gantt_v2 scope ID is different from the ProjectScope ID.
-          const effectiveId = matched?.id || scope.id;
+          const effectiveId = shouldUseMatchedMetadata ? (matched?.id || scope.id) : scope.id;
           console.log('[loadProjects] Scope IDs:', { 
             ganttId: scope.id, 
             projectScopeId: matched?.id, 
@@ -594,12 +603,13 @@ export default function ProjectSchedulePage() {
           return {
             ...scope,
             id: effectiveId,  // Use ProjectScope ID if available, for save operations
+            metadataBacked: shouldUseMatchedMetadata,
             startDate:
-              typeof matched?.startDate === "string" && matched.startDate.trim().length > 0
+              shouldUseMatchedTotals && typeof matched?.startDate === "string" && matched.startDate.trim().length > 0
                 ? matched.startDate
                 : scope.startDate,
             endDate:
-              typeof matched?.endDate === "string" && matched.endDate.trim().length > 0
+              shouldUseMatchedTotals && typeof matched?.endDate === "string" && matched.endDate.trim().length > 0
                 ? matched.endDate
                 : scope.endDate,
             totalHours:
@@ -611,7 +621,7 @@ export default function ProjectSchedulePage() {
                 ? matchedManpower
                 : scope.crewSize,
             notes:
-              typeof matched?.description === "string" && matched.description.trim().length > 0
+              shouldUseMatchedTotals && typeof matched?.description === "string" && matched.description.trim().length > 0
                 ? matched.description
                 : scope.notes,
             color:
@@ -748,7 +758,7 @@ export default function ProjectSchedulePage() {
         manpower: scope.crewSize,
         description: scope.notes,
         tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
-        hours: scope.totalHours,
+        ...(scope.metadataBacked ? { hours: scope.totalHours } : {}),
         schedulingMode: "specific-days",
         selectedDays: nextSelectedDays,
         allowWeekendSelectedDays: true,

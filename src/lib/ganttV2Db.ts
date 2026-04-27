@@ -2116,8 +2116,14 @@ export async function getGanttV2ProjectsWithScopes(options: GanttProjectsOptions
                 }
               >();
               const unmatchedScopes: typeof scopesWithTasks = [];
+              const isGeneratedMappedRollupScope = (scope: (typeof scopesWithTasks)[number]) =>
+                String(scope.notes || '').trim().toLowerCase().startsWith('mapped from:');
 
               for (const scope of scopesWithTasks) {
+                if (isGeneratedMappedRollupScope(scope)) {
+                  continue;
+                }
+
                 let bestSource: CommercialSource | null = null;
                 let bestScore = 0;
 
