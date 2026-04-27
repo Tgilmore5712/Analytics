@@ -448,6 +448,7 @@ export async function PUT(request: NextRequest) {
     console.log('[PUT] Request body:', JSON.stringify(body, null, 2));
     const {
       id,
+      jobKey,
       title,
       startDate,
       endDate,
@@ -483,6 +484,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const normalizedTitle = title !== undefined ? (title.trim() || 'Scope') : undefined;
+    const normalizedStartDate = startDate !== undefined ? (startDate || null) : undefined;
+    const normalizedEndDate = endDate !== undefined ? (endDate || null) : undefined;
+    const normalizedManpower = manpower !== undefined ? (manpower !== null ? manpower : null) : undefined;
+    const normalizedHours = hours !== undefined ? (hours && hours > 0 ? hours : null) : undefined;
+
     const existing = await withDatabaseRetry(() =>
       prisma.projectScope.findUnique({
         where: { id },
@@ -499,11 +506,52 @@ export async function PUT(request: NextRequest) {
     );
 
     if (!existing) {
-      console.error('[PUT] Scope not found:', { id });
-      return NextResponse.json(
-        { success: false, error: `Scope not found with id: ${id}` },
-        { status: 404 }
+      const fallbackJobKey = typeof jobKey === 'string' ? jobKey.trim() : '';
+      const fallbackTitle = normalizedTitle || '';
+
+      if (!fallbackJobKey || !fallbackTitle) {
+        console.error('[PUT] Scope not found and fallback create is missing jobKey/title:', { id, jobKey, title });
+        return NextResponse.json(
+          { success: false, error: `Scope not found with id: ${id}` },
+          { status: 404 }
+        );
+      }
+
+      const effectiveSchedulingMode = normalizedSchedulingMode ?? 'contiguous';
+      const effectiveSelectedDays = normalizedSelectedDays === undefined ? null : normalizedSelectedDays;
+      const specificDaysValidation = await validateSpecificDays(effectiveSelectedDays, effectiveSchedulingMode, {
+        allowWeekendSelectedDays: allowWeekendSelectedDays === true,
+      });
+
+      if (!specificDaysValidation.valid) {
+        return NextResponse.json(
+          { success: false, error: specificDaysValidation.error },
+          { status: 400 }
+        );
+      }
+
+      const createdScope = await withDatabaseRetry(() =>
+        prisma.projectScope.create({
+          data: {
+            jobKey: fallbackJobKey,
+            title: fallbackTitle,
+            startDate: normalizedStartDate ?? null,
+            endDate: normalizedEndDate ?? null,
+            manpower: normalizedManpower ?? null,
+            hours: normalizedHours ?? null,
+            description: description || null,
+            tasks: normalizedTasks ?? null,
+            schedulingMode: effectiveSchedulingMode,
+            selectedDays: effectiveSelectedDays,
+          } as any,
+        })
       );
+
+      return NextResponse.json({
+        success: true,
+        data: createdScope,
+        createdFromFallback: true,
+      });
     }
     console.log('[PUT] Found existing scope:', { id, title: existing.title });
 
@@ -524,12 +572,6 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const normalizedTitle = title !== undefined ? (title.trim() || 'Scope') : undefined;
-    const normalizedStartDate = startDate !== undefined ? (startDate || null) : undefined;
-    const normalizedEndDate = endDate !== undefined ? (endDate || null) : undefined;
-    const normalizedManpower = manpower !== undefined ? (manpower !== null ? manpower : null) : undefined;
-    const normalizedHours = hours !== undefined ? (hours && hours > 0 ? hours : null) : undefined;
 
     const didScheduleAffectingFieldsChange =
       (normalizedTitle !== undefined && normalizedTitle !== (existing?.title || '')) ||

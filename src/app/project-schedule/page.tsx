@@ -561,15 +561,25 @@ export default function ProjectSchedulePage() {
           const matchedManpower = Number(matched?.manpower);
 
           const scopeSchedulingMode: "contiguous" | "specific-days" =
-            scope.schedulingMode === 'specific-days' ? 'specific-days' : 'contiguous';
+            matched?.schedulingMode === 'specific-days'
+              ? 'specific-days'
+              : scope.schedulingMode === 'specific-days'
+                ? 'specific-days'
+                : 'contiguous';
           const scopeSelectedDays: Array<{ date: string; hours: number; foreman?: string | null }> =
-            Array.isArray(scope.selectedDays)
-              ? scope.selectedDays.map((entry: any) => ({
+            Array.isArray(matched?.selectedDays)
+              ? matched.selectedDays.map((entry: any) => ({
                   date: String(entry?.date || ''),
                   hours: Number(entry?.hours || 0),
                   foreman: entry?.foreman || null,
                 }))
-              : [];
+              : Array.isArray(scope.selectedDays)
+                ? scope.selectedDays.map((entry: any) => ({
+                  date: String(entry?.date || ''),
+                  hours: Number(entry?.hours || 0),
+                  foreman: entry?.foreman || null,
+                }))
+                : [];
 
           // IMPORTANT: If matched has an id (from ProjectScope table), use that for saving.
           // The gantt_v2 scope ID is different from the ProjectScope ID.
@@ -584,6 +594,14 @@ export default function ProjectSchedulePage() {
           return {
             ...scope,
             id: effectiveId,  // Use ProjectScope ID if available, for save operations
+            startDate:
+              typeof matched?.startDate === "string" && matched.startDate.trim().length > 0
+                ? matched.startDate
+                : scope.startDate,
+            endDate:
+              typeof matched?.endDate === "string" && matched.endDate.trim().length > 0
+                ? matched.endDate
+                : scope.endDate,
             totalHours:
               Number.isFinite(matchedHours) && matchedHours >= 0
                 ? matchedHours
@@ -741,6 +759,8 @@ export default function ProjectSchedulePage() {
 
       const response = await fetch("/api/project-scopes", {
         method: "PUT",
+        credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestPayload),
       });
