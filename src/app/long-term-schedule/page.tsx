@@ -60,6 +60,15 @@ interface ScheduleAllocationEntry {
   } | null;
 }
 
+interface ProjectSummary {
+  id?: string;
+  customer?: string | null;
+  projectNumber?: string | null;
+  procoreId?: string | null;
+  projectName?: string | null;
+  projectManager?: string | null;
+}
+
 interface PMGroup {
   pmId: string;
   pmName: string;
@@ -72,6 +81,11 @@ interface PMAssignment {
   jobKey: string;
   pmId: string;
 }
+
+type ProjectSummariesResponse = {
+  data?: ProjectSummary[];
+  hasNextPage?: boolean;
+};
 
 interface TimeOffRequest {
   id: string;
@@ -373,6 +387,45 @@ function getJobKeyLookupCandidates(value?: string | null): string[] {
   return Array.from(new Set([raw, normalized, normalizedLower].filter(Boolean)));
 }
 
+function getProjectJobKeyLookupCandidates(project: ProjectSummary): string[] {
+  const customer = String(project.customer || "").trim();
+  const projectName = String(project.projectName || "").trim();
+  const projectNumber = String(project.projectNumber || "").trim();
+  const procoreId = String(project.procoreId || "").trim();
+
+  const keys = [
+    projectNumber ? `${customer}~${projectNumber}~${projectName}` : "",
+    procoreId && procoreId !== projectNumber ? `${customer}~${procoreId}~${projectName}` : "",
+  ].filter(Boolean);
+
+  return Array.from(new Set(keys.flatMap((key) => getJobKeyLookupCandidates(key))));
+}
+
+async function fetchLongTermProjectSummaries(): Promise<{ data?: ProjectSummary[] }> {
+  const projects: ProjectSummary[] = [];
+  let page = 1;
+  let hasNextPage = true;
+
+  while (hasNextPage && page <= 20) {
+    const response = await fetchJsonWithRetry<ProjectSummariesResponse>(
+      `/api/projects?summary=true&page=${page}&pageSize=500`,
+      {
+        fallback: { data: [], hasNextPage: false },
+        label: `long-term projects page ${page}`,
+      }
+    );
+
+    if (Array.isArray(response.data)) {
+      projects.push(...response.data);
+    }
+
+    hasNextPage = response.hasNextPage === true;
+    page += 1;
+  }
+
+  return { data: projects };
+}
+
 function findMatchingScopeForScheduleEntry(
   scopesByJobKey: Record<string, Scope[]>,
   entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">
@@ -604,13 +657,7 @@ export default function LongTermSchedulePage() {
           fallback: { data: [] },
           label: "long-term holidays",
         }),
-        fetchJsonWithRetry<{ data?: Array<{ id?: string; customer?: string; projectNumber?: string; projectName?: string; projectManager?: string }> }>(
-          "/api/projects?page=1&pageSize=500",
-          {
-            fallback: { data: [] },
-            label: "long-term projects",
-          }
-        ),
+        fetchLongTermProjectSummaries(),
         fetchJsonWithRetry<{ data?: PMAssignment[] }>("/api/long-term-schedule/pm-assignments", {
           fallback: { data: [] },
           label: "long-term pm assignments",
@@ -634,8 +681,7 @@ export default function LongTermSchedulePage() {
 
       const employees: Employee[] = employeesJson?.data || [];
       const activeSchedules: ActiveScheduleEntry[] = scheduleJson?.data || [];
-      const projects: Array<{ id?: string; customer?: string; projectNumber?: string; projectName?: string; projectManager?: string }> =
-        projectsJson?.data || [];
+      const projects: ProjectSummary[] = projectsJson?.data || [];
       const pmAssignments: PMAssignment[] = pmAssignmentsJson?.data || [];
       const allScopes: Scope[] = Array.isArray(scopesJson?.data) ? scopesJson.data : [];
       const scheduleAllocations: ScheduleAllocationEntry[] = Array.isArray(scheduleAllocationsJson?.data) ? scheduleAllocationsJson.data : [];
@@ -660,11 +706,22 @@ export default function LongTermSchedulePage() {
       });
       setPaidHolidayByDate(paidHolidayMap);
 
+      const projectJobKeyAliasMap = projects.reduce<Record<string, string[]>>((acc, project) => {
+        const candidates = getProjectJobKeyLookupCandidates(project);
+        candidates.forEach((candidate) => {
+          acc[candidate] = candidates;
+        });
+        return acc;
+      }, {});
+
       const pmOverrideMap: Record<string, string> = {};
       pmAssignments.forEach((a) => {
         const projectKey = normalizeJobKey(a?.jobKey || a?.assignmentKey || "");
         if (projectKey && a?.pmId) {
-          getJobKeyLookupCandidates(projectKey).forEach((candidate) => {
+          const assignmentCandidates = Array.from(new Set(
+            getJobKeyLookupCandidates(projectKey).flatMap((candidate) => projectJobKeyAliasMap[candidate] || [candidate])
+          ));
+          assignmentCandidates.forEach((candidate) => {
             // Keep the first (newest) assignment encountered for this project key,
             // even if the row came from a legacy scope-level assignment key.
             if (!pmOverrideMap[candidate]) {
@@ -677,9 +734,8 @@ export default function LongTermSchedulePage() {
 
       const projectPMMap: Record<string, string> = {};
       projects.forEach((project) => {
-        const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
         if (project.projectManager) {
-          getJobKeyLookupCandidates(jobKey).forEach((candidate) => {
+          getProjectJobKeyLookupCandidates(project).forEach((candidate) => {
             projectPMMap[candidate] = project.projectManager as string;
           });
         }
@@ -688,9 +744,8 @@ export default function LongTermSchedulePage() {
 
       const docIdMap: Record<string, string> = {};
       projects.forEach((project) => {
-        const jobKey = `${project.customer || ""}~${project.projectNumber || ""}~${project.projectName || ""}`;
         if (project.id) {
-          getJobKeyLookupCandidates(jobKey).forEach((candidate) => {
+          getProjectJobKeyLookupCandidates(project).forEach((candidate) => {
             docIdMap[candidate] = project.id as string;
           });
         }

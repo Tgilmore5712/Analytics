@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
       customer: true,
       projectNumber: true,
       projectName: true,
+      procoreId: true,
       projectManager: true,
     } as const;
 
