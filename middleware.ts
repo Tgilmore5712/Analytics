@@ -50,6 +50,10 @@ function resolvePermissionsForRequest(request: NextRequest): string[] {
     if (pathname === '/api/short-term-schedule' && searchParams.get('action') === 'active-schedule') {
       permissions.add('kpi');
     }
+
+    if (pathname === '/api/schedule-allocations') {
+      permissions.add('long-term-schedule');
+    }
   }
 
   return Array.from(permissions);

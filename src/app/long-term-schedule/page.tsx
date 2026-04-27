@@ -48,6 +48,18 @@ interface ActiveScheduleEntry {
   source?: string | null;
 }
 
+interface ScheduleAllocationEntry {
+  period: string;
+  periodType?: string | null;
+  hours: number;
+  schedule?: {
+    jobKey?: string | null;
+    customer?: string | null;
+    projectNumber?: string | null;
+    projectName?: string | null;
+  } | null;
+}
+
 interface PMGroup {
   pmId: string;
   pmName: string;
@@ -211,6 +223,57 @@ function isWeekdayDateKey(dateKey: string): boolean {
   if (isNaN(date.getTime())) return false;
   const dayOfWeek = date.getDay();
   return dayOfWeek >= 1 && dayOfWeek <= 5;
+}
+
+function getWorkingDateKeysForMonth(
+  period: string,
+  rangeStartKey: string,
+  rangeEndKey: string,
+  paidHolidayByDate: Record<string, Holiday>
+): string[] {
+  const match = period.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return [];
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return [];
+
+  const current = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  const dateKeys: string[] = [];
+
+  while (current <= end) {
+    const dateKey = formatDateKey(current);
+    if (dateKey >= rangeStartKey && dateKey <= rangeEndKey && isWeekdayDateKey(dateKey) && !paidHolidayByDate[dateKey]) {
+      dateKeys.push(dateKey);
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dateKeys;
+}
+
+function getWorkingDateCountForMonth(period: string, paidHolidayByDate: Record<string, Holiday>): number {
+  const match = period.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return 0;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return 0;
+
+  const current = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  let count = 0;
+
+  while (current <= end) {
+    const dateKey = formatDateKey(current);
+    if (isWeekdayDateKey(dateKey) && !paidHolidayByDate[dateKey]) {
+      count += 1;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return count;
 }
 
 function getScopeDisplayDateKeys(
@@ -522,8 +585,10 @@ export default function LongTermSchedulePage() {
       rangeEnd.setDate(rangeEnd.getDate() + 15 * 7 - 1);
       const startDate = currentWeekStart.toISOString().split("T")[0];
       const endDate = rangeEnd.toISOString().split("T")[0];
+      const startMonth = startDate.slice(0, 7);
+      const endMonth = endDate.slice(0, 7);
 
-      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson, scopesJson] = await Promise.all([
+      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson, scopesJson, scheduleAllocationsJson] = await Promise.all([
         fetchJsonWithRetry<{ data?: Employee[] }>("/api/short-term-schedule?action=employees", {
           fallback: { data: [] },
           label: "long-term employees",
@@ -558,6 +623,13 @@ export default function LongTermSchedulePage() {
           fallback: { data: [] },
           label: "long-term project scopes",
         }),
+        fetchJsonWithRetry<{ success?: boolean; data?: ScheduleAllocationEntry[] }>(
+          `/api/schedule-allocations?startMonth=${startMonth}&endMonth=${endMonth}`,
+          {
+            fallback: { success: false, data: [] },
+            label: "long-term schedule allocations",
+          }
+        ),
       ]);
 
       const employees: Employee[] = employeesJson?.data || [];
@@ -566,6 +638,7 @@ export default function LongTermSchedulePage() {
         projectsJson?.data || [];
       const pmAssignments: PMAssignment[] = pmAssignmentsJson?.data || [];
       const allScopes: Scope[] = Array.isArray(scopesJson?.data) ? scopesJson.data : [];
+      const scheduleAllocations: ScheduleAllocationEntry[] = Array.isArray(scheduleAllocationsJson?.data) ? scheduleAllocationsJson.data : [];
       const getMatchingScopeForEntry = (entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">): Scope | null => {
         return findMatchingScopeForScheduleEntry(scopesByJobKeyLocal, entry);
       };
@@ -665,7 +738,7 @@ export default function LongTermSchedulePage() {
 
       const ganttInitiatedSchedules = activeSchedules.filter((entry) => {
         const source = (entry.source || "").toLowerCase();
-        return source === "gantt" || source === "wip-page";
+        return source === "gantt" || source === "wip-page" || source === "schedules";
       });
 
       const coveredAssignmentDates = new Set(
@@ -726,7 +799,44 @@ export default function LongTermSchedulePage() {
         });
       });
 
-      const displaySchedules = [...ganttInitiatedSchedules, ...derivedScopeSchedules];
+      const displayScheduleMonthKeys = new Set(
+        [...ganttInitiatedSchedules, ...derivedScopeSchedules]
+          .filter((entry) => entry.jobKey && /^\d{4}-\d{2}-\d{2}$/.test(entry.date || ""))
+          .map((entry) => `${normalizeJobKey(entry.jobKey)}|${entry.date.slice(0, 7)}`)
+      );
+
+      const allocationFallbackSchedules: ActiveScheduleEntry[] = [];
+      scheduleAllocations.forEach((allocation) => {
+        const jobKey = normalizeJobKey(allocation.schedule?.jobKey || "");
+        const period = String(allocation.period || "").trim();
+        const hours = Number(allocation.hours || 0);
+
+        if (!jobKey || !/^\d{4}-\d{2}$/.test(period)) return;
+        if ((allocation.periodType || "month") !== "month") return;
+        if (!Number.isFinite(hours) || hours <= 0) return;
+        if (displayScheduleMonthKeys.has(`${jobKey}|${period}`)) return;
+
+        const workingDateCount = getWorkingDateCountForMonth(period, paidHolidayMap);
+        if (workingDateCount <= 0) return;
+
+        const visibleDateKeys = getWorkingDateKeysForMonth(period, startDate, endDate, paidHolidayMap);
+        if (visibleDateKeys.length === 0) return;
+
+        const dailyHours = hours / workingDateCount;
+        visibleDateKeys.forEach((dateKey) => {
+          allocationFallbackSchedules.push({
+            jobKey,
+            scopeOfWork: "Scheduled work",
+            date: dateKey,
+            hours: dailyHours,
+            manpower: null,
+            foreman: null,
+            source: "schedules",
+          });
+        });
+      });
+
+      const displaySchedules = [...ganttInitiatedSchedules, ...derivedScopeSchedules, ...allocationFallbackSchedules];
 
       const hasUnassignedEntries = displaySchedules.some((entry) => !entry.foreman);
 
