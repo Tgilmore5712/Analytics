@@ -90,6 +90,8 @@ type ProjectSummariesResponse = {
 type AllocationProject = { jobKey: string; scopeOfWork: string; hours: number };
 
 type DisplayProject = AllocationProject & {
+  groupKey: string;
+  jobKeys: string[];
   scopeCount: number;
   scopeTitles: string[];
 };
@@ -584,18 +586,37 @@ function getProjectNameFromJobKey(jobKey: string): string {
   return parts.slice(2).join("~").trim() || jobKey;
 }
 
+function normalizeDisplayKeySegment(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getProjectDisplayGroupKey(jobKey: string): string {
+  const parts = jobKey.split("~");
+  const customer = normalizeDisplayKeySegment(parts[0] || "");
+  const projectName = normalizeDisplayKeySegment(parts.slice(2).join("~") || "");
+
+  if (customer && projectName) {
+    return `project:${customer}:${projectName}`;
+  }
+
+  return `job:${normalizeJobKey(jobKey) || jobKey}`;
+}
+
 function getDisplayProjects(projects: AllocationProject[]): DisplayProject[] {
   const grouped = new Map<string, DisplayProject>();
 
   projects.forEach((project) => {
-    const key = normalizeJobKey(project.jobKey) || project.jobKey;
+    const key = getProjectDisplayGroupKey(project.jobKey);
     const scopeTitle = String(project.scopeOfWork || "Unnamed Scope").trim() || "Unnamed Scope";
+    const normalizedJobKey = normalizeJobKey(project.jobKey) || project.jobKey;
     const existing = grouped.get(key);
 
     if (!existing) {
       grouped.set(key, {
         ...project,
+        groupKey: key,
         scopeOfWork: scopeTitle,
+        jobKeys: [normalizedJobKey],
         scopeCount: 1,
         scopeTitles: [scopeTitle],
       });
@@ -603,6 +624,9 @@ function getDisplayProjects(projects: AllocationProject[]): DisplayProject[] {
     }
 
     existing.hours += project.hours;
+    if (!existing.jobKeys.includes(normalizedJobKey)) {
+      existing.jobKeys.push(normalizedJobKey);
+    }
     if (!existing.scopeTitles.includes(scopeTitle)) {
       existing.scopeTitles.push(scopeTitle);
       existing.scopeCount = existing.scopeTitles.length;
@@ -1438,19 +1462,25 @@ export default function LongTermSchedulePage() {
   ) {
     return getDisplayProjects(projects).map((proj, idx) => {
       const hasSingleScope = proj.scopeCount === 1;
-      const scopeTitle = hasSingleScope ? proj.scopeOfWork : "";
+      const hasSingleJobKey = proj.jobKeys.length === 1;
+      const canEditSingleAssignment = hasSingleScope && hasSingleJobKey;
+      const scopeTitle = canEditSingleAssignment ? proj.scopeOfWork : "";
       const assignmentKey = getAssignmentKey(proj.jobKey, proj.scopeOfWork);
       const resolvedForemanId = dragContext?.sourceForemanId || "__unassigned__";
-      const canDrag = Boolean(dragContext?.sourceDateKey) && hasSingleScope;
-      const canRemoveFromDay = Boolean(dragContext?.sourceDateKey) && hasSingleScope;
+      const canDrag = Boolean(dragContext?.sourceDateKey) && canEditSingleAssignment;
+      const canRemoveFromDay = Boolean(dragContext?.sourceDateKey) && canEditSingleAssignment;
       const projectName = getProjectNameFromJobKey(proj.jobKey);
-      const title = hasSingleScope
+      const combinedLabels = [
+        !hasSingleScope ? `${proj.scopeCount} scopes` : null,
+        !hasSingleJobKey ? `${proj.jobKeys.length} project keys` : null,
+      ].filter(Boolean).join(", ");
+      const title = canEditSingleAssignment
         ? `${projectName} - ${proj.scopeOfWork}`
-        : `${projectName} - ${proj.scopeCount} scopes combined: ${proj.scopeTitles.join(", ")}`;
+        : `${projectName} - ${combinedLabels || "combined entries"}: ${proj.scopeTitles.join(", ")}`;
 
       return (
         <div
-          key={`${proj.jobKey}-${proj.scopeOfWork}-${idx}`}
+          key={`${proj.groupKey}-${idx}`}
           className={`text-[9px] text-left text-gray-700 mt-1 ${isCompact ? "p-1" : "px-1.5 py-1"} ${canDrag ? "cursor-move" : "cursor-pointer"} bg-white rounded-sm border border-gray-300 hover:border-orange-500 hover:bg-orange-50 transition-colors`}
           draggable={canDrag}
           onDragStart={(e) =>
@@ -1477,8 +1507,10 @@ export default function LongTermSchedulePage() {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1 font-black text-gray-900 whitespace-normal break-words leading-tight">
               {projectName}
-              {!hasSingleScope && (
-                <span className="ml-1 text-[7px] font-black text-gray-500 uppercase whitespace-nowrap">{proj.scopeCount} scopes</span>
+              {!canEditSingleAssignment && (
+                <span className="ml-1 text-[7px] font-black text-gray-500 uppercase whitespace-nowrap">
+                  {combinedLabels || "combined"}
+                </span>
               )}
             </div>
             <div className="shrink-0 text-right text-[8px] font-black text-orange-700 leading-none whitespace-nowrap">
