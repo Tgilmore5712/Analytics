@@ -15,8 +15,9 @@ export async function GET(request: NextRequest) {
     }
 
     const permissions = await loadUserAssignedPermissionsFromDatabase(prisma, email);
-    const response = NextResponse.json({ success: true, data: { email, permissions } });
-    const cookieValue = await createPermissionCookieValue(email, expandAssignedPermissions(permissions));
+    const expandedPermissions = expandAssignedPermissions(permissions);
+    const response = NextResponse.json({ success: true, data: { email, permissions, expandedPermissions } });
+    const cookieValue = await createPermissionCookieValue(email, expandedPermissions);
 
     if (cookieValue) {
       response.cookies.set(PERMISSION_COOKIE_NAME, cookieValue, getPermissionCookieOptions());

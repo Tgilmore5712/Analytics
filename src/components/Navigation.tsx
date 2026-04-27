@@ -93,9 +93,13 @@ export default function Navigation({
         console.log('Permissions fetched:', data);
         
         // Populate USER_PERMISSIONS with the current user's assigned permissions.
-        if (data.data?.email && Array.isArray(data.data.permissions)) {
+        const responsePermissions = Array.isArray(data.data?.expandedPermissions)
+          ? data.data.expandedPermissions
+          : data.data?.permissions;
+
+        if (data.data?.email && Array.isArray(responsePermissions)) {
           Object.keys(USER_PERMISSIONS).forEach(key => delete USER_PERMISSIONS[key]);
-          USER_PERMISSIONS[data.data.email.toLowerCase()] = data.data.permissions;
+          USER_PERMISSIONS[data.data.email.toLowerCase()] = responsePermissions;
           console.log('USER_PERMISSIONS updated:', USER_PERMISSIONS);
         }
         setPermissionsLoaded(true);

@@ -48,10 +48,15 @@ export function expandAssignedPermissions(permissions: string[]): string[] {
   const allPages = new Set<string>();
 
   permissions.forEach(perm => {
-    if (PERMISSION_GROUPS[perm]) {
-      PERMISSION_GROUPS[perm].forEach(page => allPages.add(page));
+    const normalizedPermission = perm.trim();
+    const groupKey = Object.keys(PERMISSION_GROUPS).find(
+      key => key.toLowerCase() === normalizedPermission.toLowerCase()
+    );
+
+    if (groupKey) {
+      PERMISSION_GROUPS[groupKey].forEach(page => allPages.add(page));
     } else {
-      allPages.add(perm);
+      allPages.add(normalizedPermission);
     }
   });
 
