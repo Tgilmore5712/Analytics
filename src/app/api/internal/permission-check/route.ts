@@ -14,17 +14,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ allowed: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json().catch(() => null) as { permission?: unknown } | null;
-    const permission = typeof body?.permission === 'string' ? body.permission.trim() : '';
-    if (!permission) {
+    const body = await request.json().catch(() => null) as { permission?: unknown; permissions?: unknown } | null;
+    const permissionsToCheck = Array.isArray(body?.permissions)
+      ? body.permissions.filter((permission): permission is string => typeof permission === 'string' && permission.trim().length > 0)
+      : typeof body?.permission === 'string' && body.permission.trim().length > 0
+        ? [body.permission.trim()]
+        : [];
+
+    if (permissionsToCheck.length === 0) {
       return NextResponse.json({ allowed: false, error: 'Permission required' }, { status: 400 });
     }
 
     const assignedPermissions = await loadUserAssignedPermissionsFromDatabase(prisma, email);
     const permissions = expandAssignedPermissions(assignedPermissions);
-    const allowed = permissions.some((userPermission) => userPermission.toLowerCase() === permission.toLowerCase());
+    const allowed = permissions.some((userPermission) => {
+      return permissionsToCheck.some((permission) => userPermission.toLowerCase() === permission.toLowerCase());
+    });
     const cookieValue = await createPermissionCookieValue(email, permissions);
-    const response = NextResponse.json({ allowed, email, permission, permissionsCookie: cookieValue });
+    const response = NextResponse.json({ allowed, email, permissions: permissionsToCheck, permissionsCookie: cookieValue });
 
     if (cookieValue) {
       response.cookies.set(PERMISSION_COOKIE_NAME, cookieValue, getPermissionCookieOptions());

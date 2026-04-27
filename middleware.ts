@@ -23,6 +23,33 @@ type PermissionCheckResult = {
   permissionsCookie?: string | null;
 };
 
+function resolvePermissionsForRequest(request: NextRequest): string[] {
+  const { pathname, searchParams } = request.nextUrl;
+  const method = request.method.toUpperCase();
+  const permissions = new Set<string>();
+  const defaultPermission = resolvePermissionForPath(pathname);
+
+  if (defaultPermission) {
+    permissions.add(defaultPermission);
+  }
+
+  if (method === 'GET') {
+    if (pathname === '/api/projects' && searchParams.get('mode') === 'dashboard') {
+      permissions.add('kpi');
+    }
+
+    if (pathname === '/api/scheduling' || pathname === '/api/scheduling/projects-with-budget') {
+      permissions.add('kpi');
+    }
+
+    if (pathname === '/api/short-term-schedule' && searchParams.get('action') === 'active-schedule') {
+      permissions.add('kpi');
+    }
+  }
+
+  return Array.from(permissions);
+}
+
 function applyPermissionCookie(response: NextResponse, cookieValue: string | null) {
   if (cookieValue) {
     response.cookies.set(PERMISSION_COOKIE_NAME, cookieValue, getPermissionCookieOptions());
@@ -31,7 +58,7 @@ function applyPermissionCookie(response: NextResponse, cookieValue: string | nul
   return response;
 }
 
-async function checkDatabasePermission(request: NextRequest, permission: string): Promise<PermissionCheckResult> {
+async function checkDatabasePermission(request: NextRequest, permissions: string[]): Promise<PermissionCheckResult> {
   try {
     const cookie = request.headers.get('cookie');
     const response = await fetch(new URL(INTERNAL_PERMISSION_CHECK_ROUTE, request.url), {
@@ -40,7 +67,7 @@ async function checkDatabasePermission(request: NextRequest, permission: string)
         'Content-Type': 'application/json',
         ...(cookie ? { Cookie: cookie } : {}),
       },
-      body: JSON.stringify({ permission }),
+      body: JSON.stringify({ permissions }),
       cache: 'no-store',
     });
 
@@ -175,19 +202,19 @@ export async function middleware(request: NextRequest) {
   }
 
   let permissionCookieToSet: string | null = null;
-  const requiredPermission = resolvePermissionForPath(pathname);
-  if (requiredPermission) {
+  const requiredPermissions = resolvePermissionsForRequest(request);
+  if (requiredPermissions.length > 0) {
     const sessionEmail = session.user?.email?.trim().toLowerCase() || null;
     const cachedPermissions = await verifyPermissionCookieValue(
       request.cookies.get(PERMISSION_COOKIE_NAME)?.value,
       sessionEmail
     );
     const cachedAllowed = cachedPermissions?.permissions.some(
-      (permission) => permission.toLowerCase() === requiredPermission.toLowerCase()
+      (permission) => requiredPermissions.some((requiredPermission) => permission.toLowerCase() === requiredPermission.toLowerCase())
     ) === true;
     const permissionCheck = cachedAllowed
       ? { allowed: true, permissionsCookie: null }
-      : await checkDatabasePermission(request, requiredPermission);
+      : await checkDatabasePermission(request, requiredPermissions);
     const allowed = permissionCheck.allowed;
     permissionCookieToSet = permissionCheck.permissionsCookie || null;
 
