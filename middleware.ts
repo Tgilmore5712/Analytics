@@ -221,13 +221,25 @@ export async function middleware(request: NextRequest) {
     if (!allowed) {
       if (isApiRoute) {
         return NextResponse.json(
-          { success: false, error: 'Forbidden' },
-          { status: 403 }
+          {
+            success: false,
+            error: 'Forbidden',
+            path: pathname,
+            requiredPermissions,
+          },
+          {
+            status: 403,
+            headers: {
+              'X-Analytics-Required-Permissions': requiredPermissions.join(','),
+              'X-Analytics-Blocked-Path': pathname,
+            },
+          }
         );
       }
 
       const forbiddenUrl = new URL('/forbidden', request.url);
       forbiddenUrl.searchParams.set('from', `${pathname}${request.nextUrl.search}`);
+      forbiddenUrl.searchParams.set('permission', requiredPermissions.join(','));
       return NextResponse.redirect(forbiddenUrl);
     }
   }

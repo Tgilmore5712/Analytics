@@ -1,6 +1,17 @@
 import Link from 'next/link';
 
-export default function ForbiddenPage() {
+type ForbiddenPageProps = {
+  searchParams?: Promise<{
+    from?: string;
+    permission?: string;
+  }>;
+};
+
+export default async function ForbiddenPage({ searchParams }: ForbiddenPageProps) {
+  const params = await searchParams;
+  const from = typeof params?.from === 'string' ? params.from : '';
+  const permission = typeof params?.permission === 'string' ? params.permission : '';
+
   return (
     <main
       style={{
@@ -32,6 +43,11 @@ export default function ForbiddenPage() {
         <p style={{ color: '#777', fontSize: '14px', marginBottom: '24px' }}>
           If you should have access, contact an administrator.
         </p>
+        {(from || permission) && (
+          <p style={{ color: '#777', fontSize: '12px', marginBottom: '24px', wordBreak: 'break-word' }}>
+            Blocked route: {from || 'unknown'}{permission ? ` | Required: ${permission}` : ''}
+          </p>
+        )}
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <Link
             href="/"

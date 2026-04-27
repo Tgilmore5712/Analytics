@@ -579,7 +579,7 @@ export default function KPIPage() {
     async function fetchKpiData() {
       const currentYear = yearFilter || new Date().getFullYear().toString();
       try {
-        const kpiRes = await fetch(`/api/kpi?year=${currentYear}`);
+        const kpiRes = await fetch(`/api/kpi?year=${currentYear}`, { credentials: "include", cache: "no-store" });
         if (!kpiRes.ok) {
           console.warn("KPI API endpoint not available");
           setKpiData([]);
@@ -610,7 +610,7 @@ export default function KPIPage() {
         // Helper: fetch first page to get total, then all remaining pages in parallel
         async function fetchAllParallel<T>(baseUrl: string, rowKey = 'data'): Promise<T[]> {
           const sep = baseUrl.includes('?') ? '&' : '?';
-          const firstRes = await fetch(`${baseUrl}${sep}page=1&pageSize=500&includeTotal=true`);
+          const firstRes = await fetch(`${baseUrl}${sep}page=1&pageSize=500&includeTotal=true`, { credentials: "include", cache: "no-store" });
           if (!firstRes.ok) return [];
           const firstJson = await firstRes.json();
           const firstRows: T[] = firstJson[rowKey] || firstJson.schedules || [];
@@ -618,7 +618,7 @@ export default function KPIPage() {
           if (totalPages <= 1) return firstRows;
           const rest = await Promise.all(
             Array.from({ length: totalPages - 1 }, (_, i) =>
-              fetch(`${baseUrl}${sep}page=${i + 2}&pageSize=500`)
+              fetch(`${baseUrl}${sep}page=${i + 2}&pageSize=500`, { credentials: "include", cache: "no-store" })
                 .then(r => r.ok ? r.json() : { [rowKey]: [] })
                 .then(j => (j[rowKey] || j.schedules || []) as T[])
             )
@@ -631,8 +631,8 @@ export default function KPIPage() {
           const [loadedProjects, loadedSchedules, budgetProjectsRes, activeScheduleRes] = await Promise.all([
             fetchAllParallel<Project>('/api/projects?mode=dashboard'),
             fetchAllParallel<any>('/api/scheduling', 'data'),
-            fetch('/api/scheduling/projects-with-budget?bidBoardStatus=All'),
-            fetch('/api/short-term-schedule?action=active-schedule'),
+            fetch('/api/scheduling/projects-with-budget?bidBoardStatus=All', { credentials: "include", cache: "no-store" }),
+            fetch('/api/short-term-schedule?action=active-schedule', { credentials: "include", cache: "no-store" }),
           ]);
           projectsData = loadedProjects;
           schedulesData = loadedSchedules;
@@ -855,6 +855,8 @@ function KPIPageContent({
         console.log(`[KPI] Fetching POST /api/kpi`);
         const response = await fetch("/api/kpi", {
           method: "POST",
+          credentials: "include",
+          cache: "no-store",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
           signal: controller.signal
@@ -875,7 +877,7 @@ function KPIPageContent({
         // Refresh kpi data in background (don't block)
         console.log(`[KPI] Refreshing data for ${year}`);
         try {
-          const kpiRes = await fetch(`/api/kpi?year=${year}`);
+          const kpiRes = await fetch(`/api/kpi?year=${year}`, { credentials: "include", cache: "no-store" });
           if (kpiRes.ok) {
             const kpiJson = await kpiRes.json();
             setKpiData(kpiJson.data || []);
@@ -918,7 +920,7 @@ function KPIPageContent({
       }
 
       try {
-        const res = await fetch("/api/kpi-cards", { credentials: "include" });
+        const res = await fetch("/api/kpi-cards", { credentials: "include", cache: "no-store" });
         if (!res.ok) {
           const statusSummary = `${res.status} ${res.statusText}`.trim();
           console.warn("[KPI] Failed to load KPI cards from API:", statusSummary);
