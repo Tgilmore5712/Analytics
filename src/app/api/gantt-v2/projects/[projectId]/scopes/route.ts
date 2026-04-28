@@ -33,7 +33,6 @@ type RouteParams = {
 
 export async function GET(_: NextRequest, { params }: RouteParams) {
   try {
-    await ensureGanttV2Schema();
     const { projectId } = await params;
     const [project] = await getGanttV2ProjectsWithScopes({
       includeEstimateHours: false,

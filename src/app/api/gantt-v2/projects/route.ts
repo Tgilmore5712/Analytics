@@ -49,7 +49,6 @@ export async function GET() {
     const procoreAccessToken = String(cookieStore.get('procore_access_token')?.value || '').trim() || null;
     const procoreCompanyId = String(cookieStore.get('procore_company_id')?.value || '').trim() || null;
 
-    await withDatabaseRetry(() => ensureGanttV2Schema());
     maybeRunGanttProjectsMaintenanceInBackground();
 
     const projects = await withDatabaseRetry(() => {

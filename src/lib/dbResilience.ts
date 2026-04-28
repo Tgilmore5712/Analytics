@@ -8,6 +8,10 @@ export function isTransientDatabaseConnectionError(error: unknown): boolean {
 
   if (message.includes("can't reach database server")) return true;
   if (message.includes("connection")) return true;
+  if (message.includes('cannot fetch data from service')) return true;
+  if (message.includes('fetch failed')) return true;
+  if (message.includes('data proxy')) return true;
+  if (message.includes('accelerate')) return true;
   if (message.includes("timeout")) return true;
   if (message.includes("timed out")) return true;
   if (message.includes("econnreset")) return true;

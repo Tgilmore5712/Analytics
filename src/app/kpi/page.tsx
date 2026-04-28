@@ -126,7 +126,8 @@ function getScheduleIdentityKeys(schedule: Pick<Schedule, "customer" | "projectN
 
 function getScheduledSalesStatus(project: Pick<Project, "bidBoardStatus" | "status">) {
   const bidBoardStatus = normalizeStatusValue(project.bidBoardStatus);
-  if (bidBoardStatus) return bidBoardStatus;
+  const qualifyingStatuses = new Set(["accepted", "in progress", "course of construction", "complete"]);
+  if (qualifyingStatuses.has(bidBoardStatus)) return bidBoardStatus;
   return normalizeStatusValue(project.status);
 }
 
