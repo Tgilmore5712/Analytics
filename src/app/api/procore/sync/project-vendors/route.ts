@@ -105,9 +105,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const companyIdFromBody = String(body?.companyId || '').trim();
-    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '1000'), 10) || 1000));
+    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '100'), 10) || 100));
     const perPage = Math.min(200, Math.max(1, Number.parseInt(String(body?.perPage || '100'), 10) || 100));
-    const fetchAll = body?.fetchAll !== false;
+    const fetchAll = body?.fetchAll === true;
     const isActiveOnly = body?.isActiveOnly !== false;
 
     const cookieStore = await cookies();

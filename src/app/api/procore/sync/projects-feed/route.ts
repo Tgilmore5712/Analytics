@@ -167,7 +167,7 @@ function resolveBidBoardCustomer(item: JsonObject, vendorMap: Record<string, str
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { fetchAll = true, companyId: bodyCompanyId } = body;
+    const { fetchAll = false, companyId: bodyCompanyId } = body;
 
     const cookieStore = await cookies();
     const accessToken = cookieStore.get('procore_access_token')?.value;
@@ -399,22 +399,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const fetchAllParam = (url.searchParams.get('fetchAll') || 'true').toLowerCase();
-  const fetchAll = !(fetchAllParam === 'false' || fetchAllParam === '0');
-  const companyId = url.searchParams.get('companyId');
-
-  const body = JSON.stringify({
-    fetchAll,
-    ...(companyId ? { companyId } : {}),
-  });
-
-  return POST(
-    new Request(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    })
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: 'Projects feed sync requires POST.' },
+    { status: 405, headers: { Allow: 'POST' } }
   );
 }

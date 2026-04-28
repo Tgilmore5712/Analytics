@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import Navigation from "@/components/Navigation";
 import { useProcoreAuthAfterRefresh } from "@/hooks/useProcoreAuthAfterRefresh";
+import { readJsonResponse } from "@/utils/readJsonResponse";
 
 type CCOLineItemSyncResponse = {
   success?: boolean;
@@ -484,7 +485,10 @@ export default function ProcoreProductivityFeedPage() {
     async function checkAuth() {
       try {
         const res = await fetch("/api/procore/auth-status", { credentials: "include" });
-        const json = (await res.json()) as { connected?: boolean; error?: string };
+        const json = await readJsonResponse<{ connected?: boolean; error?: string }>(res, {
+          label: "Procore auth status",
+          fallback: {},
+        });
         if (!cancelled) {
           setProcoreConnected(Boolean(json.connected));
         }
@@ -516,22 +520,25 @@ export default function ProcoreProductivityFeedPage() {
 
     if (status === "authenticated") {
       setCheckingAuth(true);
-      fetch("/api/procore/auth-status", { credentials: "include" })
-        .then((res) => res.json())
-        .then((json: { connected?: boolean }) => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/procore/auth-status", { credentials: "include" });
+          const json = await readJsonResponse<{ connected?: boolean }>(res, {
+            label: "Procore auth status",
+            fallback: {},
+          });
           setProcoreConnected(Boolean(json.connected));
           if (json.connected) {
             const cleanUrl = `${window.location.pathname}`;
             window.history.replaceState({}, "", cleanUrl);
             setError(null);
           }
-        })
-        .catch(() => {
+        } catch {
           setProcoreConnected(false);
-        })
-        .finally(() => {
+        } finally {
           setCheckingAuth(false);
-        });
+        }
+      })();
     }
   }, []);
 
@@ -860,15 +867,20 @@ export default function ProcoreProductivityFeedPage() {
     setProjectsFeedLoading(true);
     setProjectsFeedError(null);
     try {
-      const query = new URLSearchParams({ fetchAll: 'true' });
-      if (companyId.trim()) query.set('companyId', companyId.trim());
-
-      const res = await fetch(`/api/procore/sync/projects-feed?${query.toString()}`, {
-        method: 'GET',
+      const res = await fetch('/api/procore/sync/projects-feed', {
+        method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fetchAll: true,
+          companyId: companyId.trim() || undefined,
+        }),
       });
 
-      const json = (await res.json()) as ProjectsFeedSyncResponse;
+      const json = await readJsonResponse<ProjectsFeedSyncResponse>(res, {
+        label: 'Projects feed sync',
+        fallback: {},
+      });
       if (!res.ok || !json.success) {
         setProjectsFeedError(json.error || 'Failed to sync projects feed');
         if (res.status === 401) setProcoreConnected(false);

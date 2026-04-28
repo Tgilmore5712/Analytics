@@ -101,19 +101,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const body = JSON.stringify({
-    companyId: url.searchParams.get("companyId") || undefined,
-    projectId: url.searchParams.get("projectId") || undefined,
-    budgetLineItemId: url.searchParams.get("budgetLineItemId") || url.searchParams.get("id") || undefined,
-  });
-
-  return POST(
-    new Request(request.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    })
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: "Budget line item lookup requires POST." },
+    { status: 405, headers: { Allow: "POST" } }
   );
 }

@@ -69,6 +69,28 @@ interface ProjectSummary {
   projectManager?: string | null;
 }
 
+interface GanttV2ScopeSummary {
+  id: string;
+  title: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  totalHours?: number | null;
+  crewSize?: number | null;
+  tasks?: Array<string | ScheduleTask>;
+  color?: string;
+  taskColors?: Record<string, string>;
+}
+
+interface GanttV2ProjectSummary {
+  id: string;
+  customer?: string | null;
+  projectNumber?: string | null;
+  projectName?: string | null;
+  sourceExternalId?: string | null;
+  sourceProjectId?: string | null;
+  scopes?: GanttV2ScopeSummary[];
+}
+
 interface PMGroup {
   pmId: string;
   pmName: string;
@@ -85,6 +107,10 @@ interface PMAssignment {
 type ProjectSummariesResponse = {
   data?: ProjectSummary[];
   hasNextPage?: boolean;
+};
+
+type GanttV2ProjectsResponse = {
+  data?: GanttV2ProjectSummary[];
 };
 
 type AllocationProject = { jobKey: string; scopeOfWork: string; hours: number };
@@ -410,6 +436,84 @@ function getProjectJobKeyLookupCandidates(project: ProjectSummary): string[] {
   return Array.from(new Set(keys.flatMap((key) => getJobKeyLookupCandidates(key))));
 }
 
+function getGanttProjectJobKeys(project: GanttV2ProjectSummary): string[] {
+  const customer = String(project.customer || "").trim();
+  const projectName = String(project.projectName || "").trim();
+  if (!customer || !projectName) return [];
+
+  const projectNumbers = [project.projectNumber, project.sourceExternalId, project.sourceProjectId]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(projectNumbers.map((projectNumber) => normalizeJobKey(`${customer}~${projectNumber}~${projectName}`))));
+}
+
+function getGanttProjectJobKeyLookupCandidates(project: GanttV2ProjectSummary): string[] {
+  return Array.from(new Set(getGanttProjectJobKeys(project).flatMap((key) => getJobKeyLookupCandidates(key))));
+}
+
+function accAssignAlias(aliasMap: Record<string, string[]>, candidate: string, aliases: string[]) {
+  const existing = aliasMap[candidate] || [];
+  aliasMap[candidate] = Array.from(new Set([...existing, ...aliases]));
+}
+
+function mapGanttScopeToScheduleScope(scope: GanttV2ScopeSummary, jobKey: string): Scope {
+  const startDate = String(scope.startDate || "").trim();
+  const endDate = String(scope.endDate || "").trim();
+  const hours = Number(scope.totalHours || 0);
+  const manpower = Number(scope.crewSize || 0);
+
+  return {
+    id: scope.id,
+    title: String(scope.title || "Unnamed Scope").trim() || "Unnamed Scope",
+    jobKey,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    hours: Number.isFinite(hours) && hours > 0 ? hours : 0,
+    manpower: Number.isFinite(manpower) && manpower > 0 ? manpower : undefined,
+    tasks: Array.isArray(scope.tasks) ? scope.tasks : [],
+    color: scope.color,
+    taskColors: scope.taskColors,
+    schedulingMode: "contiguous",
+    selectedDays: [],
+  };
+}
+
+function addScopeToLookup(acc: Record<string, Scope[]>, scope: Scope) {
+  const jobKey = normalizeJobKey(scope.jobKey || "");
+  if (!jobKey) return;
+
+  getJobKeyLookupCandidates(jobKey).forEach((candidate) => {
+    if (!acc[candidate]) acc[candidate] = [];
+    const exists = acc[candidate].some((existing) => {
+      if (existing.id && scope.id && existing.id === scope.id) return true;
+      return (
+        normalizeJobKey(existing.jobKey || "") === jobKey &&
+        normalizeScopeTitle(existing.title) === normalizeScopeTitle(scope.title) &&
+        String(existing.startDate || "") === String(scope.startDate || "") &&
+        String(existing.endDate || "") === String(scope.endDate || "")
+      );
+    });
+    if (!exists) acc[candidate].push({ ...scope, jobKey });
+  });
+}
+
+function getScopesForJobKey(scopesByJobKey: Record<string, Scope[]>, jobKey: string): Scope[] {
+  const seen = new Set<string>();
+  const scopes: Scope[] = [];
+
+  getJobKeyLookupCandidates(jobKey).forEach((candidate) => {
+    (scopesByJobKey[candidate] || []).forEach((scope) => {
+      const key = [scope.id || "", scope.jobKey || "", scope.title || "", scope.startDate || "", scope.endDate || ""].join("|");
+      if (seen.has(key)) return;
+      seen.add(key);
+      scopes.push(scope);
+    });
+  });
+
+  return scopes;
+}
+
 async function fetchLongTermProjectSummaries(): Promise<{ data?: ProjectSummary[] }> {
   const projects: ProjectSummary[] = [];
   let page = 1;
@@ -439,7 +543,7 @@ function findMatchingScopeForScheduleEntry(
   scopesByJobKey: Record<string, Scope[]>,
   entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">
 ): Scope | null {
-  const assignmentScopes = scopesByJobKey[entry.jobKey] || [];
+  const assignmentScopes = getScopesForJobKey(scopesByJobKey, entry.jobKey);
   const matchingScopeByTitleAndDate = assignmentScopes.find((scope) => {
     const sameTitle = normalizeScopeTitle(scope.title) === normalizeScopeTitle(entry.scopeOfWork || "Unnamed Scope");
     if (!sameTitle) return false;
@@ -586,6 +690,23 @@ function getProjectNameFromJobKey(jobKey: string): string {
   return parts.slice(2).join("~").trim() || jobKey;
 }
 
+function getProjectNumberFromJobKey(jobKey: string): string {
+  return String(jobKey.split("~")[1] || "").trim();
+}
+
+function shouldPreferJobKey(candidateJobKey: string, currentJobKey: string): boolean {
+  const candidateProjectNumber = getProjectNumberFromJobKey(candidateJobKey);
+  const currentProjectNumber = getProjectNumberFromJobKey(currentJobKey);
+  const candidateLooksLikeProcoreId = /^\d{8,}$/.test(candidateProjectNumber);
+  const currentLooksLikeProcoreId = /^\d{8,}$/.test(currentProjectNumber);
+
+  if (candidateLooksLikeProcoreId !== currentLooksLikeProcoreId) {
+    return !candidateLooksLikeProcoreId;
+  }
+
+  return candidateJobKey.localeCompare(currentJobKey) < 0;
+}
+
 function normalizeDisplayKeySegment(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -705,7 +826,7 @@ export default function LongTermSchedulePage() {
       const startMonth = startDate.slice(0, 7);
       const endMonth = endDate.slice(0, 7);
 
-      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson, scopesJson, scheduleAllocationsJson] = await Promise.all([
+      const [employeesJson, scheduleJson, holidaysJson, projectsJson, pmAssignmentsJson, timeOffJson, scopesJson, ganttProjectsJson, scheduleAllocationsJson] = await Promise.all([
         fetchJsonWithRetry<{ data?: Employee[] }>("/api/short-term-schedule?action=employees", {
           fallback: { data: [] },
           label: "long-term employees",
@@ -734,6 +855,10 @@ export default function LongTermSchedulePage() {
           fallback: { data: [] },
           label: "long-term project scopes",
         }),
+        fetchJsonWithRetry<GanttV2ProjectsResponse>("/api/gantt-v2/projects", {
+          fallback: { data: [] },
+          label: "long-term live gantt projects",
+        }),
         fetchJsonWithRetry<{ success?: boolean; data?: ScheduleAllocationEntry[] }>(
           `/api/schedule-allocations?startMonth=${startMonth}&endMonth=${endMonth}`,
           {
@@ -748,16 +873,20 @@ export default function LongTermSchedulePage() {
       const projects: ProjectSummary[] = projectsJson?.data || [];
       const pmAssignments: PMAssignment[] = pmAssignmentsJson?.data || [];
       const allScopes: Scope[] = Array.isArray(scopesJson?.data) ? scopesJson.data : [];
+      const ganttProjects: GanttV2ProjectSummary[] = Array.isArray(ganttProjectsJson?.data) ? ganttProjectsJson.data : [];
       const scheduleAllocations: ScheduleAllocationEntry[] = Array.isArray(scheduleAllocationsJson?.data) ? scheduleAllocationsJson.data : [];
       const getMatchingScopeForEntry = (entry: Pick<ActiveScheduleEntry, "jobKey" | "scopeOfWork" | "date">): Scope | null => {
         return findMatchingScopeForScheduleEntry(scopesByJobKeyLocal, entry);
       };
 
-      const scopesByJobKeyLocal = allScopes.reduce<Record<string, Scope[]>>((acc, scope) => {
-        const key = String(scope.jobKey || "").trim();
-        if (!key) return acc;
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(scope);
+      const liveGanttScopes = ganttProjects.flatMap((project) => {
+        const jobKeys = getGanttProjectJobKeys(project);
+        const scopes = Array.isArray(project.scopes) ? project.scopes : [];
+        return jobKeys.flatMap((jobKey) => scopes.map((scope) => mapGanttScopeToScheduleScope(scope, jobKey)));
+      });
+
+      const scopesByJobKeyLocal = [...allScopes, ...liveGanttScopes].reduce<Record<string, Scope[]>>((acc, scope) => {
+        addScopeToLookup(acc, scope);
         return acc;
       }, {});
       setScopesByJobKey(scopesByJobKeyLocal);
@@ -777,6 +906,12 @@ export default function LongTermSchedulePage() {
         });
         return acc;
       }, {});
+      ganttProjects.forEach((project) => {
+        const candidates = getGanttProjectJobKeyLookupCandidates(project);
+        candidates.forEach((candidate) => {
+          accAssignAlias(projectJobKeyAliasMap, candidate, candidates);
+        });
+      });
 
       const pmOverrideMap: Record<string, string> = {};
       pmAssignments.forEach((a) => {
@@ -811,6 +946,13 @@ export default function LongTermSchedulePage() {
         if (project.id) {
           getProjectJobKeyLookupCandidates(project).forEach((candidate) => {
             docIdMap[candidate] = project.id as string;
+          });
+        }
+      });
+      ganttProjects.forEach((project) => {
+        if (project.id) {
+          getGanttProjectJobKeyLookupCandidates(project).forEach((candidate) => {
+            docIdMap[candidate] = project.id;
           });
         }
       });

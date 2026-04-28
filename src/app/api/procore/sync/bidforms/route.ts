@@ -280,8 +280,8 @@ export async function POST(request: Request) {
     const bidId = String(body?.bidId || '').trim();
     const companyIdFromBody = String(body?.companyId || '').trim();
     const bidFormIdFromBody = String(body?.bidFormId || '').trim();
-    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '1000'), 10) || 1000));
-    const fetchAll = body?.fetchAll !== false;
+    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '100'), 10) || 100));
+    const fetchAll = body?.fetchAll === true;
     const page = Math.max(1, Number.parseInt(String(body?.page || '1'), 10) || 1);
     const perPage = Math.min(100, Math.max(1, Number.parseInt(String(body?.perPage || '100'), 10) || 100));
     const search = String(body?.search || '').trim();
@@ -637,29 +637,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const body = JSON.stringify({
-    companyWide: String(url.searchParams.get('companyWide') || '').toLowerCase() === 'true',
-    projectId: url.searchParams.get('projectId') || undefined,
-    bidPackageId: url.searchParams.get('bidPackageId') || undefined,
-    bidFormId: url.searchParams.get('bidFormId') || undefined,
-    bidId: url.searchParams.get('bidId') || undefined,
-    companyId: url.searchParams.get('companyId') || undefined,
-    fetchAll: String(url.searchParams.get('fetchAll') || '').toLowerCase() !== 'false',
-    page: url.searchParams.get('page') || undefined,
-    perPage: url.searchParams.get('perPage') || undefined,
-    search: url.searchParams.get('search') || undefined,
-    view: url.searchParams.get('view') || undefined,
-    sort: url.searchParams.get('sort') || undefined,
-    excludedBidFormId: url.searchParams.get('excludedBidFormId') || undefined,
-  });
-
-  return POST(
-    new Request(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    })
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: 'Bid forms sync requires POST.' },
+    { status: 405, headers: { Allow: 'POST' } }
   );
 }

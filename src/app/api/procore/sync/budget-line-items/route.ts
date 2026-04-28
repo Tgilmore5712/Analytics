@@ -127,9 +127,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const companyIdFromBody = String(body?.companyId || '').trim();
-    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '1000'), 10) || 1000));
+    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '100'), 10) || 100));
     const perPage = Math.min(200, Math.max(1, Number.parseInt(String(body?.perPage || '100'), 10) || 100));
-    const fetchAll = body?.fetchAll !== false;
+    const fetchAll = body?.fetchAll === true;
 
     const cookieStore = await cookies();
     const accessToken = cookieStore.get('procore_access_token')?.value;
@@ -277,20 +277,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const body = JSON.stringify({
-    companyId: url.searchParams.get('companyId') || undefined,
-    limitProjects: url.searchParams.get('limitProjects') || undefined,
-    perPage: url.searchParams.get('perPage') || undefined,
-    fetchAll: String(url.searchParams.get('fetchAll') || '').toLowerCase() !== 'false',
-  });
-
-  return POST(
-    new Request(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    })
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: 'Budget line items sync requires POST.' },
+    { status: 405, headers: { Allow: 'POST' } }
   );
 }

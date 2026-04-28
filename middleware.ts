@@ -77,10 +77,14 @@ function applyPermissionCookie(response: NextResponse, cookieValue: string | nul
   return response;
 }
 
-function getApiRatePolicy(pathname: string) {
-  const isHeavyRoute = HEAVY_API_ROUTE_PREFIXES.some(
+function isHeavyApiRoutePath(pathname: string) {
+  return HEAVY_API_ROUTE_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
+}
+
+function getApiRatePolicy(pathname: string) {
+  const isHeavyRoute = isHeavyApiRoutePath(pathname);
 
   if (isHeavyRoute) {
     return {
@@ -95,6 +99,22 @@ function getApiRatePolicy(pathname: string) {
     limit: API_RATE_LIMIT,
     windowMs: API_RATE_WINDOW_MS,
   };
+}
+
+function getRequestSyncSecret(request: NextRequest): string {
+  const headerSecret = request.headers.get('x-sync-secret')?.trim();
+  if (headerSecret) return headerSecret;
+
+  const authorization = request.headers.get('authorization')?.trim() || '';
+  const bearerMatch = authorization.match(/^Bearer\s+(.+)$/i);
+  return bearerMatch?.[1]?.trim() || '';
+}
+
+function hasValidSyncSecret(request: NextRequest): boolean {
+  const expectedSecret = (process.env.PROCORE_SYNC_SECRET || process.env.SYNC_SECRET || '').trim();
+  if (!expectedSecret) return false;
+
+  return getRequestSyncSecret(request) === expectedSecret;
 }
 
 async function checkDatabasePermission(request: NextRequest, permissions: string[]): Promise<PermissionCheckResult> {
@@ -210,6 +230,25 @@ export async function middleware(request: NextRequest) {
         }
       );
     }
+  }
+
+  if (pathname === '/api/procore/sync' || pathname.startsWith('/api/procore/sync/')) {
+    if (request.method.toUpperCase() === 'GET') {
+      return NextResponse.json(
+        { success: false, error: 'Sync endpoints require POST.' },
+        { status: 405, headers: { Allow: 'POST' } }
+      );
+    }
+  }
+
+  if (isApiRoute && isHeavyApiRoutePath(pathname) && request.method.toUpperCase() === 'POST' && hasValidSyncSecret(request)) {
+    const response = NextResponse.next();
+    if (apiRateLimit) {
+      response.headers.set('X-RateLimit-Limit', String(apiRateLimit.limit));
+      response.headers.set('X-RateLimit-Remaining', String(apiRateLimit.remaining));
+      response.headers.set('X-RateLimit-Reset', String(Math.floor(apiRateLimit.resetAt / 1000)));
+    }
+    return response;
   }
 
   // Allow login page

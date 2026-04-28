@@ -72,8 +72,8 @@ export async function POST(request: Request) {
     const companyWide = Boolean(body?.companyWide);
     const projectId = String(body?.projectId || '').trim();
     const companyIdFromBody = String(body?.companyId || '').trim();
-    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '1000'), 10) || 1000));
-    const fetchAll = body?.fetchAll !== false;
+    const limitProjects = Math.max(1, Math.min(10000, Number.parseInt(String(body?.limitProjects || '100'), 10) || 100));
+    const fetchAll = body?.fetchAll === true;
     const page = Math.max(1, Number.parseInt(String(body?.page || '1'), 10) || 1);
     const perPage = Math.min(100, Math.max(1, Number.parseInt(String(body?.perPage || '100'), 10) || 100));
 
@@ -205,23 +205,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const body = JSON.stringify({
-    companyWide: String(url.searchParams.get('companyWide') || '').toLowerCase() === 'true',
-    projectId: url.searchParams.get('projectId') || undefined,
-    companyId: url.searchParams.get('companyId') || undefined,
-    limitProjects: url.searchParams.get('limitProjects') || undefined,
-    fetchAll: String(url.searchParams.get('fetchAll') || '').toLowerCase() !== 'false',
-    page: url.searchParams.get('page') || undefined,
-    perPage: url.searchParams.get('perPage') || undefined,
-  });
-
-  return POST(
-    new Request(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    })
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: 'Bids sync requires POST.' },
+    { status: 405, headers: { Allow: 'POST' } }
   );
 }

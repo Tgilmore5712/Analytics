@@ -52,16 +52,16 @@ export async function POST(request: Request) {
       body.baseUrl || process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL
     ).trim();
 
-    const fetchAll = body.fetchAll !== false;
+    const fetchAll = body.fetchAll === true;
     const perPage = Math.min(200, Math.max(1, Number.parseInt(String(body.perPage || "100"), 10) || 100));
     const bidBoardStatusFilter = String(body["filters[by_status]"] || body.bidBoardStatusFilter || "All").trim() || "All";
     const maxBidBoardProjects = Math.min(
       5000,
-      Math.max(1, Number.parseInt(String(body.maxBidBoardProjects || "1000"), 10) || 1000)
+      Math.max(1, Number.parseInt(String(body.maxBidBoardProjects || "100"), 10) || 100)
     );
     const maxProposalsPerProject = Math.min(
       500,
-      Math.max(1, Number.parseInt(String(body.maxProposalsPerProject || "200"), 10) || 200)
+      Math.max(1, Number.parseInt(String(body.maxProposalsPerProject || "50"), 10) || 50)
     );
 
     const hostCandidates = buildAllowedProcoreHostCandidates({

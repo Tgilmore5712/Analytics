@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Navigation from "@/components/Navigation";
 import { useProcoreAuthAfterRefresh } from "@/hooks/useProcoreAuthAfterRefresh";
+import { readJsonResponse } from "@/utils/readJsonResponse";
 
 type ToolResponse = {
   success?: boolean;
@@ -44,8 +45,8 @@ export default function ProcoreProjectsFeedToolsPage() {
     () => ({
       statusRefreshQuick: "/api/scheduling/refresh-status",
       statusRefreshFull: "/api/scheduling/refresh-status",
-      syncQuick: "/api/procore/sync/projects-feed?fetchAll=false",
-      syncFull: "/api/procore/sync/projects-feed?fetchAll=true",
+      syncQuick: "/api/procore/sync/projects-feed (POST body: { fetchAll:false })",
+      syncFull: "/api/procore/sync/projects-feed (POST body: { fetchAll:true })",
       verify: "/api/procore/projects-feed/verify-matches",
       backfillDryRun: "/api/procore/projects-feed/backfill-promoted?dryRun=true&limit=5000",
       backfillApply: "/api/procore/projects-feed/backfill-promoted?dryRun=false&limit=5000",
@@ -98,8 +99,10 @@ export default function ProcoreProjectsFeedToolsPage() {
 
     try {
       const res = await fetch(path, { method: "GET", credentials: "include" });
-      const text = await res.text();
-      const body = text ? JSON.parse(text) : {};
+      const body = await readJsonResponse<Record<string, unknown>>(res, {
+        label: `${actionLabel} response`,
+        fallback: {},
+      });
 
       setOutput(
         toPrettyJson({
@@ -138,7 +141,10 @@ export default function ProcoreProjectsFeedToolsPage() {
       return;
     }
 
-    await runGet(`/api/procore/sync/bids?projectId=${encodeURIComponent(projectId)}&fetchAll=true`, "Sync Bids");
+    await runPost("/api/procore/sync/bids", "Sync Bids", {
+      projectId,
+      fetchAll: true,
+    });
   }
 
   async function runBidsFetch() {
@@ -206,10 +212,11 @@ export default function ProcoreProjectsFeedToolsPage() {
       return;
     }
 
-    await runGet(
-      `/api/procore/sync/bidforms?projectId=${encodeURIComponent(projectId)}&bidPackageId=${encodeURIComponent(bidPackageId)}&fetchAll=true`,
-      "Sync BidForms"
-    );
+    await runPost("/api/procore/sync/bidforms", "Sync BidForms", {
+      projectId,
+      bidPackageId,
+      fetchAll: true,
+    });
   }
 
   async function runBidFormsFetch() {
@@ -484,8 +491,10 @@ export default function ProcoreProjectsFeedToolsPage() {
         body: JSON.stringify(payload),
       });
 
-      const text = await res.text();
-      const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      const body = await readJsonResponse<Record<string, unknown>>(res, {
+        label: "Sync Debug Compare IDs response",
+        fallback: {},
+      });
       const response = (body.response as Record<string, unknown> | undefined) || body;
       const debug = response.debug as Record<string, unknown> | undefined;
       const comparison = (debug?.comparison as Array<Record<string, unknown>> | undefined) || [];
@@ -559,8 +568,10 @@ export default function ProcoreProjectsFeedToolsPage() {
         body: JSON.stringify(payload),
       });
 
-      const text = await res.text();
-      const body = text ? (JSON.parse(text) as ToolResponse) : {};
+      const body = await readJsonResponse<ToolResponse>(res, {
+        label: `${actionLabel} response`,
+        fallback: {},
+      });
 
       setOutput(
         toPrettyJson({
@@ -652,7 +663,7 @@ export default function ProcoreProjectsFeedToolsPage() {
 
               <button
                 disabled={disableSyncActions}
-                onClick={() => runGet(endpointExamples.syncQuick, "Sync Quick")}
+                onClick={() => runPost('/api/procore/sync/projects-feed', "Sync Quick", { fetchAll: false })}
                 className="px-4 py-3 rounded-xl bg-stone-800 text-white font-black text-xs uppercase tracking-widest hover:bg-stone-900 disabled:opacity-50"
               >
                 {busyAction === "Sync Quick" ? "Running..." : "1) Sync Quick"}
@@ -660,7 +671,7 @@ export default function ProcoreProjectsFeedToolsPage() {
 
               <button
                 disabled={disableSyncActions}
-                onClick={() => runGet(endpointExamples.syncFull, "Sync Full")}
+                onClick={() => runPost('/api/procore/sync/projects-feed', "Sync Full", { fetchAll: true })}
                 className="px-4 py-3 rounded-xl bg-red-700 text-white font-black text-xs uppercase tracking-widest hover:bg-red-800 disabled:opacity-50"
               >
                 {busyAction === "Sync Full" ? "Running..." : "2) Sync Full"}
@@ -976,13 +987,13 @@ export default function ProcoreProjectsFeedToolsPage() {
             <h2 className="text-sm font-black uppercase tracking-widest text-gray-700">Query URLs</h2>
             <div className="space-y-2 text-xs">
               <button
-                onClick={() => openInNewTab(endpointExamples.syncQuick)}
+                onClick={() => setOutput(toPrettyJson({ method: 'POST', path: '/api/procore/sync/projects-feed', body: { fetchAll: false } }))}
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
                 {endpointExamples.syncQuick}
               </button>
               <button
-                onClick={() => openInNewTab(endpointExamples.syncFull)}
+                onClick={() => setOutput(toPrettyJson({ method: 'POST', path: '/api/procore/sync/projects-feed', body: { fetchAll: true } }))}
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
                 {endpointExamples.syncFull}
@@ -1151,10 +1162,10 @@ export default function ProcoreProjectsFeedToolsPage() {
                 {endpointExamples.syncCompareIds}
               </button>
               <button
-                onClick={() => openInNewTab('/api/procore/sync/bids?projectId=YOUR_PROJECT_ID&fetchAll=true')}
+                onClick={() => setOutput(toPrettyJson({ method: 'POST', path: '/api/procore/sync/bids', body: { projectId: 'YOUR_PROJECT_ID', fetchAll: true } }))}
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
-                /api/procore/sync/bids?projectId=YOUR_PROJECT_ID&fetchAll=true
+                /api/procore/sync/bids (POST body: {`{ projectId: "YOUR_PROJECT_ID", fetchAll: true }`})
               </button>
               <button
                 onClick={() => openInNewTab('/api/procore/bids?projectId=YOUR_PROJECT_ID&page=1&pageSize=200')}
@@ -1164,11 +1175,11 @@ export default function ProcoreProjectsFeedToolsPage() {
               </button>
               <button
                 onClick={() =>
-                  openInNewTab('/api/procore/sync/bidforms?projectId=YOUR_PROJECT_ID&bidPackageId=YOUR_BID_PACKAGE_ID&fetchAll=true')
+                  setOutput(toPrettyJson({ method: 'POST', path: '/api/procore/sync/bidforms', body: { projectId: 'YOUR_PROJECT_ID', bidPackageId: 'YOUR_BID_PACKAGE_ID', fetchAll: true } }))
                 }
                 className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 font-bold hover:bg-gray-100"
               >
-                /api/procore/sync/bidforms?projectId=YOUR_PROJECT_ID&bidPackageId=YOUR_BID_PACKAGE_ID&fetchAll=true
+                /api/procore/sync/bidforms (POST body: {`{ projectId: "YOUR_PROJECT_ID", bidPackageId: "YOUR_BID_PACKAGE_ID", fetchAll: true }`})
               </button>
               <button
                 onClick={() =>

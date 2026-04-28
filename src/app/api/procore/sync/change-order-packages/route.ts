@@ -156,7 +156,7 @@ export async function POST(request: Request) {
     );
     const limitProjects = Math.min(
       10000,
-      Math.max(1, Number.parseInt(String(body.limitProjects || '1000'), 10) || 1000)
+      Math.max(1, Number.parseInt(String(body.limitProjects || '100'), 10) || 100)
     );
     const perPage = Math.min(200, Math.max(1, Number.parseInt(String(body.perPage || '100'), 10) || 100));
 
@@ -323,17 +323,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  return POST(
-    new Request(request.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        companyId: url.searchParams.get('companyId') || undefined,
-        limitProjects: url.searchParams.get('limitProjects') || undefined,
-        perPage: url.searchParams.get('perPage') || undefined,
-      }),
-    })
+export async function GET() {
+  return NextResponse.json(
+    { success: false, error: 'Change order package sync requires POST.' },
+    { status: 405, headers: { Allow: 'POST' } }
   );
 }

@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       companyId: companyIdFromBody,
       page = 1,
       perPage = 100,
-      fetchAll = true,
+      fetchAll = false,
       baseUrl = process.env.PROCORE_ESTIMATING_API_URL || DEFAULT_ESTIMATING_BASE_URL,
     } = body;
 

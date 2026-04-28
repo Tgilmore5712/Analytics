@@ -431,12 +431,12 @@ export async function POST(request: Request) {
     };
 
     const {
-      fetchAll = true,
+      fetchAll = false,
       forceUserOAuth = false,
-      includeInactiveV1 = true,
-      includeTestProjects = true,
-      includePrimeContractProjectBackfill = true,
-      usePrimeContractProjectIdsAsTruth = true,
+      includeInactiveV1 = false,
+      includeTestProjects = false,
+      includePrimeContractProjectBackfill = false,
+      usePrimeContractProjectIdsAsTruth = false,
       seedFromFile = false,
       primeByIdConcurrency: bodyPrimeByIdConcurrency,
       maxPages: bodyMaxPages,
@@ -444,10 +444,10 @@ export async function POST(request: Request) {
       companyId: bodyCompanyId,
     } = body;
     const debugProjectIds = parseDebugIds(bodyDebugProjectIds);
-    const parsedPrimeByIdConcurrency = Number.parseInt(String(bodyPrimeByIdConcurrency ?? '4'), 10);
-    const primeByIdConcurrency = Math.min(12, Math.max(1, Number.isFinite(parsedPrimeByIdConcurrency) ? parsedPrimeByIdConcurrency : 4));
-    const parsedMaxPages = Number.parseInt(String(bodyMaxPages ?? '1000'), 10);
-    const maxPages = fetchAll ? Math.min(5000, Math.max(1, Number.isFinite(parsedMaxPages) ? parsedMaxPages : 1000)) : 1;
+    const parsedPrimeByIdConcurrency = Number.parseInt(String(bodyPrimeByIdConcurrency ?? '2'), 10);
+    const primeByIdConcurrency = Math.min(4, Math.max(1, Number.isFinite(parsedPrimeByIdConcurrency) ? parsedPrimeByIdConcurrency : 2));
+    const parsedMaxPages = Number.parseInt(String(bodyMaxPages ?? '3'), 10);
+    const maxPages = fetchAll ? Math.min(200, Math.max(1, Number.isFinite(parsedMaxPages) ? parsedMaxPages : 3)) : 1;
 
     const cookieStore = await cookies();
     const userAccessToken = cookieStore.get("procore_access_token")?.value;

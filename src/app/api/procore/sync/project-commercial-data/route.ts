@@ -11,11 +11,15 @@ type SyncSummary = {
 
 async function postJson(request: Request, path: string, payload: unknown): Promise<SyncSummary> {
   const url = new URL(path, request.url);
+  const syncSecret = request.headers.get("x-sync-secret") || "";
+  const authorization = request.headers.get("authorization") || "";
   const response = await fetch(url.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       cookie: request.headers.get("cookie") || "",
+      ...(syncSecret ? { "x-sync-secret": syncSecret } : {}),
+      ...(authorization ? { authorization } : {}),
     },
     body: JSON.stringify(payload),
     cache: "no-store",
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
     const companyId = String(body?.companyId || DEFAULT_COMPANY_ID).trim() || DEFAULT_COMPANY_ID;
     const limitProjects = Math.max(
       1,
-      Math.min(10000, Number.parseInt(String(body?.limitProjects || "1000"), 10) || 1000)
+      Math.min(10000, Number.parseInt(String(body?.limitProjects || "100"), 10) || 100)
     );
     const perPage = Math.min(100, Math.max(1, Number.parseInt(String(body?.perPage || "100"), 10) || 100));
 
@@ -82,8 +86,8 @@ export async function POST(request: Request) {
       perPage: 100,
       "filters[by_status]": "All",
       maxBidBoardProjects: limitProjects,
-      maxProposalsPerProject: 200,
-      maxLineItemsPages: 50,
+      maxProposalsPerProject: 50,
+      maxLineItemsPages: 10,
     });
 
     const results = {
