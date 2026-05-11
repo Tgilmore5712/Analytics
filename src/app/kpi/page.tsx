@@ -1986,7 +1986,7 @@ function KPIPageContent({
   };
 
   const currentYear = new Date().getFullYear().toString();
-  const combinedSalesYears = Array.from(new Set([
+  const combinedSalesYears = Array.from(new Set<string>([
     ...scheduledSalesYears,
     ...bidSubmittedSalesYears,
     currentYear,
