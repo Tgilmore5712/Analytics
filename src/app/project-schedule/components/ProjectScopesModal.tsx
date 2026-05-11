@@ -170,7 +170,25 @@ const isPlaceholderScopeTitle = (title: string | null | undefined) => {
   );
 };
 
-const dateKey = (value: unknown) => String(value || "").trim();
+const dateKey = (value: unknown) => {
+  if (!value) return "";
+
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? "" : formatDateKey(value);
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  // Accept both date-only and ISO-like date-time strings.
+  const explicitDateMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (explicitDateMatch) return explicitDateMatch[1];
+
+  const parsed = parseScopeDate(raw);
+  if (parsed) return formatDateKey(parsed);
+
+  return raw;
+};
 
 type ParsedTaskEntry = {
   name: string;
